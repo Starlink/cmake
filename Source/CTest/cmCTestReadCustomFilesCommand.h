@@ -45,12 +45,13 @@ public:
    * This is called when the command is first encountered in
    * the CMakeLists.txt file.
    */
-  virtual bool InitialPass(std::vector<std::string> const& args);
+  virtual bool InitialPass(std::vector<std::string> const& args,
+                           cmExecutionStatus &status);
 
   /**
    * The name of the command as specified in CMakeList.txt.
    */
-  virtual const char* GetName() { return "CTEST_READ_CUSTOM_FILES";}
+  virtual const char* GetName() { return "ctest_read_custom_files";}
 
   /**
    * Succinct documentation.
@@ -66,7 +67,7 @@ public:
   virtual const char* GetFullDocumentation()
     {
     return
-      "  CTEST_READ_CUSTOM_FILES( directory ... )\n"
+      "  ctest_read_custom_files( directory ... )\n"
       "Read all the CTestCustom.ctest or CTestCustom.cmake files from "
       "the given directory.";
     }

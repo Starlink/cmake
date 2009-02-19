@@ -3,8 +3,8 @@
   Program:   CMake - Cross-Platform Makefile Generator
   Module:    $RCSfile: cmAddSubDirectoryCommand.h,v $
   Language:  C++
-  Date:      $Date: 2005/11/16 15:16:57 $
-  Version:   $Revision: 1.5 $
+  Date:      $Date: 2008-09-03 13:43:16 $
+  Version:   $Revision: 1.7.2.1 $
 
   Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
   See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
@@ -41,12 +41,13 @@ public:
    * This is called when the command is first encountered in
    * the CMakeLists.txt file.
    */
-  virtual bool InitialPass(std::vector<std::string> const& args);
+  virtual bool InitialPass(std::vector<std::string> const& args,
+                           cmExecutionStatus &status);
 
   /**
    * The name of the command as specified in CMakeList.txt.
    */
-  virtual const char* GetName() { return "ADD_SUBDIRECTORY";}
+  virtual const char* GetName() { return "add_subdirectory";}
 
   /**
    * Succinct documentation.
@@ -62,7 +63,7 @@ public:
   virtual const char* GetFullDocumentation()
     {
     return
-      "  ADD_SUBDIRECTORY(source_dir [binary_dir] \n"
+      "  add_subdirectory(source_dir [binary_dir] \n"
       "                   [EXCLUDE_FROM_ALL])\n"
       "Add a subdirectory to the build. The source_dir specifies the "
       "directory in which the source CmakeLists.txt and code files are "
@@ -78,13 +79,21 @@ public:
       "be processed immediately by CMake before processing in the current "
       "input file continues beyond this command.\n"
 
-      "If the EXCLUDE_FROM_ALL argument is provided then this subdirectory "
-      "will not be included in build by default. Users will have to "
-      "explicitly start a build in the generated output directory. "
-      "This is useful for having cmake create a build system for a "
-      "set of examples in a project. One would want cmake to generate "
-      "a single build system for all the examples, but one may not want "
-      "the targets to show up in the main build system.";
+      "If the EXCLUDE_FROM_ALL argument is provided then targets in the "
+      "subdirectory will not be included in the ALL target of the parent "
+      "directory by default, and will be excluded from IDE project files.  "
+      "Users must explicitly build targets in the subdirectory.  "
+      "This is meant for use when the subdirectory contains a separate part "
+      "of the project that is useful but not necessary, such as a set of "
+      "examples.  "
+      "Typically the subdirectory should contain its own project() command "
+      "invocation so that a full build system will be generated in the "
+      "subdirectory (such as a VS IDE solution file).  "
+      "Note that inter-target dependencies supercede this exclusion.  "
+      "If a target built by the parent project depends on a target in the "
+      "subdirectory, the dependee target will be included in the parent "
+      "project build system to satisfy the dependency."
+      ;
     }
   
   cmTypeMacro(cmAddSubDirectoryCommand, cmCommand);

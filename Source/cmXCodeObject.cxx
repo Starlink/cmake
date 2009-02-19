@@ -1,6 +1,23 @@
+/*=========================================================================
+
+  Program:   CMake - Cross-Platform Makefile Generator
+  Module:    $RCSfile: cmXCodeObject.cxx,v $
+  Language:  C++
+  Date:      $Date: 2008-09-03 13:43:18 $
+  Version:   $Revision: 1.24.2.2 $
+
+  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
+  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
+
+     This software is distributed WITHOUT ANY WARRANTY; without even 
+     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR 
+     PURPOSE.  See the above copyright notices for more information.
+
+=========================================================================*/
 #include "cmXCodeObject.h"
 #include "cmSystemTools.h"
 
+//----------------------------------------------------------------------------
 const char* cmXCodeObject::PBXTypeNames[] = {
     "PBXGroup", "PBXBuildStyle", "PBXProject", "PBXHeadersBuildPhase", 
     "PBXSourcesBuildPhase", "PBXFrameworksBuildPhase", "PBXNativeTarget",
@@ -14,11 +31,11 @@ const char* cmXCodeObject::PBXTypeNames[] = {
     "None"
   };
 
+//----------------------------------------------------------------------------
 cmXCodeObject::~cmXCodeObject()
 {
   this->Version = 15;
 }
-
 
 //----------------------------------------------------------------------------
 cmXCodeObject::cmXCodeObject(PBXType ptype, Type type)
@@ -51,6 +68,10 @@ cmXCodeObject::cmXCodeObject(PBXType ptype, Type type)
       {
       this->Id += "0";
       }
+    }
+  if(this->Id.size() > 24)
+    {
+    this->Id = this->Id.substr(0,24);
     }
   this->TypeValue = type;
   if(this->TypeValue == OBJECT)
@@ -127,7 +148,36 @@ void cmXCodeObject::Print(std::ostream& out)
             object->ObjectAttributes.end(); ++j)
         {
         cmXCodeObject::Indent(4 *indentFactor, out);
-        out << j->first << " = " << j->second->String << ";";
+
+        if(j->second->TypeValue == STRING)
+          {
+          out << j->first << " = ";
+          j->second->PrintString(out);
+          out << ";";
+          }
+        else if(j->second->TypeValue == OBJECT_LIST)
+          {
+          out << j->first << " = (";
+          for(unsigned int k = 0; k < j->second->List.size(); k++)
+            {
+            if(j->second->List[k]->TypeValue == STRING)
+              {
+              j->second->List[k]->PrintString(out);
+              out << ", ";
+              }
+            else
+              {
+              out << "List_" << k << "_TypeValue_IS_NOT_STRING, ";
+              }
+            }
+          out << ");";
+          }
+        else
+          {
+          out << j->first << " = error_unexpected_TypeValue_" <<
+            j->second->TypeValue << ";";
+          }
+
         out << separator;
         }
       cmXCodeObject::Indent(3 *indentFactor, out);
@@ -145,7 +195,9 @@ void cmXCodeObject::Print(std::ostream& out)
       }
     else if(object->TypeValue == STRING)
       {
-      out << i->first << " = " << object->String << ";" << separator;
+      out << i->first << " = ";
+      object->PrintString(out);
+      out << ";" << separator;
       }
     else
       {
@@ -173,7 +225,7 @@ void cmXCodeObject::PrintList(std::vector<cmXCodeObject*> const& objs,
   out << "};\n";
 }
 
-
+//----------------------------------------------------------------------------
 void cmXCodeObject::CopyAttributes(cmXCodeObject* copy)
 {
   this->ObjectAttributes = copy->ObjectAttributes;
@@ -182,27 +234,33 @@ void cmXCodeObject::CopyAttributes(cmXCodeObject* copy)
   this->Object = copy->Object;
 }
 
+//----------------------------------------------------------------------------
+void cmXCodeObject::PrintString(std::ostream& os) const
+{
+  // The string needs to be quoted if it contains any characters
+  // considered special by the Xcode project file parser.
+  bool needQuote =
+    (this->String.empty() ||
+     this->String.find_first_of(" <>.+-=@") != this->String.npos);
+  const char* quote = needQuote? "\"" : "";
+
+  // Print the string, quoted and escaped as necessary.
+  os << quote;
+  for(std::string::const_iterator i = this->String.begin();
+      i != this->String.end(); ++i)
+    {
+    if(*i == '"')
+      {
+      // Escape double-quotes.
+      os << '\\';
+      }
+    os << *i;
+    }
+  os << quote;
+}
+
+//----------------------------------------------------------------------------
 void cmXCodeObject::SetString(const char* s)
 {
-  std::string ss = s;
-  if(ss.size() == 0)
-    {
-    this->String = "\"\"";
-    return;
-    }
-  bool needQuote = false;
-  this->String = "";
-  if(ss.find_first_of(" <>.+-=@") != ss.npos)
-    {
-    needQuote = true;
-    }
-  if(needQuote)
-    {
-    this->String = "\"";
-    }
-  this->String += s;
-  if(needQuote)
-    {
-    this->String += "\"";
-    }
+  this->String = s;
 }

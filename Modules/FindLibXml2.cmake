@@ -1,13 +1,11 @@
 # - Try to find LibXml2
 # Once done this will define
 #
-#  LIBXML2_FOUND - system has LibXml2
-#  LIBXML2_INCLUDE_DIR - the LibXml2 include directory
-#  LIBXML2_LIBRARIES - the libraries needed to use LibXml2
+#  LIBXML2_FOUND - System has LibXml2
+#  LIBXML2_INCLUDE_DIR - The LibXml2 include directory
+#  LIBXML2_LIBRARIES - The libraries needed to use LibXml2
 #  LIBXML2_DEFINITIONS - Compiler switches required for using LibXml2
-#
-# Copyright (c) 2006, Alexander Neundorf <neundorf@kde.org>
-# This code is available under the BSD license, see licenses/BSD for details.
+#  LIBXML2_XMLLINT_EXECUTABLE - The XML checking tool xmllint coming with LibXml2
 
 # Copyright (c) 2006, Alexander Neundorf, <neundorf@kde.org>
 #
@@ -39,21 +37,15 @@ FIND_LIBRARY(LIBXML2_LIBRARIES NAMES xml2 libxml2
    ${_LibXml2LinkDir}
    )
 
-IF (LIBXML2_INCLUDE_DIR AND LIBXML2_LIBRARIES)
-   SET(LIBXML2_FOUND TRUE)
-ELSE (LIBXML2_INCLUDE_DIR AND LIBXML2_LIBRARIES)
-   SET(LIBXML2_FOUND FALSE)
-ENDIF (LIBXML2_INCLUDE_DIR AND LIBXML2_LIBRARIES)
+FIND_PROGRAM(LIBXML2_XMLLINT_EXECUTABLE xmllint)
+# for backwards compat. with KDE 4.0.x:
+SET(XMLLINT_EXECUTABLE "${LIBXML2_XMLLINT_EXECUTABLE}")
 
-IF (LIBXML2_FOUND)
-   IF (NOT LibXml2_FIND_QUIETLY)
-      MESSAGE(STATUS "Found LibXml2: ${LIBXML2_LIBRARIES}")
-   ENDIF (NOT LibXml2_FIND_QUIETLY)
-ELSE (LIBXML2_FOUND)
-   IF (LibXml2_FIND_REQUIRED)
-      MESSAGE(SEND_ERROR "Could NOT find LibXml2")
-   ENDIF (LibXml2_FIND_REQUIRED)
-ENDIF (LIBXML2_FOUND)
+INCLUDE(FindPackageHandleStandardArgs)
 
-MARK_AS_ADVANCED(LIBXML2_INCLUDE_DIR LIBXML2_LIBRARIES)
+# handle the QUIETLY and REQUIRED arguments and set LIBXML2_FOUND to TRUE if 
+# all listed variables are TRUE
+FIND_PACKAGE_HANDLE_STANDARD_ARGS(LibXml2 DEFAULT_MSG LIBXML2_LIBRARIES LIBXML2_INCLUDE_DIR)
+
+MARK_AS_ADVANCED(LIBXML2_INCLUDE_DIR LIBXML2_LIBRARIES LIBXML2_XMLLINT_EXECUTABLE)
 

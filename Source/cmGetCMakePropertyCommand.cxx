@@ -3,8 +3,8 @@
   Program:   CMake - Cross-Platform Makefile Generator
   Module:    $RCSfile: cmGetCMakePropertyCommand.cxx,v $
   Language:  C++
-  Date:      $Date: 2006/03/15 16:02:01 $
-  Version:   $Revision: 1.6 $
+  Date:      $Date: 2008-07-13 21:55:23 $
+  Version:   $Revision: 1.8.2.1 $
 
   Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
   See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
@@ -19,8 +19,8 @@
 #include "cmake.h"
 
 // cmGetCMakePropertyCommand
-bool cmGetCMakePropertyCommand::InitialPass(
-  std::vector<std::string> const& args)
+bool cmGetCMakePropertyCommand
+::InitialPass(std::vector<std::string> const& args, cmExecutionStatus &)
 {
   if(args.size() < 2 )
     {
@@ -30,15 +30,11 @@ bool cmGetCMakePropertyCommand::InitialPass(
   
   std::vector<std::string>::size_type cc;
   std::string variable = args[0];
-  std::string output = "";
+  std::string output = "NOTFOUND";
 
-  if ( args[1] == "VARIABLES" || args[1] == "CACHE_VARIABLES" )
+  if ( args[1] == "VARIABLES")
     {
     int cacheonly = 0;
-    if ( args[1] == "CACHE_VARIABLES" )
-      {
-      cacheonly = 1;
-      }
     std::vector<std::string> vars = this->Makefile->GetDefinitions(cacheonly);
     for ( cc = 0; cc < vars.size(); cc ++ )
       {
@@ -49,31 +45,34 @@ bool cmGetCMakePropertyCommand::InitialPass(
       output += vars[cc];
       }
     }
-  else if ( args[1] == "COMMANDS" )
-    {
-    cmake::RegisteredCommandsMap::iterator cmds 
-        = this->Makefile->GetCMakeInstance()->GetCommands()->begin();
-    for (cc=0 ; 
-      cmds != this->Makefile->GetCMakeInstance()->GetCommands()->end(); 
-      ++ cmds )
-      {
-      if ( cc > 0 )
-        {
-        output += ";";
-        }
-      output += cmds->first.c_str();
-      cc++;
-      }
-    }
   else if ( args[1] == "MACROS" )
     {
     this->Makefile->GetListOfMacros(output);
     }
+  else if ( args[1] == "COMPONENTS" )
+    {
+    const std::set<cmStdString>* components
+      = this->Makefile->GetLocalGenerator()->GetGlobalGenerator()
+        ->GetInstallComponents();
+    std::set<cmStdString>::const_iterator compIt;
+    output = "";
+    for (compIt = components->begin(); compIt != components->end(); ++compIt)
+      {
+      if (compIt != components->begin())
+        {
+        output += ";";
+        }
+      output += *compIt;
+      }
+    }
   else
     {
-    std::string emsg = "Unknown CMake property: " + args[1];
-    this->SetError(emsg.c_str());
-    return false;
+    const char *prop = 
+      this->Makefile->GetCMakeInstance()->GetProperty(args[1].c_str());
+    if (prop)
+      {
+      output = prop;
+      }
     }
   this->Makefile->AddDefinition(variable.c_str(), output.c_str());
   

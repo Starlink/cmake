@@ -1,4 +1,4 @@
-# - pkg-config module for CMake
+# - obsolete pkg-config module for CMake
 #
 # Defines the following macros:
 #
@@ -12,9 +12,11 @@
 
 
 
-FIND_PROGRAM(PKGCONFIG_EXECUTABLE NAMES pkg-config PATHS /usr/local/bin )
+FIND_PROGRAM(PKGCONFIG_EXECUTABLE NAMES pkg-config )
 
 MACRO(PKGCONFIG _package _include_DIR _link_DIR _link_FLAGS _cflags)
+  MESSAGE(STATUS
+    "WARNING: you are using the obsolete 'PKGCONFIG' macro use FindPkgConfig")
 # reset the variables at the beginning
   SET(${_include_DIR})
   SET(${_link_DIR})
@@ -31,20 +33,24 @@ MACRO(PKGCONFIG _package _include_DIR _link_DIR _link_FLAGS _cflags)
 
       EXEC_PROGRAM(${PKGCONFIG_EXECUTABLE} ARGS ${_package} --variable=includedir 
         OUTPUT_VARIABLE ${_include_DIR} )
-      string(REGEX REPLACE "[\r\n]" " " ${_include_DIR} "${${_include_DIR}}")
+      STRING(REGEX REPLACE "[\r\n]" " " ${_include_DIR} "${${_include_DIR}}")
     
 
       EXEC_PROGRAM(${PKGCONFIG_EXECUTABLE} ARGS ${_package} --variable=libdir 
         OUTPUT_VARIABLE ${_link_DIR} )
-      string(REGEX REPLACE "[\r\n]" " " ${_link_DIR} "${${_link_DIR}}")
+      STRING(REGEX REPLACE "[\r\n]" " " ${_link_DIR} "${${_link_DIR}}")
 
       EXEC_PROGRAM(${PKGCONFIG_EXECUTABLE} ARGS ${_package} --libs 
         OUTPUT_VARIABLE ${_link_FLAGS} )
-      string(REGEX REPLACE "[\r\n]" " " ${_link_FLAGS} "${${_link_FLAGS}}")
+      STRING(REGEX REPLACE "[\r\n]" " " ${_link_FLAGS} "${${_link_FLAGS}}")
 
       EXEC_PROGRAM(${PKGCONFIG_EXECUTABLE} ARGS ${_package} --cflags 
         OUTPUT_VARIABLE ${_cflags} )
-      string(REGEX REPLACE "[\r\n]" " " ${_cflags} "${${_cflags}}")
+      STRING(REGEX REPLACE "[\r\n]" " " ${_cflags} "${${_cflags}}")
+
+    ELSE( NOT _return_VALUE)
+
+      MESSAGE(STATUS "PKGCONFIG() indicates that ${_package} is not installed (install the package which contains ${_package}.pc if you want to support this feature)")
 
     ENDIF(NOT _return_VALUE)
 

@@ -3,8 +3,8 @@
   Program:   CMake - Cross-Platform Makefile Generator
   Module:    $RCSfile: cmIfCommand.cxx,v $
   Language:  C++
-  Date:      $Date: 2007/02/15 17:45:07 $
-  Version:   $Revision: 1.62.2.5 $
+  Date:      $Date: 2008-09-12 14:56:21 $
+  Version:   $Revision: 1.84.2.3 $
 
   Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
   See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
@@ -15,103 +15,140 @@
 
 =========================================================================*/
 #include "cmIfCommand.h"
+#include "cmStringCommand.h"
+
 #include <stdlib.h> // required for atof
 #include <list>
 #include <cmsys/RegularExpression.hxx>
 
 bool cmIfFunctionBlocker::
-IsFunctionBlocked(const cmListFileFunction& lff, cmMakefile &mf)
+IsFunctionBlocked(const cmListFileFunction& lff, cmMakefile &mf,
+                  cmExecutionStatus &inStatus)
 {
-  // if we are blocking then all we need to do is keep track of 
-  // scope depth of nested if statements
-  if (this->IsBlocking)
+  // Prevent recusion and don't let this blocker block its own
+  // commands.
+  if (this->Executing)
     {
-  if (!cmSystemTools::Strucmp(lff.Name.c_str(),"if"))
-    {
-      this->ScopeDepth++;
-      return true;
-      }
+    return false;
     }
 
-  if (this->IsBlocking && this->ScopeDepth)
+  // we start by recording all the functions
+  if (!cmSystemTools::Strucmp(lff.Name.c_str(),"if"))
     {
-    if (!cmSystemTools::Strucmp(lff.Name.c_str(),"endif"))
-      {
-      this->ScopeDepth--;
-      }
-    return true;
+    this->ScopeDepth++;
     }
-  
-  // watch for our ELSE or ENDIF
-  if (!cmSystemTools::Strucmp(lff.Name.c_str(),"else") || 
-      !cmSystemTools::Strucmp(lff.Name.c_str(),"elseif") ||
-      !cmSystemTools::Strucmp(lff.Name.c_str(),"endif"))
+  if (!cmSystemTools::Strucmp(lff.Name.c_str(),"endif"))
+    {
+    this->ScopeDepth--;
+    // if this is the endif for this if statement, then start executing
+    if (!this->ScopeDepth) 
       {
-      // if it was an else statement then we should change state
-      // and block this Else Command
-    if (!cmSystemTools::Strucmp(lff.Name.c_str(),"else"))
+      // execute the functions for the true parts of the if statement
+      this->Executing = true;
+      cmExecutionStatus status;
+      int scopeDepth = 0;
+      for(unsigned int c = 0; c < this->Functions.size(); ++c)
         {
-      this->IsBlocking = this->HasRun;
-      return true;
-      }
-    // if it was an elseif statement then we should check state
-    // and possibly block this Else Command
-    if (!cmSystemTools::Strucmp(lff.Name.c_str(),"elseif"))
-      {
-      if (!this->HasRun)
-        {
-        char* errorString = 0;
-        
-        std::vector<std::string> expandedArguments;
-        mf.ExpandArguments(lff.Arguments, expandedArguments);
-        bool isTrue = 
-          cmIfCommand::IsTrue(expandedArguments,&errorString,&mf);
-        
-        if (errorString)
+        // keep track of scope depth
+        if (!cmSystemTools::Strucmp(this->Functions[c].Name.c_str(),"if"))
           {
-          std::string err = "had incorrect arguments: ";
-          unsigned int i;
-          for(i =0; i < lff.Arguments.size(); ++i)
-            {
-            err += (lff.Arguments[i].Quoted?"\"":"");
-            err += lff.Arguments[i].Value;
-            err += (lff.Arguments[i].Quoted?"\"":"");
-            err += " ";
-            }
-          err += "(";
-          err += errorString;
-          err += ").";
-          cmSystemTools::Error(err.c_str());
-          delete [] errorString;
-          return false;
+          scopeDepth++;
           }
-        
-        if (isTrue)
+        if (!cmSystemTools::Strucmp(this->Functions[c].Name.c_str(),"endif"))
           {
-          this->IsBlocking = false;
+          scopeDepth--;
+          }
+        // watch for our state change
+        if (scopeDepth == 0 &&
+            !cmSystemTools::Strucmp(this->Functions[c].Name.c_str(),"else"))
+          {
+          this->IsBlocking = this->HasRun;
           this->HasRun = true;
-          return true;
+          }
+        else if (scopeDepth == 0 && !cmSystemTools::Strucmp
+                 (this->Functions[c].Name.c_str(),"elseif"))
+          {
+          if (this->HasRun)
+            {
+            this->IsBlocking = true;
+            }
+          else
+            {
+            char* errorString = 0;
+            
+            std::vector<std::string> expandedArguments;
+            mf.ExpandArguments(this->Functions[c].Arguments, 
+                               expandedArguments);
+            bool isTrue = 
+              cmIfCommand::IsTrue(expandedArguments,&errorString,&mf);
+            
+            if (errorString)
+              {
+              std::string err = "had incorrect arguments: ";
+              unsigned int i;
+              for(i =0; i < this->Functions[c].Arguments.size(); ++i)
+                {
+                err += (this->Functions[c].Arguments[i].Quoted?"\"":"");
+                err += this->Functions[c].Arguments[i].Value;
+                err += (this->Functions[c].Arguments[i].Quoted?"\"":"");
+                err += " ";
+                }
+              err += "(";
+              err += errorString;
+              err += ").";
+              cmSystemTools::Error(err.c_str());
+              delete [] errorString;
+              return false;
+              }
+        
+            if (isTrue)
+              {
+              this->IsBlocking = false;
+              this->HasRun = true;
+              }
+            }
+          }
+            
+        // should we execute?
+        else if (!this->IsBlocking)
+          {
+          status.Clear();
+          mf.ExecuteCommand(this->Functions[c],status);
+          if (status.GetReturnInvoked())
+            {
+            inStatus.SetReturnInvoked(true);
+            mf.RemoveFunctionBlocker(lff);
+            return true;
+            }
+          if (status.GetBreakInvoked())
+            {
+            inStatus.SetBreakInvoked(true);
+            mf.RemoveFunctionBlocker(lff);
+            return true;
+            }
           }
         }
-      this->IsBlocking = true;
-        return true;
-        }
-      // otherwise it must be an ENDIF statement, in that case remove the
-      // function blocker
       mf.RemoveFunctionBlocker(lff);
       return true;
       }
-   
-  return this->IsBlocking;
+    }
+  
+  // record the command
+  this->Functions.push_back(lff);
+  
+  // always return true
+  return true;
 }
 
 bool cmIfFunctionBlocker::ShouldRemove(const cmListFileFunction& lff,
-                                       cmMakefile& mf)
+                                       cmMakefile&)
 {
   if (!cmSystemTools::Strucmp(lff.Name.c_str(),"endif"))
     {
-    if (mf.IsOn("CMAKE_ALLOW_LOOSE_LOOP_CONSTRUCTS") 
-        || lff.Arguments == this->Args)
+    // if the endif has arguments, then make sure
+    // they match the arguments of the matching if
+    if (lff.Arguments.size() == 0 ||
+        lff.Arguments == this->Args)
       {
       return true;
       }
@@ -139,7 +176,8 @@ ScopeEnded(cmMakefile &mf)
 }
 
 bool cmIfCommand
-::InvokeInitialPass(const std::vector<cmListFileArgument>& args)
+::InvokeInitialPass(const std::vector<cmListFileArgument>& args, 
+                    cmExecutionStatus &)
 {
   char* errorString = 0;
   
@@ -169,6 +207,7 @@ bool cmIfCommand
   
   cmIfFunctionBlocker *f = new cmIfFunctionBlocker();
   // if is isn't true block the commands
+  f->ScopeDepth = 1;
   f->IsBlocking = !isTrue;
   if (isTrue)
     {
@@ -196,6 +235,33 @@ namespace
         }
       }
   }
+
+  enum Op { OpLess, OpEqual, OpGreater };
+  bool HandleVersionCompare(Op op, const char* lhs_str, const char* rhs_str)
+  {
+    // Parse out up to 4 components.
+  unsigned int lhs[4] = {0,0,0,0};
+  unsigned int rhs[4] = {0,0,0,0};
+  sscanf(lhs_str, "%u.%u.%u.%u", &lhs[0], &lhs[1], &lhs[2], &lhs[3]);
+  sscanf(rhs_str, "%u.%u.%u.%u", &rhs[0], &rhs[1], &rhs[2], &rhs[3]);
+
+  // Do component-wise comparison.
+  for(unsigned int i=0; i < 4; ++i)
+    {
+    if(lhs[i] < rhs[i])
+      {
+      // lhs < rhs, so true if operation is LESS
+      return op == OpLess;
+      }
+    else if(lhs[i] > rhs[i])
+      {
+      // lhs > rhs, so true if operation is GREATER
+      return op == OpGreater;
+      }
+    }
+  // lhs == rhs, so true if operation is EQUAL
+  return op == OpEqual;
+  }
 }
 
 
@@ -214,7 +280,7 @@ namespace
 
 
 bool cmIfCommand::IsTrue(const std::vector<std::string> &args,
-                         char **errorString, const cmMakefile *makefile)
+                         char **errorString, cmMakefile *makefile)
 {
   // check for the different signatures
   const char *def;
@@ -230,23 +296,6 @@ bool cmIfCommand::IsTrue(const std::vector<std::string> &args,
     *errorString = 0;
     return false;
     }
-
-  // this is a super ugly hack. Basically old versiosn of VTK and ITK have a
-  // bad test to check for more recent versions of CMake in the
-  // CMakeLists.txt file for libtiff. So when we reved CMake up to 2.0 the
-  // test started failing because the minor version went to zero this causes
-  // the test to pass
-  if (args.size() == 3 &&
-    (makefile->GetDefinition("VTKTIFF_SOURCE_DIR") ||
-     makefile->GetDefinition("ITKTIFF_SOURCE_DIR")) &&
-    args[0] == "CMAKE_MINOR_VERSION" &&
-    args[1] == "MATCHES")
-    {
-    delete [] *errorString;
-    *errorString = 0;
-    return true;
-    }
-
 
   // store the reduced args in this vector
   std::list<std::string> newArgs;
@@ -303,6 +352,22 @@ bool cmIfCommand::IsTrue(const std::vector<std::string> &args,
         IncrementArguments(newArgs,argP1,argP2);
         reducible = 1;
         }
+      // is the given path an absolute path ?
+      if (*arg == "IS_ABSOLUTE" && argP1  != newArgs.end())
+        {
+        if(cmSystemTools::FileIsFullPath((argP1)->c_str()))
+          {
+          *arg = "1";
+          }
+        else 
+          {
+          *arg = "0";
+          }
+        newArgs.erase(argP1);
+        argP1 = arg;
+        IncrementArguments(newArgs,argP1,argP2);
+        reducible = 1;
+        } 
       // does a command exist
       if (*arg == "COMMAND" && argP1  != newArgs.end())
         {
@@ -319,21 +384,55 @@ bool cmIfCommand::IsTrue(const std::vector<std::string> &args,
         IncrementArguments(newArgs,argP1,argP2);
         reducible = 1;
         }
+      // does a target exist
+      if (*arg == "TARGET" && argP1  != newArgs.end())
+        {
+        if(makefile->FindTargetToUse((argP1)->c_str()))
+          {
+          *arg = "1";
+          }
+        else 
+          {
+          *arg = "0";
+          }
+        newArgs.erase(argP1);
+        argP1 = arg;
+        IncrementArguments(newArgs,argP1,argP2);
+        reducible = 1;
+        }
+      // does a policy exist
+      if (*arg == "POLICY" && argP1 != newArgs.end())
+        {
+        cmPolicies::PolicyID pid;
+        if(makefile->GetPolicies()->GetPolicyID((argP1)->c_str(), pid))
+          {
+          *arg = "1";
+          }
+        else
+          {
+          *arg = "0";
+          }
+        newArgs.erase(argP1);
+        argP1 = arg;
+        IncrementArguments(newArgs,argP1,argP2);
+        reducible = 1;
+        }
       // is a variable defined
       if (*arg == "DEFINED" && argP1  != newArgs.end())
         {
         size_t argP1len = argP1->size();
+        bool bdef = false;
         if(argP1len > 4 && argP1->substr(0, 4) == "ENV{" &&
            argP1->operator[](argP1len-1) == '}')
           {
           std::string env = argP1->substr(4, argP1len-5);
-          def = cmSystemTools::GetEnv(env.c_str());
+          bdef = cmSystemTools::GetEnv(env.c_str())?true:false;
           }
         else
           {
-          def = makefile->GetDefinition((argP1)->c_str());
+          bdef = makefile->IsDefinitionSet((argP1)->c_str());
           }
-        if(def)
+        if(bdef)
           {
           *arg = "1";
           }
@@ -368,6 +467,7 @@ bool cmIfCommand::IsTrue(const std::vector<std::string> &args,
         {
         def = cmIfCommand::GetVariableOrString(arg->c_str(), makefile);
         const char* rex = (argP2)->c_str();
+        cmStringCommand::ClearMatches(makefile);
         cmsys::RegularExpression regEntry;
         if ( !regEntry.compile(rex) )
           {
@@ -380,6 +480,7 @@ bool cmIfCommand::IsTrue(const std::vector<std::string> &args,
           }
         if (regEntry.find(def))
           {
+          cmStringCommand::StoreMatches(makefile, regEntry);
           *arg = "1";
           }
         else
@@ -476,6 +577,37 @@ bool cmIfCommand::IsTrue(const std::vector<std::string> &args,
           {
           result = (val == 0);
           }
+        if(result)
+          {
+          *arg = "1";
+          }
+        else
+          {
+          *arg = "0";
+          }
+        newArgs.erase(argP2);
+        newArgs.erase(argP1);
+        argP1 = arg;
+        IncrementArguments(newArgs,argP1,argP2);
+        reducible = 1;
+        }
+
+      if (argP1 != newArgs.end() && argP2 != newArgs.end() &&
+        (*(argP1) == "VERSION_LESS" || *(argP1) == "VERSION_GREATER" ||
+         *(argP1) == "VERSION_EQUAL"))
+        {
+        def = cmIfCommand::GetVariableOrString(arg->c_str(), makefile);
+        def2 = cmIfCommand::GetVariableOrString((argP2)->c_str(), makefile);
+        Op op = OpEqual;
+        if(*argP1 == "VERSION_LESS")
+          {
+          op = OpLess;
+          }
+        else if(*argP1 == "VERSION_GREATER")
+          {
+          op = OpGreater;
+          }
+        bool result = HandleVersionCompare(op, def, def2);
         if(result)
           {
           *arg = "1";

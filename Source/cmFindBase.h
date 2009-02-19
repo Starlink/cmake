@@ -3,8 +3,8 @@
   Program:   CMake - Cross-Platform Makefile Generator
   Module:    $RCSfile: cmFindBase.h,v $
   Language:  C++
-  Date:      $Date: 2007/01/03 21:09:14 $
-  Version:   $Revision: 1.7.2.2 $
+  Date:      $Date: 2008-06-13 12:55:17 $
+  Version:   $Revision: 1.13.2.1 $
 
   Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
   See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
@@ -17,15 +17,15 @@
 #ifndef cmFindBase_h
 #define cmFindBase_h
 
-#include "cmCommand.h"
+#include "cmFindCommon.h"
 
 /** \class cmFindBase
- * \brief Define a command to search for an executable program.
+ * \brief Base class for most FIND_XXX commands.
  *
  * cmFindBase is a parent class for cmFindProgramCommand, cmFindPathCommand,
- * and cmFindLibraryCommand, cmFindFile
+ * and cmFindLibraryCommand, cmFindFileCommand
  */
-class cmFindBase : public cmCommand
+class cmFindBase : public cmFindCommon
 {
 public:
   cmFindBase();
@@ -34,23 +34,16 @@ public:
    * the CMakeLists.txt file.
    */
   virtual bool ParseArguments(std::vector<std::string> const& args);
-  cmTypeMacro(cmFindBase, cmCommand);
+  cmTypeMacro(cmFindBase, cmFindCommon);
   
   virtual const char* GetFullDocumentation()
     {return this->GenericDocumentation.c_str();}
 
 protected:
   void PrintFindStuff();
-  void ExpandPaths(std::vector<std::string> userPaths);
-  // add to the SearchPaths
-  void AddPaths(std::vector<std::string>& paths);
-  void AddFrameWorkPaths();
-  void AddAppBundlePaths();
-  void AddEnvironmentVairables();
-  void AddCMakeVairables();
-  void AddSystemEnvironmentVairables();
-  void AddCMakeSystemVariables();
-  void ExpandRegistryAndCleanPath(std::vector<std::string>& paths);
+  void ExpandPaths();
+  void AddPathSuffixes();
+
   // see if the VariableName is already set in the cache,
   // also copy the documentation from the cache to VariableDocumentation
   // if it has documentation in the cache
@@ -61,29 +54,26 @@ protected:
   cmStdString VariableDocumentation;
   cmStdString VariableName;
   std::vector<std::string> Names;
-  std::vector<std::string> SearchPaths;
-  std::vector<std::string> SearchPathSuffixes;
 
   // CMAKE_*_PATH CMAKE_SYSTEM_*_PATH FRAMEWORK|LIBRARY|INCLUDE|PROGRAM
-  cmStdString CMakePathName; 
   cmStdString EnvironmentPath; // LIB,INCLUDE
 
   bool AlreadyInCache;
   bool AlreadyInCacheWithoutMetaInfo;
-  bool NoDefaultPath;
-  bool NoCMakePath;
-  bool NoCMakeEnvironmentPath;
-  bool NoSystemEnvironmentPath;
-  bool NoCMakeSystemPath;
-  
-  bool SearchFrameworkFirst;
-  bool SearchFrameworkOnly;
-  bool SearchFrameworkLast;
-  
-  bool SearchAppBundleFirst;
-  bool SearchAppBundleOnly;
-  bool SearchAppBundleLast;
-  
+private:
+  // Add pieces of the search.
+  void AddCMakeEnvironmentPath();
+  void AddCMakeVariablePath();
+  void AddSystemEnvironmentPath();
+  void AddCMakeSystemVariablePath();
+  void AddUserHintsPath();
+  void AddUserGuessPath();
+
+  // Helpers.
+  void AddCMakePrefixPath(const char* variable);
+  void AddEnvPrefixPath(const char* variable);
+  void AddPrefixPaths(std::vector<std::string> const& in_paths,
+                      PathType pathType);
 };
 
 

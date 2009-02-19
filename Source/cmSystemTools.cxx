@@ -3,8 +3,8 @@
   Program:   CMake - Cross-Platform Makefile Generator
   Module:    $RCSfile: cmSystemTools.cxx,v $
   Language:  C++
-  Date:      $Date: 2007/02/05 18:21:32 $
-  Version:   $Revision: 1.327.2.4 $
+  Date:      $Date: 2008-09-03 13:43:18 $
+  Version:   $Revision: 1.368.2.6 $
 
   Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
   See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
@@ -18,39 +18,56 @@
 #include <ctype.h>
 #include <errno.h>
 #include <time.h>
+#include <string.h>
 
 #include <cmsys/RegularExpression.hxx>
 #include <cmsys/Directory.hxx>
 #include <cmsys/System.h>
-
-// support for realpath call
-#ifndef _WIN32
-#include <limits.h>
-#include <stdlib.h>
-#include <sys/param.h>
-#include <sys/wait.h>
+#if defined(CMAKE_BUILD_WITH_CMAKE)
+# include <cmsys/Terminal.h>
 #endif
+#include <cmsys/stl/algorithm>
 
-#if defined(_WIN32) && (defined(_MSC_VER) || defined(__BORLANDC__))
-#include <string.h>
-#include <windows.h>
-#include <direct.h>
-#include <io.h>
-#define _unlink unlink
+#if defined(_WIN32)
+# include <windows.h>
 #else
-#include <sys/types.h>
-#include <fcntl.h>
-#include <unistd.h>
+# include <sys/types.h>
+# include <unistd.h>
+# include <utime.h>
+# include <sys/wait.h>
 #endif
 
 #include <sys/stat.h>
+
+#if defined(_WIN32) && \
+   (defined(_MSC_VER) || defined(__WATCOMC__) || \
+    defined(__BORLANDC__) || defined(__MINGW32__))
+# include <io.h>
+#endif
 
 #if defined(CMAKE_BUILD_WITH_CMAKE)
 #  include <libtar/libtar.h>
 #  include <memory> // auto_ptr
 #  include <fcntl.h>
 #  include <cm_zlib.h>
+#  include <cmsys/MD5.h>
 #endif
+
+#if defined(CMAKE_USE_ELF_PARSER)
+# include "cmELF.h"
+#endif
+
+class cmSystemToolsFileTime
+{
+public:
+#if defined(_WIN32) && !defined(__CYGWIN__)
+  FILETIME timeCreation;
+  FILETIME timeLastAccess;
+  FILETIME timeLastWrite;
+#else
+  struct utimbuf timeBuf;
+#endif
+};
 
 #if defined(__sgi) && !defined(__GNUC__)
 # pragma set woff 1375 /* base class destructor not virtual */
@@ -63,6 +80,26 @@ extern __declspec( dllimport ) char** environ;
 # else
 extern char** environ;
 # endif
+#endif
+
+#ifdef _WIN32
+class cmSystemToolsWindowsHandle
+{
+public:
+  cmSystemToolsWindowsHandle(HANDLE h): handle_(h) {}
+  ~cmSystemToolsWindowsHandle()
+    {
+    if(this->handle_ != INVALID_HANDLE_VALUE)
+      {
+      CloseHandle(this->handle_);
+      }
+    }
+  operator bool() const { return this->handle_ != INVALID_HANDLE_VALUE; }
+  bool operator !() const { return this->handle_ == INVALID_HANDLE_VALUE; }
+  operator HANDLE() const { return this->handle_; }
+private:
+  HANDLE handle_;
+};
 #endif
 
 bool cmSystemTools::s_RunCommandHideConsole = false;
@@ -94,7 +131,7 @@ void* cmSystemTools::s_StdoutCallbackClientData = 0;
 // replace replace with with as many times as it shows up in source.
 // write the result into source.
 #if defined(_WIN32) && !defined(__CYGWIN__)
-void cmSystemTools::ExpandRegistryValues(std::string& source)
+void cmSystemTools::ExpandRegistryValues(std::string& source, KeyWOW64 view)
 {
   // Regular expression to match anything inside [...] that begins in HKEY.
   // Note that there is a special rule for regular expressions to match a
@@ -110,7 +147,7 @@ void cmSystemTools::ExpandRegistryValues(std::string& source)
     // the arguments are the second match
     std::string key = regEntry.match(1);
     std::string val;
-    if (ReadRegistryValue(key.c_str(), val))
+    if (ReadRegistryValue(key.c_str(), val, view))
       {
       std::string reg = "[";
       reg += key + "]";
@@ -125,8 +162,19 @@ void cmSystemTools::ExpandRegistryValues(std::string& source)
     }
 }
 #else
-void cmSystemTools::ExpandRegistryValues(std::string&)
+void cmSystemTools::ExpandRegistryValues(std::string& source, KeyWOW64)
 {
+  cmsys::RegularExpression regEntry("\\[(HKEY[^]]*)\\]");
+  while (regEntry.find(source))
+    {
+    // the arguments are the second match
+    std::string key = regEntry.match(1);
+    std::string val;
+    std::string reg = "[";
+    reg += key + "]";
+    cmSystemTools::ReplaceString(source, reg.c_str(), "/registry");
+    }
+
 }
 #endif
 
@@ -270,7 +318,8 @@ void cmSystemTools::Stdout(const char* s)
 {
   if(s_StdoutCallback)
     {
-    (*s_StdoutCallback)(s, strlen(s), s_StdoutCallbackClientData);
+    (*s_StdoutCallback)(s, static_cast<int>(strlen(s)), 
+                        s_StdoutCallbackClientData);
     }
   else
     {
@@ -339,9 +388,9 @@ bool cmSystemTools::IsOn(const char* val)
 
 bool cmSystemTools::IsNOTFOUND(const char* val)
 {
-  int len = strlen(val);
+  size_t len = strlen(val);
   const char* notfound = "-NOTFOUND";
-  const int lenNotFound = 9;
+  const size_t lenNotFound = 9;
   if(len < lenNotFound-1)
     {
     return false;
@@ -542,29 +591,16 @@ std::vector<cmStdString> cmSystemTools::ParseArguments(const char* command)
   return args;
 }
 
-bool cmSystemTools::RunSingleCommand(
-  const char* command, 
-  std::string* output,
-  int *retVal, 
-  const char* dir,
-  bool verbose,
-  double timeout)
+
+bool cmSystemTools::RunSingleCommand(std::vector<cmStdString>const& command,
+                                     std::string* output ,
+                                     int* retVal , const char* dir , 
+                                     bool verbose ,
+                                     double timeout )
 {
-  if(s_DisableRunCommandOutput)
-    {
-    verbose = false;
-    }
-
-  std::vector<cmStdString> args = cmSystemTools::ParseArguments(command);
-
-  if(args.size() < 1)
-    {
-    return false;
-    }
-  
   std::vector<const char*> argv;
-  for(std::vector<cmStdString>::const_iterator a = args.begin();
-      a != args.end(); ++a)
+  for(std::vector<cmStdString>::const_iterator a = command.begin();
+      a != command.end(); ++a)
     {
     argv.push_back(a->c_str());
     }
@@ -678,6 +714,29 @@ bool cmSystemTools::RunSingleCommand(
   
   cmsysProcess_Delete(cp);
   return result;
+}
+
+bool cmSystemTools::RunSingleCommand(
+  const char* command, 
+  std::string* output,
+  int *retVal, 
+  const char* dir,
+  bool verbose,
+  double timeout)
+{
+  if(s_DisableRunCommandOutput)
+    {
+    verbose = false;
+    }
+
+  std::vector<cmStdString> args = cmSystemTools::ParseArguments(command);
+
+  if(args.size() < 1)
+    {
+    return false;
+    }
+  return cmSystemTools::RunSingleCommand(args, output,retVal, 
+                                         dir, verbose, timeout);
 }
 bool cmSystemTools::RunCommand(const char* command, 
                                std::string& output,
@@ -803,6 +862,22 @@ bool RunCommandViaSystem(const char* command,
 
 #else // We have popen
 
+// BeOS seems to return from a successful pclose() before the process has
+//  legitimately exited, or at least before SIGCHLD is thrown...the signal may
+//  come quite some time after pclose returns! This causes havoc with later
+//  parts of CMake that expect to catch the signal from other child processes,
+//  so we explicitly wait to catch it here. This should be safe to do with
+//  popen() so long as we don't actually collect the zombie process ourselves.
+#ifdef __BEOS__
+#include <signal.h>
+#undef SIGBUS  // this is the same as SIGSEGV on BeOS and causes issues below.
+static volatile bool beos_seen_signal = false;
+static void beos_popen_workaround(int sig)
+{
+  beos_seen_signal = true;
+}
+#endif
+
 bool RunCommandViaPopen(const char* command,
                         const char* dir,
                         std::string& output,
@@ -835,9 +910,18 @@ bool RunCommandViaPopen(const char* command,
     }
   fflush(stdout);
   fflush(stderr);
+
+#ifdef __BEOS__
+  beos_seen_signal = false;
+  signal(SIGCHLD, beos_popen_workaround);
+#endif
+
   FILE* cpipe = popen(command, "r");
   if(!cpipe)
     {
+#ifdef __BEOS__
+    signal(SIGCHLD, SIG_DFL);
+#endif
     return false;
     }
   fgets(buffer, BUFFER_SIZE, cpipe);
@@ -852,6 +936,19 @@ bool RunCommandViaPopen(const char* command,
     }
 
   retVal = pclose(cpipe);
+
+#ifdef __BEOS__
+  for (int i = 0; (!beos_seen_signal) && (i < 3); i++)
+    {
+    ::sleep(1);   // signals should interrupt this...
+    }
+
+  if (!beos_seen_signal)
+    {
+    signal(SIGCHLD, SIG_DFL);  // oh well, didn't happen. Go on anyhow.
+    }
+#endif
+
   if (WIFEXITED(retVal))
     {
     retVal = WEXITSTATUS(retVal);
@@ -1008,6 +1105,75 @@ bool cmSystemTools::CopyFileIfDifferent(const char* source,
   return Superclass::CopyFileIfDifferent(source, destination);
 }
 
+bool cmSystemTools::ComputeFileMD5(const char* source, char* md5out)
+{
+#if defined(CMAKE_BUILD_WITH_CMAKE)
+  if(!cmSystemTools::FileExists(source))
+    {
+    return false;
+    }
+
+  // Open files
+#if defined(_WIN32) || defined(__CYGWIN__)
+  cmsys_ios::ifstream fin(source, cmsys_ios::ios::binary | cmsys_ios::ios::in);
+#else
+  cmsys_ios::ifstream fin(source);
+#endif
+  if(!fin)
+    {
+    return false;
+    }
+
+  cmsysMD5* md5 = cmsysMD5_New();
+  cmsysMD5_Initialize(md5);
+
+  // Should be efficient enough on most system:
+  const int bufferSize = 4096;
+  char buffer[bufferSize];
+  // This copy loop is very sensitive on certain platforms with
+  // slightly broken stream libraries (like HPUX).  Normally, it is
+  // incorrect to not check the error condition on the fin.read()
+  // before using the data, but the fin.gcount() will be zero if an
+  // error occurred.  Therefore, the loop should be safe everywhere.
+  while(fin)
+    {
+    fin.read(buffer, bufferSize);
+    if(fin.gcount())
+      {
+      cmsysMD5_Append(md5, reinterpret_cast<unsigned char const*>(buffer), 
+                      fin.gcount());
+      }
+    }
+  cmsysMD5_FinalizeHex(md5, md5out);
+  cmsysMD5_Delete(md5);
+
+  fin.close();
+  return true;
+#else
+  (void)source;
+  (void)md5out;
+  cmSystemTools::Message("md5sum not supported in bootstrapping mode","Error");
+  return false;
+#endif
+}
+
+std::string cmSystemTools::ComputeStringMD5(const char* input)
+{
+#if defined(CMAKE_BUILD_WITH_CMAKE)
+  char md5out[32];
+  cmsysMD5* md5 = cmsysMD5_New();
+  cmsysMD5_Initialize(md5);
+  cmsysMD5_Append(md5, reinterpret_cast<unsigned char const*>(input), -1);
+  cmsysMD5_FinalizeHex(md5, md5out);
+  cmsysMD5_Delete(md5);
+  return std::string(md5out, 32);
+#else
+  (void)input;
+  cmSystemTools::Message("md5sum not supported in bootstrapping mode","Error");
+  return "";
+#endif
+}
+
 void cmSystemTools::Glob(const char *directory, const char *regexp,
                          std::vector<std::string>& files)
 {
@@ -1113,6 +1279,11 @@ void cmSystemTools::ExpandListArgument(const std::string& arg,
           if(*c)
             {
             newArgVec.push_back(*c);
+            }
+          else
+            {
+            // Terminate the loop properly.
+            --c;
             }
           }
         } break;
@@ -1222,7 +1393,9 @@ cmSystemTools::FileFormat cmSystemTools::GetFileFormat(const char* cext)
     }
   //std::string ext = cmSystemTools::LowerCase(cext);
   std::string ext = cext;
-  if ( ext == "c" || ext == ".c" ) { return cmSystemTools::C_FILE_FORMAT; }
+  if ( ext == "c" || ext == ".c" || 
+       ext == "m" || ext == ".m" 
+    ) { return cmSystemTools::C_FILE_FORMAT; }
   if ( 
     ext == "C" || ext == ".C" ||
     ext == "M" || ext == ".M" ||
@@ -1230,7 +1403,6 @@ cmSystemTools::FileFormat cmSystemTools::GetFileFormat(const char* cext)
     ext == "cc" || ext == ".cc" ||
     ext == "cpp" || ext == ".cpp" ||
     ext == "cxx" || ext == ".cxx" ||
-    ext == "m" || ext == ".m" ||
     ext == "mm" || ext == ".mm"
     ) { return cmSystemTools::CXX_FILE_FORMAT; }
   if ( 
@@ -1303,6 +1475,23 @@ std::string cmSystemTools::ConvertToOutputPath(const char* path)
 #endif
 }
 
+void cmSystemTools::ConvertToOutputSlashes(std::string& path)
+{
+#if defined(_WIN32) && !defined(__CYGWIN__)
+  if(!s_ForceUnixPaths)
+    {
+    // Convert to windows slashes.
+    std::string::size_type pos = 0;
+    while((pos = path.find('/', pos)) != std::string::npos)
+      {
+      path[pos++] = '\\';
+      }
+    }
+#else
+  static_cast<void>(path);
+#endif
+}
+
 std::string cmSystemTools::ConvertToRunCommandPath(const char* path)
 {
 #if defined(_WIN32) && !defined(__CYGWIN__)
@@ -1320,20 +1509,6 @@ bool cmSystemTools::StringEndsWith(const char* str1, const char* str2)
     }
   return !strncmp(str1 + (strlen(str1)-strlen(str2)), str2, strlen(str2));
 }
-
-#if defined(_WIN32) && !defined(__CYGWIN__)
-bool cmSystemTools::CreateSymlink(const char*, const char*)
-{
-  // Should we create a copy here?
-  return false;
-}
-#else
-bool cmSystemTools::CreateSymlink(const char* origName, const char* newName)
-{
-  return (symlink(origName, newName) >= 0);
-}
-#endif
-
 
 // compute the relative path from here to there
 std::string cmSystemTools::RelativePath(const char* local, const char* remote)
@@ -1522,7 +1697,13 @@ int cmSystemToolsGZStructOpen(void* call_data, const char *pathname,
     return -1;
     }
 
-#if !defined(_WIN32) || defined(__CYGWIN__)
+// no fchmod on BeOS 5...do pathname instead.
+#if defined(__BEOS__) && !defined(__ZETA__) 
+  if ((oflags & O_CREAT) && chmod(pathname, mode))
+    {
+    return -1;
+    }
+#elif !defined(_WIN32) || defined(__CYGWIN__)
   if ((oflags & O_CREAT) && fchmod(fd, mode))
     {
     return -1;
@@ -1548,14 +1729,14 @@ int cmSystemToolsGZStructClose(void* call_data)
 ssize_t cmSystemToolsGZStructRead(void* call_data, void* buf, size_t count)
 {
   cmSystemToolsGZStruct* gzf = static_cast<cmSystemToolsGZStruct*>(call_data);
-  return gzread(gzf->GZFile, buf, count);
+  return gzread(gzf->GZFile, buf, static_cast<int>(count));
 }
 
 ssize_t cmSystemToolsGZStructWrite(void* call_data, const void* buf,
                                    size_t count)
 {
   cmSystemToolsGZStruct* gzf = static_cast<cmSystemToolsGZStruct*>(call_data);
-  return gzwrite(gzf->GZFile, (void*)buf, count);
+  return gzwrite(gzf->GZFile, (void*)buf, static_cast<int>(count));
 }
 
 #endif
@@ -1582,11 +1763,18 @@ bool cmSystemTools::CreateTar(const char* outFileName,
   char* realName = new char[ strlen(outFileName) + 1 ];
   std::auto_ptr<char> realNamePtr(realName);
   strcpy(realName, outFileName);
+  int options = 0;
+  if(verbose)
+    {
+    options |= TAR_VERBOSE;
+    }
+#ifdef __CYGWIN__
+  options |= TAR_GNU;
+#endif 
   if (tar_open(&t, realName,
       (gzip? &gztype : NULL),
       O_WRONLY | O_CREAT, 0644,
-      (verbose?TAR_VERBOSE:0)
-      | 0) == -1)
+      options) == -1)
     {
     cmSystemTools::Error("Problem with tar_open(): ", strerror(errno));
     return false;
@@ -1864,3 +2052,686 @@ int cmSystemTools::WaitForLine(cmsysProcess* process, std::string& line,
     }
 }
 
+void cmSystemTools::DoNotInheritStdPipes()
+{   
+#ifdef _WIN32  
+  // Check to see if we are attached to a console
+  // if so, then do not stop the inherited pipes
+  // or stdout and stderr will not show up in dos
+  // shell windows
+  CONSOLE_SCREEN_BUFFER_INFO hOutInfo;
+  HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+  if(GetConsoleScreenBufferInfo(hOut, &hOutInfo))
+    {
+    return;
+    }
+  {
+  HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
+  DuplicateHandle(GetCurrentProcess(), out,
+                  GetCurrentProcess(), &out, 0, FALSE,
+                  DUPLICATE_SAME_ACCESS | DUPLICATE_CLOSE_SOURCE);
+  SetStdHandle(STD_OUTPUT_HANDLE, out);
+  }
+  {
+  HANDLE out = GetStdHandle(STD_ERROR_HANDLE);
+  DuplicateHandle(GetCurrentProcess(), out,
+                  GetCurrentProcess(), &out, 0, FALSE,
+                  DUPLICATE_SAME_ACCESS | DUPLICATE_CLOSE_SOURCE);
+  SetStdHandle(STD_ERROR_HANDLE, out);
+  }
+#endif
+}
+
+//----------------------------------------------------------------------------
+bool cmSystemTools::CopyFileTime(const char* fromFile, const char* toFile)
+{
+#if defined(_WIN32) && !defined(__CYGWIN__)
+  cmSystemToolsWindowsHandle hFrom =
+    CreateFile(fromFile, GENERIC_READ, FILE_SHARE_READ, 0,
+               OPEN_EXISTING, 0, 0);
+  cmSystemToolsWindowsHandle hTo =
+    CreateFile(toFile, GENERIC_WRITE, 0, 0, OPEN_EXISTING, 0, 0);
+  if(!hFrom || !hTo)
+    {
+    return false;
+    }
+  FILETIME timeCreation;
+  FILETIME timeLastAccess;
+  FILETIME timeLastWrite;
+  if(!GetFileTime(hFrom, &timeCreation, &timeLastAccess, &timeLastWrite))
+    {
+    return false;
+    }
+  if(!SetFileTime(hTo, &timeCreation, &timeLastAccess, &timeLastWrite))
+    {
+    return false;
+    }
+#else
+  struct stat fromStat;
+  if(stat(fromFile, &fromStat) < 0)
+    {
+    return false;
+    }
+
+  struct utimbuf buf;
+  buf.actime = fromStat.st_atime;
+  buf.modtime = fromStat.st_mtime;
+  if(utime(toFile, &buf) < 0)
+    {
+    return false;
+    }
+#endif
+  return true;
+}
+
+//----------------------------------------------------------------------------
+cmSystemToolsFileTime* cmSystemTools::FileTimeNew()
+{
+  return new cmSystemToolsFileTime;
+}
+
+//----------------------------------------------------------------------------
+void cmSystemTools::FileTimeDelete(cmSystemToolsFileTime* t)
+{
+  delete t;
+}
+
+//----------------------------------------------------------------------------
+bool cmSystemTools::FileTimeGet(const char* fname, cmSystemToolsFileTime* t)
+{
+#if defined(_WIN32) && !defined(__CYGWIN__)
+  cmSystemToolsWindowsHandle h =
+    CreateFile(fname, GENERIC_READ, FILE_SHARE_READ, 0, OPEN_EXISTING, 0, 0);
+  if(!h)
+    {
+    return false;
+    }
+  if(!GetFileTime(h, &t->timeCreation, &t->timeLastAccess, &t->timeLastWrite))
+    {
+    return false;
+    }
+#else
+  struct stat st;
+  if(stat(fname, &st) < 0)
+    {
+    return false;
+    }
+  t->timeBuf.actime = st.st_atime;
+  t->timeBuf.modtime = st.st_mtime;
+#endif
+  return true;
+}
+
+//----------------------------------------------------------------------------
+bool cmSystemTools::FileTimeSet(const char* fname, cmSystemToolsFileTime* t)
+{
+#if defined(_WIN32) && !defined(__CYGWIN__)
+  cmSystemToolsWindowsHandle h =
+    CreateFile(fname, GENERIC_WRITE, 0, 0, OPEN_EXISTING, 0, 0);
+  if(!h)
+    {
+    return false;
+    }
+  if(!SetFileTime(h, &t->timeCreation, &t->timeLastAccess, &t->timeLastWrite))
+    {
+    return false;
+    }
+#else
+  if(utime(fname, &t->timeBuf) < 0)
+    {
+    return false;
+    }
+#endif
+  return true;
+}
+
+//----------------------------------------------------------------------------
+static std::string cmSystemToolsExecutableDirectory;
+void cmSystemTools::FindExecutableDirectory(const char* argv0)
+{
+  std::string errorMsg;
+  std::string exe;
+  if(cmSystemTools::FindProgramPath(argv0, exe, errorMsg))
+    {
+    // remove symlinks
+    exe = cmSystemTools::GetRealPath(exe.c_str());
+    cmSystemToolsExecutableDirectory =
+      cmSystemTools::GetFilenamePath(exe.c_str());
+    }
+  else
+    {
+    // ???
+    }
+}
+
+//----------------------------------------------------------------------------
+const char* cmSystemTools::GetExecutableDirectory()
+{
+  return cmSystemToolsExecutableDirectory.c_str();
+}
+
+//----------------------------------------------------------------------------
+#if defined(CMAKE_BUILD_WITH_CMAKE)
+void cmSystemTools::MakefileColorEcho(int color, const char* message,
+                                      bool newline, bool enabled)
+{
+  // On some platforms (an MSYS prompt) cmsysTerminal may not be able
+  // to determine whether the stream is displayed on a tty.  In this
+  // case it assumes no unless we tell it otherwise.  Since we want
+  // color messages to be displayed for users we will assume yes.
+  // However, we can test for some situations when the answer is most
+  // likely no.
+  int assumeTTY = cmsysTerminal_Color_AssumeTTY;
+  if(cmSystemTools::GetEnv("DART_TEST_FROM_DART") ||
+     cmSystemTools::GetEnv("DASHBOARD_TEST_FROM_CTEST") ||
+     cmSystemTools::GetEnv("CTEST_INTERACTIVE_DEBUG_MODE"))
+    {
+    // Avoid printing color escapes during dashboard builds.
+    assumeTTY = 0;
+    }
+
+  if(enabled)
+    {
+    cmsysTerminal_cfprintf(color | assumeTTY, stdout, "%s%s",
+                           message, newline? "\n" : "");
+    }
+  else
+    {
+    // Color is disabled.  Print without color.
+    fprintf(stdout, "%s%s", message, newline? "\n" : "");
+    }
+}
+#endif
+
+//----------------------------------------------------------------------------
+bool cmSystemTools::GuessLibrarySOName(std::string const& fullPath,
+                                       std::string& soname)
+{
+  // For ELF shared libraries use a real parser to get the correct
+  // soname.
+#if defined(CMAKE_USE_ELF_PARSER)
+  cmELF elf(fullPath.c_str());
+  if(elf)
+    {
+    return elf.GetSOName(soname);
+    }
+#endif
+
+  // If the file is not a symlink we have no guess for its soname.
+  if(!cmSystemTools::FileIsSymlink(fullPath.c_str()))
+    {
+    return false;
+    }
+  if(!cmSystemTools::ReadSymlink(fullPath.c_str(), soname))
+    {
+    return false;
+    }
+
+  // If the symlink has a path component we have no guess for the soname.
+  if(!cmSystemTools::GetFilenamePath(soname).empty())
+    {
+    return false;
+    }
+
+  // If the symlink points at an extended version of the same name
+  // assume it is the soname.
+  std::string name = cmSystemTools::GetFilenameName(fullPath);
+  if(soname.length() > name.length() &&
+     soname.substr(0, name.length()) == name)
+    {
+    return true;
+    }
+  return false;
+}
+
+//----------------------------------------------------------------------------
+#if defined(CMAKE_USE_ELF_PARSER)
+std::string::size_type cmSystemToolsFindRPath(std::string const& have,
+                                              std::string const& want)
+{
+  // Search for the desired rpath.
+  std::string::size_type pos = have.find(want);
+
+  // If the path is not present we are done.
+  if(pos == std::string::npos)
+    {
+    return pos;
+    }
+
+  // Build a regex to match a properly separated path instance.
+  std::string regex_str = "(^|:)(";
+  for(std::string::const_iterator i = want.begin(); i != want.end(); ++i)
+    {
+    int ch = *i;
+    if(!(('a' <= ch && ch <= 'z') ||
+         ('A' <= ch && ch <= 'Z') ||
+         ('0' <= ch && ch <= '9')))
+      {
+      // Escape the non-alphanumeric character.
+      regex_str += "\\";
+      }
+    // Store the character.
+    regex_str.append(1, static_cast<char>(ch));
+    }
+  regex_str += ")(:|$)";
+
+  // Look for the separated path.
+  cmsys::RegularExpression regex(regex_str.c_str());
+  if(regex.find(have))
+    {
+    // Return the position of the path portion.
+    return regex.start(2);
+    }
+  else
+    {
+    // The desired rpath was not found.
+    return std::string::npos;
+    }
+}
+#endif
+
+#if defined(CMAKE_USE_ELF_PARSER)
+struct cmSystemToolsRPathInfo
+{
+  unsigned long Position;
+  unsigned long Size;
+  std::string Name;
+  std::string Value;
+};
+#endif
+
+//----------------------------------------------------------------------------
+bool cmSystemTools::ChangeRPath(std::string const& file,
+                                std::string const& oldRPath,
+                                std::string const& newRPath,
+                                std::string* emsg,
+                                bool* changed)
+{
+#if defined(CMAKE_USE_ELF_PARSER)
+  if(changed)
+    {
+    *changed = false;
+    }
+  int rp_count = 0;
+  cmSystemToolsRPathInfo rp[2];
+  {
+  // Parse the ELF binary.
+  cmELF elf(file.c_str());
+
+  // Get the RPATH and RUNPATH entries from it.
+  int se_count = 0;
+  cmELF::StringEntry const* se[2] = {0, 0};
+  const char* se_name[2] = {0, 0};
+  if(cmELF::StringEntry const* se_rpath = elf.GetRPath())
+    {
+    se[se_count] = se_rpath;
+    se_name[se_count] = "RPATH";
+    ++se_count;
+    }
+  if(cmELF::StringEntry const* se_runpath = elf.GetRunPath())
+    {
+    se[se_count] = se_runpath;
+    se_name[se_count] = "RUNPATH";
+    ++se_count;
+    }
+  if(se_count == 0)
+    {
+    if(newRPath.empty())
+      {
+      // The new rpath is empty and there is no rpath anyway so it is
+      // okay.
+      return true;
+      }
+    else
+      {
+      if(emsg)
+        {
+        *emsg = "No valid ELF RPATH or RUNPATH entry exists in the file; ";
+        *emsg += elf.GetErrorMessage();
+        }
+      return false;
+      }
+    }
+
+  for(int i=0; i < se_count; ++i)
+    {
+    // If both RPATH and RUNPATH refer to the same string literal it
+    // needs to be changed only once.
+    if(rp_count && rp[0].Position == se[i]->Position)
+      {
+      continue;
+      }
+
+    // Make sure the current rpath contains the old rpath.
+    std::string::size_type pos =
+      cmSystemToolsFindRPath(se[i]->Value, oldRPath);
+    if(pos == std::string::npos)
+      {
+      // If it contains the new rpath instead then it is okay.
+      if(cmSystemToolsFindRPath(se[i]->Value, newRPath) != std::string::npos)
+        {
+        continue;
+        }
+      if(emsg)
+        {
+        cmOStringStream e;
+        e << "The current " << se_name[i] << " is:\n"
+          << "  " << se[i]->Value << "\n"
+          << "which does not contain:\n"
+          << "  " << oldRPath << "\n"
+          << "as was expected.";
+        *emsg = e.str();
+        }
+      return false;
+      }
+
+    // Store information about the entry in the file.
+    rp[rp_count].Position = se[i]->Position;
+    rp[rp_count].Size = se[i]->Size;
+    rp[rp_count].Name = se_name[i];
+
+    // Construct the new value which preserves the part of the path
+    // not being changed.
+    rp[rp_count].Value = se[i]->Value.substr(0, pos);
+    rp[rp_count].Value += newRPath;
+    rp[rp_count].Value += se[i]->Value.substr(pos+oldRPath.length(),
+                                              oldRPath.npos);
+
+    // Make sure there is enough room to store the new rpath and at
+    // least one null terminator.
+    if(rp[rp_count].Size < rp[rp_count].Value.length()+1)
+      {
+      if(emsg)
+        {
+        *emsg = "The replacement path is too long for the ";
+        *emsg += se_name[i];
+        *emsg += " entry.";
+        }
+      return false;
+      }
+
+    // This entry is ready for update.
+    ++rp_count;
+    }
+  }
+
+  // If no runtime path needs to be changed, we are done.
+  if(rp_count == 0)
+    {
+    return true;
+    }
+
+  {
+  // Open the file for update.
+  std::ofstream f(file.c_str(),
+                  std::ios::in | std::ios::out | std::ios::binary);
+  if(!f)
+    {
+    if(emsg)
+      {
+      *emsg = "Error opening file for update.";
+      }
+    return false;
+    }
+
+  // Store the new RPATH and RUNPATH strings.
+  for(int i=0; i < rp_count; ++i)
+    {
+    // Seek to the RPATH position.
+    if(!f.seekp(rp[i].Position))
+      {
+      if(emsg)
+        {
+        *emsg = "Error seeking to ";
+        *emsg += rp[i].Name;
+        *emsg += " position.";
+        }
+      return false;
+      }
+
+    // Write the new rpath.  Follow it with enough null terminators to
+    // fill the string table entry.
+    f << rp[i].Value;
+    for(unsigned long j=rp[i].Value.length(); j < rp[i].Size; ++j)
+      {
+      f << '\0';
+      }
+
+    // Make sure it wrote correctly.
+    if(!f)
+      {
+      if(emsg)
+        {
+        *emsg = "Error writing the new ";
+        *emsg += rp[i].Name;
+        *emsg += " string to the file.";
+        }
+      return false;
+      }
+    }
+  }
+
+  // Everything was updated successfully.
+  if(changed)
+    {
+    *changed = true;
+    }
+  return true;
+#else
+  (void)file;
+  (void)oldRPath;
+  (void)newRPath;
+  (void)emsg;
+  (void)changed;
+  return false;
+#endif
+}
+
+//----------------------------------------------------------------------------
+bool cmSystemTools::RemoveRPath(std::string const& file, std::string* emsg,
+                                bool* removed)
+{
+#if defined(CMAKE_USE_ELF_PARSER)
+  if(removed)
+    {
+    *removed = false;
+    }
+  int zeroCount = 0;
+  unsigned long zeroPosition[2] = {0,0};
+  unsigned long zeroSize[2] = {0,0};
+  unsigned long bytesBegin = 0;
+  std::vector<char> bytes;
+  {
+  // Parse the ELF binary.
+  cmELF elf(file.c_str());
+
+  // Get the RPATH and RUNPATH entries from it and sort them by index
+  // in the dynamic section header.
+  int se_count = 0;
+  cmELF::StringEntry const* se[2] = {0, 0};
+  if(cmELF::StringEntry const* se_rpath = elf.GetRPath())
+    {
+    se[se_count++] = se_rpath;
+    }
+  if(cmELF::StringEntry const* se_runpath = elf.GetRunPath())
+    {
+    se[se_count++] = se_runpath;
+    }
+  if(se_count == 0)
+    {
+    // There is no RPATH or RUNPATH anyway.
+    return true;
+    }
+  if(se_count == 2 && se[1]->IndexInSection < se[0]->IndexInSection)
+    {
+    cmsys_stl::swap(se[0], se[1]);
+    }
+
+  // Get the size of the dynamic section header.
+  unsigned int count = elf.GetDynamicEntryCount();
+  if(count == 0)
+    {
+    // This should happen only for invalid ELF files where a DT_NULL
+    // appears before the end of the table.
+    if(emsg)
+      {
+      *emsg = "DYNAMIC section contains a DT_NULL before the end.";
+      }
+    return false;
+    }
+
+  // Save information about the string entries to be zeroed.
+  zeroCount = se_count;
+  for(int i=0; i < se_count; ++i)
+    {
+    zeroPosition[i] = se[i]->Position;
+    zeroSize[i] = se[i]->Size;
+    }
+
+  // Get the range of file positions corresponding to each entry and
+  // the rest of the table after them.
+  unsigned long entryBegin[3] = {0,0,0};
+  unsigned long entryEnd[2] = {0,0};
+  for(int i=0; i < se_count; ++i)
+    {
+    entryBegin[i] = elf.GetDynamicEntryPosition(se[i]->IndexInSection);
+    entryEnd[i] = elf.GetDynamicEntryPosition(se[i]->IndexInSection+1);
+    }
+  entryBegin[se_count] = elf.GetDynamicEntryPosition(count);
+
+  // The data are to be written over the old table entries starting at
+  // the first one being removed.
+  bytesBegin = entryBegin[0];
+  unsigned long bytesEnd = entryBegin[se_count];
+
+  // Allocate a buffer to hold the part of the file to be written.
+  // Initialize it with zeros.
+  bytes.resize(bytesEnd - bytesBegin, 0);
+
+  // Read the part of the DYNAMIC section header that will move.
+  // The remainder of the buffer will be left with zeros which
+  // represent a DT_NULL entry.
+  char* data = &bytes[0];
+  for(int i=0; i < se_count; ++i)
+    {
+    // Read data between the entries being removed.
+    unsigned long sz = entryBegin[i+1] - entryEnd[i];
+    if(sz > 0 && !elf.ReadBytes(entryEnd[i], sz, data))
+      {
+      if(emsg)
+        {
+        *emsg = "Failed to read DYNAMIC section header.";
+        }
+      return false;
+      }
+    data += sz;
+    }
+  }
+
+  // Open the file for update.
+  std::ofstream f(file.c_str(),
+                  std::ios::in | std::ios::out | std::ios::binary);
+  if(!f)
+    {
+    if(emsg)
+      {
+      *emsg = "Error opening file for update.";
+      }
+    return false;
+    }
+
+  // Write the new DYNAMIC table header.
+  if(!f.seekp(bytesBegin))
+    {
+    if(emsg)
+      {
+      *emsg = "Error seeking to DYNAMIC table header for RPATH.";
+      }
+    return false;
+    }
+  if(!f.write(&bytes[0], bytes.size()))
+    {
+    if(emsg)
+      {
+      *emsg = "Error replacing DYNAMIC table header.";
+      }
+    return false;
+    }
+
+  // Fill the RPATH and RUNPATH strings with zero bytes.
+  for(int i=0; i < zeroCount; ++i)
+    {
+    if(!f.seekp(zeroPosition[i]))
+      {
+      if(emsg)
+        {
+        *emsg = "Error seeking to RPATH position.";
+        }
+      return false;
+      }
+    for(unsigned long j=0; j < zeroSize[i]; ++j)
+      {
+      f << '\0';
+      }
+    if(!f)
+      {
+      if(emsg)
+        {
+        *emsg = "Error writing the empty rpath string to the file.";
+        }
+      return false;
+      }
+    }
+
+  // Everything was updated successfully.
+  if(removed)
+    {
+    *removed = true;
+    }
+  return true;
+#else
+  (void)file;
+  (void)emsg;
+  (void)removed;
+  return false;
+#endif
+}
+
+//----------------------------------------------------------------------------
+bool cmSystemTools::CheckRPath(std::string const& file,
+                               std::string const& newRPath)
+{
+#if defined(CMAKE_USE_ELF_PARSER)
+  // Parse the ELF binary.
+  cmELF elf(file.c_str());
+
+  // Get the RPATH or RUNPATH entry from it.
+  cmELF::StringEntry const* se = elf.GetRPath();
+  if(!se)
+    {
+    se = elf.GetRunPath();
+    }
+
+  // Make sure the current rpath contains the new rpath.
+  if(newRPath.empty())
+    {
+    if(!se)
+      {
+      return true;
+      }
+    }
+  else
+    {
+    if(se &&
+       cmSystemToolsFindRPath(se->Value, newRPath) != std::string::npos)
+      {
+      return true;
+      }
+    }
+  return false;
+#else
+  (void)file;
+  (void)newRPath;
+  return false;
+#endif
+}

@@ -3,8 +3,8 @@
   Program:   CMake - Cross-Platform Makefile Generator
   Module:    $RCSfile: cmCTestSleepCommand.h,v $
   Language:  C++
-  Date:      $Date: 2006/03/10 20:03:09 $
-  Version:   $Revision: 1.2 $
+  Date:      $Date: 2008-05-15 19:39:59 $
+  Version:   $Revision: 1.3.2.1 $
 
   Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
   See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
@@ -46,12 +46,13 @@ public:
    * This is called when the command is first encountered in
    * the CMakeLists.txt file.
    */
-  virtual bool InitialPass(std::vector<std::string> const& args);
+  virtual bool InitialPass(std::vector<std::string> const& args,
+                           cmExecutionStatus &status);
 
   /**
    * The name of the command as specified in CMakeList.txt.
    */
-  virtual const char* GetName() { return "CTEST_SLEEP";}
+  virtual const char* GetName() { return "ctest_sleep";}
 
   /**
    * Succinct documentation.
@@ -67,8 +68,8 @@ public:
   virtual const char* GetFullDocumentation()
     {
     return
-      "  CTEST_SLEEP( seconds )\n"
-      "  CTEST_SLEEP( time1 duration time2 )\n"
+      "  ctest_sleep( seconds )\n"
+      "  ctest_sleep( time1 duration time2 )\n"
       "With one argument it will sleep for a given number of seconds. "
       "With three arguments it will wait for time2 - time1 - duration "
       "seconds.";
