@@ -3,8 +3,8 @@
   Program:   CMake - Cross-Platform Makefile Generator
   Module:    $RCSfile: cmDependsC.h,v $
   Language:  C++
-  Date:      $Date: 2006/10/13 14:52:02 $
-  Version:   $Revision: 1.17.2.1 $
+  Date:      $Date: 2008-05-15 19:39:50 $
+  Version:   $Revision: 1.20.10.1 $
 
   Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
   See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
@@ -30,9 +30,7 @@ public:
   /** Checking instances need to know the build directory name and the
       relative path from the build directory to the target file.  */
   cmDependsC();
-  cmDependsC(std::vector<std::string> const& includes,
-             const char* scanRegex, const char* complainRegex,
-             const cmStdString& cachFileName);
+  cmDependsC(cmLocalGenerator* lg, const char* targetDir, const char* lang);
 
   /** Virtual destructor to cleanup subclasses properly.  */
   virtual ~cmDependsC();
@@ -50,9 +48,6 @@ protected:
   void Scan(std::istream& is, const char* directory,
     const cmStdString& fullName);
 
-  // The include file search path.
-  std::vector<std::string> const* IncludePath;
-
   // Regular expression to identify C preprocessor include directives.
   cmsys::RegularExpression IncludeRegexLine;
 
@@ -60,6 +55,18 @@ protected:
   // recursively and which to complain about not finding.
   cmsys::RegularExpression IncludeRegexScan;
   cmsys::RegularExpression IncludeRegexComplain;
+  std::string IncludeRegexLineString;
+  std::string IncludeRegexScanString;
+  std::string IncludeRegexComplainString;
+
+  // Regex to transform #include lines.
+  std::string IncludeRegexTransformString;
+  cmsys::RegularExpression IncludeRegexTransform;
+  typedef std::map<cmStdString, cmStdString> TransformRulesType;
+  TransformRulesType TransformRules;
+  void SetupTransforms();
+  void ParseTransform(std::string const& xform);
+  void TransformLine(std::string& line);
 
 public:
   // Data structures for dependency graph walk.

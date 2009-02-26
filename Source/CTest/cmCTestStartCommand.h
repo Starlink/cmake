@@ -3,8 +3,8 @@
   Program:   CMake - Cross-Platform Makefile Generator
   Module:    $RCSfile: cmCTestStartCommand.h,v $
   Language:  C++
-  Date:      $Date: 2006/04/29 15:49:20 $
-  Version:   $Revision: 1.3.2.1 $
+  Date:      $Date: 2008-05-15 19:39:59 $
+  Version:   $Revision: 1.5.2.1 $
 
   Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
   See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
@@ -45,12 +45,13 @@ public:
    * This is called when the command is first encountered in
    * the CMakeLists.txt file.
    */
-  virtual bool InitialPass(std::vector<std::string> const& args);
+  virtual bool InitialPass(std::vector<std::string> const& args,
+                           cmExecutionStatus &status);
 
   /**
    * The name of the command as specified in CMakeList.txt.
    */
-  virtual const char* GetName() { return "CTEST_START";}
+  virtual const char* GetName() { return "ctest_start";}
 
   /**
    * Succinct documentation.
@@ -66,7 +67,7 @@ public:
   virtual const char* GetFullDocumentation()
     {
     return
-      "  CTEST_START(Model [TRACK <track>] [source [binary]])\n"
+      "  ctest_start(Model [TRACK <track>] [source [binary]])\n"
       "Starts the testing for a given model. The command should be called "
       "after the binary directory is initialized. If the 'source' and "
       "'binary' directory are not specified, it reads the "

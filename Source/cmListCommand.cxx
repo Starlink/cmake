@@ -3,14 +3,14 @@
   Program:   CMake - Cross-Platform Makefile Generator
   Module:    $RCSfile: cmListCommand.cxx,v $
   Language:  C++
-  Date:      $Date: 2006/10/13 14:52:02 $
-  Version:   $Revision: 1.4.2.5 $
+  Date:      $Date: 2008-05-23 20:09:36 $
+  Version:   $Revision: 1.18.2.5 $
 
   Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
   See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
 
-     This software is distributed WITHOUT ANY WARRANTY; without even 
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR 
+     This software is distributed WITHOUT ANY WARRANTY; without even
+     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
      PURPOSE.  See the above copyright notices for more information.
 
 =========================================================================*/
@@ -21,14 +21,15 @@
 #include <stdlib.h> // required for atoi
 #include <ctype.h>
 //----------------------------------------------------------------------------
-bool cmListCommand::InitialPass(std::vector<std::string> const& args)
+bool cmListCommand
+::InitialPass(std::vector<std::string> const& args, cmExecutionStatus &)
 {
   if(args.size() < 1)
     {
     this->SetError("must be called with at least one argument.");
     return false;
     }
-  
+
   const std::string &subCommand = args[0];
   if(subCommand == "LENGTH")
     {
@@ -42,6 +43,10 @@ bool cmListCommand::InitialPass(std::vector<std::string> const& args)
     {
     return this->HandleAppendCommand(args);
     }
+  if(subCommand == "FIND")
+    {
+    return this->HandleFindCommand(args);
+    }
   if(subCommand == "INSERT")
     {
     return this->HandleInsertCommand(args);
@@ -54,6 +59,10 @@ bool cmListCommand::InitialPass(std::vector<std::string> const& args)
     {
     return this->HandleRemoveItemCommand(args);
     }
+  if(subCommand == "REMOVE_DUPLICATES")
+    {
+    return this->HandleRemoveDuplicatesCommand(args);
+    }
   if(subCommand == "SORT")
     {
     return this->HandleSortCommand(args);
@@ -62,7 +71,7 @@ bool cmListCommand::InitialPass(std::vector<std::string> const& args)
     {
     return this->HandleReverseCommand(args);
     }
-  
+
   std::string e = "does not recognize sub-command "+subCommand;
   this->SetError(e.c_str());
   return false;
@@ -94,8 +103,67 @@ bool cmListCommand::GetList(std::vector<std::string>& list, const char* var)
     {
     return false;
     }
-  // expand the variable
-  cmSystemTools::ExpandListArgument(listString, list);
+  // if the size of the list 
+  if(listString.size() == 0)
+    {
+    return true;
+    }
+  // expand the variable into a list
+  cmSystemTools::ExpandListArgument(listString, list, true);
+  // check the list for empty values
+  bool hasEmpty = false;
+  for(std::vector<std::string>::iterator i = list.begin(); 
+      i != list.end(); ++i)
+    {
+    if(i->size() == 0)
+      {
+      hasEmpty = true;
+      break;
+      }
+    }
+  // if no empty elements then just return 
+  if(!hasEmpty)
+    {
+    return true;
+    }
+  // if we have empty elements we need to check policy CMP0007
+  switch(this->Makefile->GetPolicyStatus(cmPolicies::CMP0007))
+    {
+    case cmPolicies::WARN: 
+      {
+      // Default is to warn and use old behavior
+      // OLD behavior is to allow compatibility, so recall
+      // ExpandListArgument without the true which will remove
+      // empty values
+      list.clear();
+      cmSystemTools::ExpandListArgument(listString, list);
+      std::string warn = this->Makefile->GetPolicies()->
+        GetPolicyWarning(cmPolicies::CMP0007);
+      warn += " List has value = [";
+      warn += listString;
+      warn += "].";
+      this->Makefile->IssueMessage(cmake::AUTHOR_WARNING,
+                                   warn);
+      return true;
+      }
+    case cmPolicies::OLD:
+      // OLD behavior is to allow compatibility, so recall
+      // ExpandListArgument without the true which will remove
+      // empty values
+      list.clear();
+      cmSystemTools::ExpandListArgument(listString, list);
+      return true;
+    case cmPolicies::NEW:
+      return true;
+    case cmPolicies::REQUIRED_IF_USED:
+    case cmPolicies::REQUIRED_ALWAYS:
+      this->Makefile->IssueMessage(
+        cmake::FATAL_ERROR,
+        this->Makefile->GetPolicies()
+        ->GetRequiredPolicyError(cmPolicies::CMP0007)
+        );
+      return false;
+    }
   return true;
 }
 
@@ -144,13 +212,12 @@ bool cmListCommand::HandleGetCommand(std::vector<std::string> const& args)
 
   std::string value;
   size_t cc;
+  const char* sep = "";
   for ( cc = 2; cc < args.size()-1; cc ++ )
     {
     int item = atoi(args[cc].c_str());
-    if (value.size())
-      {
-      value += ";";
-      }
+    value += sep;
+    sep = ";";
     size_t nitem = varArgsExpanded.size();
     if ( item < 0 )
       {
@@ -159,8 +226,8 @@ bool cmListCommand::HandleGetCommand(std::vector<std::string> const& args)
     if ( item < 0 || nitem <= (size_t)item )
       {
       cmOStringStream str;
-      str << "index: " << item << " out of range (-" 
-          << varArgsExpanded.size() << ", " 
+      str << "index: " << item << " out of range (-"
+          << varArgsExpanded.size() << ", "
           << varArgsExpanded.size()-1 << ")";
       this->SetError(str.str().c_str());
       return false;
@@ -175,10 +242,16 @@ bool cmListCommand::HandleGetCommand(std::vector<std::string> const& args)
 //----------------------------------------------------------------------------
 bool cmListCommand::HandleAppendCommand(std::vector<std::string> const& args)
 {
+  if(args.size() < 2)
+    {
+    this->SetError("sub-command APPEND requires at least one argument.");
+    return false;
+    }
+
+  // Skip if nothing to append.
   if(args.size() < 3)
     {
-    this->SetError("sub-command APPEND requires at least two arguments.");
-    return false;
+    return true;
     }
 
   const std::string& listName = args[1];
@@ -188,7 +261,7 @@ bool cmListCommand::HandleAppendCommand(std::vector<std::string> const& args)
   size_t cc;
   for ( cc = 2; cc < args.size(); ++ cc )
     {
-    if ( listString.size() )
+    if(listString.size())
       {
       listString += ";";
       }
@@ -196,6 +269,43 @@ bool cmListCommand::HandleAppendCommand(std::vector<std::string> const& args)
     }
 
   this->Makefile->AddDefinition(listName.c_str(), listString.c_str());
+  return true;
+}
+
+//----------------------------------------------------------------------------
+bool cmListCommand::HandleFindCommand(std::vector<std::string> const& args)
+{
+  if(args.size() != 4)
+    {
+    this->SetError("sub-command FIND requires three arguments.");
+    return false;
+    }
+
+  const std::string& listName = args[1];
+  const std::string& variableName = args[args.size() - 1];
+  // expand the variable
+  std::vector<std::string> varArgsExpanded;
+  if ( !this->GetList(varArgsExpanded, listName.c_str()) )
+    {
+    this->Makefile->AddDefinition(variableName.c_str(), "-1");
+    return true;
+    }
+
+  std::vector<std::string>::iterator it;
+  unsigned int index = 0;
+  for ( it = varArgsExpanded.begin(); it != varArgsExpanded.end(); ++ it )
+    {
+    if ( *it == args[2] )
+      {
+      char indexString[32];
+      sprintf(indexString, "%d", index);
+      this->Makefile->AddDefinition(variableName.c_str(), indexString);
+      return true;
+      }
+    index++;
+    }
+
+  this->Makefile->AddDefinition(variableName.c_str(), "-1");
   return true;
 }
 
@@ -223,20 +333,20 @@ bool cmListCommand::HandleInsertCommand(std::vector<std::string> const& args)
 
   if ( varArgsExpanded.size() != 0 )
     {
-  size_t nitem = varArgsExpanded.size();
-  if ( item < 0 )
-    {
-    item = (int)nitem + item;
-    }
-  if ( item < 0 || nitem <= (size_t)item )
-    {
-    cmOStringStream str;
-    str << "index: " << item << " out of range (-" 
-        << varArgsExpanded.size() << ", " 
+    size_t nitem = varArgsExpanded.size();
+    if ( item < 0 )
+      {
+      item = (int)nitem + item;
+      }
+    if ( item < 0 || nitem <= (size_t)item )
+      {
+      cmOStringStream str;
+      str << "index: " << item << " out of range (-"
+        << varArgsExpanded.size() << ", "
         << (varArgsExpanded.size() == 0?0:(varArgsExpanded.size()-1)) << ")";
-    this->SetError(str.str().c_str());
-    return false;
-    }
+      this->SetError(str.str().c_str());
+      return false;
+      }
     }
   size_t cc;
   size_t cnt = 0;
@@ -247,13 +357,12 @@ bool cmListCommand::HandleInsertCommand(std::vector<std::string> const& args)
     }
 
   std::string value;
+  const char* sep = "";
   for ( cc = 0; cc < varArgsExpanded.size(); cc ++ )
     {
-    if (value.size())
-      {
-      value += ";";
-      }
+    value += sep;
     value += varArgsExpanded[cc];
+    sep = ";";
     }
 
   this->Makefile->AddDefinition(listName.c_str(), value.c_str());
@@ -291,19 +400,18 @@ bool cmListCommand
         }
       else
         {
-      kk ++;
+        kk ++;
+        }
       }
-    }
     }
 
   std::string value;
+  const char* sep = "";
   for ( cc = 0; cc < varArgsExpanded.size(); cc ++ )
     {
-    if (value.size())
-      {
-      value += ";";
-      }
+    value += sep;
     value += varArgsExpanded[cc];
+    sep = ";";
     }
 
   this->Makefile->AddDefinition(listName.c_str(), value.c_str());
@@ -331,14 +439,57 @@ bool cmListCommand
 
   std::string value;
   std::vector<std::string>::reverse_iterator it;
+  const char* sep = "";
   for ( it = varArgsExpanded.rbegin(); it != varArgsExpanded.rend(); ++ it )
     {
-    if (value.size())
-      {
-      value += ";";
-      }
+    value += sep;
     value += it->c_str();
+    sep = ";";
     }
+
+  this->Makefile->AddDefinition(listName.c_str(), value.c_str());
+  return true;
+}
+
+//----------------------------------------------------------------------------
+bool cmListCommand
+::HandleRemoveDuplicatesCommand(std::vector<std::string> const& args)
+{
+  if(args.size() < 2)
+    {
+    this->SetError(
+      "sub-command REMOVE_DUPLICATES requires a list as an argument.");
+    return false;
+    }
+
+  const std::string& listName = args[1];
+  // expand the variable
+  std::vector<std::string> varArgsExpanded;
+  if ( !this->GetList(varArgsExpanded, listName.c_str()) )
+    {
+    this->SetError(
+      "sub-command REMOVE_DUPLICATES requires list to be present.");
+    return false;
+    }
+
+  std::string value;
+
+
+  std::set<std::string> unique;
+  std::vector<std::string>::iterator it;
+  const char* sep = "";
+  for ( it = varArgsExpanded.begin(); it != varArgsExpanded.end(); ++ it )
+    {
+    if (unique.find(*it) != unique.end())
+      {
+      continue;
+      }
+    unique.insert(*it);
+    value += sep;
+    value += it->c_str();
+    sep = ";";
+    }
+
 
   this->Makefile->AddDefinition(listName.c_str(), value.c_str());
   return true;
@@ -367,13 +518,12 @@ bool cmListCommand
 
   std::string value;
   std::vector<std::string>::iterator it;
+  const char* sep = "";
   for ( it = varArgsExpanded.begin(); it != varArgsExpanded.end(); ++ it )
     {
-    if (value.size())
-      {
-      value += ";";
-      }
+    value += sep;
     value += it->c_str();
+    sep = ";";
     }
 
   this->Makefile->AddDefinition(listName.c_str(), value.c_str());
@@ -413,8 +563,8 @@ bool cmListCommand::HandleRemoveAtCommand(
     if ( item < 0 || nitem <= (size_t)item )
       {
       cmOStringStream str;
-      str << "index: " << item << " out of range (-" 
-          << varArgsExpanded.size() << ", " 
+      str << "index: " << item << " out of range (-"
+          << varArgsExpanded.size() << ", "
           << varArgsExpanded.size()-1 << ")";
       this->SetError(str.str().c_str());
       return false;
@@ -423,6 +573,7 @@ bool cmListCommand::HandleRemoveAtCommand(
     }
 
   std::string value;
+  const char* sep = "";
   for ( cc = 0; cc < varArgsExpanded.size(); ++ cc )
     {
     size_t kk;
@@ -437,11 +588,9 @@ bool cmListCommand::HandleRemoveAtCommand(
 
     if ( !found )
       {
-      if (value.size())
-        {
-        value += ";";
-        }
+      value += sep;
       value += varArgsExpanded[cc];
+      sep = ";";
       }
     }
 

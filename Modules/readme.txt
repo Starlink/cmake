@@ -18,6 +18,10 @@ XXX_FOUND              	Set to false, or undefined, if we haven't found, or don'
 XXX_RUNTIME_LIBRARY_DIRS Optionally, the runtime library search path for use when running an executable linked to shared libraries.
                          The list should be used by user code to create the PATH on windows or LD_LIBRARY_PATH on unix.
                          This should not be a cache entry.
+XXX_VERSION_STRING      A human-readable string containing the version of the package found, if any.
+XXX_VERSION_MAJOR       The major version of the package found, if any.
+XXX_VERSION_MINOR       The minor version of the package found, if any.
+XXX_VERSION_PATCH       The patch version of the package found, if any.
 
 You do not have to provide all of the above variables. You should provide XXX_FOUND under most circumstances. If XXX is a library, then  XXX_LIBRARIES, should also be defined, and XXX_INCLUDE_DIRS should usually be defined (I guess libm.a might be an exception)
 
@@ -53,7 +57,7 @@ For example:
 # 
 # It even needs to paragraphs to tell you about it.
 # And it defines the following variables:
-#  VAR_COOL - this is greate isn't it?
+#  VAR_COOL - this is great isn't it?
 #  VAR_REALLY_COOL - cool right?
 #
 
@@ -63,12 +67,30 @@ line.
 
 A FindXXX.cmake module will typically be loaded by the command
 
-  FIND_PACKAGE(XXX [QUIET] [REQUIRED [components...]])
+  FIND_PACKAGE(XXX [major[.minor[.patch[.tweak]]]] [EXACT]
+               [QUIET] [REQUIRED [components...]])
+
+If any version numbers are given to the command it will set the
+following variables before loading the module:
+
+  XXX_FIND_VERSION       = full requested version string
+  XXX_FIND_VERSION_MAJOR = major version if requested, else 0
+  XXX_FIND_VERSION_MINOR = minor version if requested, else 0
+  XXX_FIND_VERSION_PATCH = patch version if requested, else 0
+  XXX_FIND_VERSION_TWEAK = tweak version if requested, else 0
+  XXX_FIND_VERSION_COUNT = number of version components, 0 to 4
+  XXX_FIND_VERSION_EXACT = true if EXACT option was given
+
+If the find module supports versioning it should locate a version of
+the package that is compatible with the version requested.  If a
+compatible version of the package cannot be found the module should
+not report success.  The version of the package found should be stored
+in "XXX_VERSION..." version variables docmented by the module.
 
 If the QUIET option is given to the command it will set the variable
 XXX_FIND_QUIETLY to true before loading the FindXXX.cmake module.  If
 this variable is set the module should not complain about not being
-able to find the package and should never issue a FATAL_ERROR.  If the
+able to find the package.  If the
 REQUIRED option is given to the command it will set the variable
 XXX_FIND_REQUIRED to true before loading the FindXXX.cmake module.  If
 this variable is set the module should issue a FATAL_ERROR if the
@@ -80,3 +102,6 @@ module to determine which sub-components of the package must be found.
 If neither the QUIET nor REQUIRED options are given then the
 FindXXX.cmake module should look for the package and complain without
 error if the module is not found.
+
+To get this behaviour you can use the FIND_PACKAGE_HANDLE_STANDARD_ARGS() 
+macro, as an example see FindJPEG.cmake.

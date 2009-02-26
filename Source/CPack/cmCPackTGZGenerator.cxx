@@ -3,8 +3,8 @@
   Program:   CMake - Cross-Platform Makefile Generator
   Module:    $RCSfile: cmCPackTGZGenerator.cxx,v $
   Language:  C++
-  Date:      $Date: 2006/10/30 16:36:07 $
-  Version:   $Revision: 1.13.2.3 $
+  Date:      $Date: 2007-09-27 18:44:10 $
+  Version:   $Revision: 1.19 $
 
   Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
   See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
@@ -129,7 +129,7 @@ ssize_t cmCPackTGZ_Data_Write(void *client_data, void *buff, size_t n)
 
   if ( mydata->Compress )
     {
-    mydata->ZLibStream.avail_in = n;
+    mydata->ZLibStream.avail_in = static_cast<uInt>(n);
     mydata->ZLibStream.next_in  = reinterpret_cast<Bytef*>(buff);
 
     do {
@@ -157,7 +157,8 @@ ssize_t cmCPackTGZ_Data_Write(void *client_data, void *buff, size_t n)
       }
     if ( n )
       {
-      mydata->CRC = crc32(mydata->CRC, reinterpret_cast<Bytef *>(buff), n);
+      mydata->CRC = crc32(mydata->CRC, reinterpret_cast<Bytef *>(buff), 
+                          static_cast<uInt>(n));
       }
     }
   else
@@ -228,11 +229,18 @@ int cmCPackTGZGenerator::CompressFiles(const char* outFileName,
   std::auto_ptr<char> realNamePtr(realName);
   strcpy(realName, outFileName);
   int flags = O_WRONLY | O_CREAT;
+  int options = 0;
+  if(this->GeneratorVerbose)
+    {
+    options |= TAR_VERBOSE;
+    }
+#ifdef __CYGWIN__
+  options |= TAR_GNU;
+#endif 
   if (tar_open(&t, realName,
-      &gztype,
-      flags, 0644,
-      (this->GeneratorVerbose?TAR_VERBOSE:0)
-      | 0) == -1)
+               &gztype,
+               flags, 0644,
+               options) == -1)
     {
     cmCPackLogger(cmCPackLog::LOG_ERROR, "Problem with tar_open(): "
       << strerror(errno) << std::endl);

@@ -3,8 +3,8 @@
   Program:   CMake - Cross-Platform Makefile Generator
   Module:    $RCSfile: cmFindPathCommand.h,v $
   Language:  C++
-  Date:      $Date: 2006/03/02 18:30:22 $
-  Version:   $Revision: 1.16 $
+  Date:      $Date: 2008-06-13 12:55:17 $
+  Version:   $Revision: 1.18.2.1 $
 
   Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
   See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
@@ -43,7 +43,8 @@ public:
    * This is called when the command is first encountered in
    * the CMakeLists.txt file.
    */
-  virtual bool InitialPass(std::vector<std::string> const& args);
+  virtual bool InitialPass(std::vector<std::string> const& args,
+                           cmExecutionStatus &status);
 
   /**
    * This determines if the command is invoked when in script mode.
@@ -53,7 +54,7 @@ public:
   /**
    * The name of the command as specified in CMakeList.txt.
    */
-  virtual const char* GetName() {return "FIND_PATH";}
+  virtual const char* GetName() {return "find_path";}
 
   /**
    * Succinct documentation.
@@ -63,12 +64,16 @@ public:
     return "Find the directory containing a file.";
     }
 
-  std::string FindHeaderInFramework( std::string& file,
-                                     std::string& dir);
   virtual const char* GetFullDocumentation();
   cmTypeMacro(cmFindPathCommand, cmFindBase);
   bool IncludeFileInPath;
   bool ExtraDocAdded;
+private:
+  std::string FindHeaderInFramework(std::string const& file,
+                                    std::string const& dir);
+  std::string FindHeader();
+  std::string FindNormalHeader();
+  std::string FindFrameworkHeader();
 };
 
 

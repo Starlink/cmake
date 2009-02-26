@@ -1,3 +1,4 @@
+cmake_minimum_required (VERSION 2.6)
 PROJECT(BundleTest)
 SET(MACOSX_BUNDLE_INFO_STRING "bundle_info_string")
 SET(CMAKE_MacOSX_Content_COMPILE_OBJECT "\"${CMAKE_COMMAND}\" -E copy_if_different <SOURCE> <OBJECT>")
@@ -16,29 +17,40 @@ SET_SOURCE_FILES_PROPERTIES(
 
 SET_SOURCE_FILES_PROPERTIES(
   SomeRandomFile.txt
-  "${CMake_SOURCE_DIR}/ChangeLog.txt"
+  "${BundleTest_SOURCE_DIR}/../../ChangeLog.txt"
   PROPERTIES
   MACOSX_PACKAGE_LOCATION MacOS
   )
 
 SET(EXECUTABLE_OUTPUT_PATH "${CMAKE_CURRENT_BINARY_DIR}/foobar")
 
-# Test building a bundle linking to a shared library.
+# Test building a bundle linking to a shared library where the
+# shared library links to Carbon, but the executable does not
+# explicitly link to Carbon, but the executable does *depend*
+# on Carbon. There should be a link failure for the executable
+# if CMake's dependency chaining for libraries with "-framework
+# blah" style dependencies gets broken...
+#
 ADD_LIBRARY(BundleTestLib SHARED BundleLib.cxx)
+TARGET_LINK_LIBRARIES(BundleTestLib "-framework Carbon")
+
 ADD_EXECUTABLE(BundleTest
   MACOSX_BUNDLE
   BundleTest.cxx
   SomeRandomFile.txt
-  "${CMake_SOURCE_DIR}/ChangeLog.txt"
+  "${BundleTest_SOURCE_DIR}/../../ChangeLog.txt"
   "${CMAKE_CURRENT_BINARY_DIR}/randomResourceFile.plist"
   )
-
 TARGET_LINK_LIBRARIES(BundleTest BundleTestLib)
+#
+# DO NOT: TARGET_LINK_LIBRARIES(BundleTest "-framework Carbon")
+#   (see above comments about Carbon)
+#
 
 # Test bundle installation.
-#INSTALL(TARGETS BundleTestLib DESTINATION Application/BundleTestExe.app/Contents/Plugins)
-INSTALL(TARGETS BundleTestLib DESTINATION Application/SecondBundleExe.app/Contents/Plugins)
-INSTALL(TARGETS BundleTest DESTINATION Application)
+#INSTALL(TARGETS BundleTestLib DESTINATION Applications/BundleTestExe.app/Contents/Plugins)
+INSTALL(TARGETS BundleTestLib DESTINATION Applications/SecondBundleExe.app/Contents/Plugins)
+INSTALL(TARGETS BundleTest DESTINATION Applications)
 
 # Test whether bundles respect the output name.  Since the library is
 # installed into a location that uses this output name this will fail if the
@@ -59,7 +71,7 @@ INCLUDE(CPack)
 
 # test the framework find stuff
 IF(EXISTS /usr/lib/libtcl.dylib
-    AND EXISTS /System/Library/Frameworks/tcl.framework)
+    AND EXISTS /System/Library/Frameworks/Tcl.framework)
   SET(TCL NOTFOUND)
   FIND_LIBRARY(TCL tcl)
   MESSAGE("frame: ${TCL}")
@@ -87,6 +99,6 @@ IF(EXISTS /usr/lib/libtcl.dylib
   ENDIF(NOT "${TCL}" MATCHES .framework)
   MESSAGE("frame: ${TCL}")
 ENDIF(EXISTS /usr/lib/libtcl.dylib
-  AND EXISTS /System/Library/Frameworks/tcl.framework)
+  AND EXISTS /System/Library/Frameworks/Tcl.framework)
 
 SUBDIRS(BundleSubDir)

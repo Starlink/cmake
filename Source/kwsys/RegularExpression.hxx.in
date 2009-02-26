@@ -234,6 +234,11 @@ public:
   inline kwsys_stl::string::size_type end() const;
 
   /**
+   * Copy the given regular expression.
+   */
+  RegularExpression& operator= (const RegularExpression& rxp);
+
+  /**
    * Returns true if two regular expressions have the same
    * compiled program for pattern matching.
    */
@@ -379,7 +384,14 @@ inline kwsys_stl::string::size_type RegularExpression::end(int n) const
  */
 inline kwsys_stl::string RegularExpression::match(int n) const
 {
-  return kwsys_stl::string(this->startp[n], this->endp[n] - this->startp[n]);
+  if (this->startp[n]==0)
+    {
+    return kwsys_stl::string("");
+    }
+  else
+    {
+    return kwsys_stl::string(this->startp[n], this->endp[n] - this->startp[n]);
+    }
 }
 
 } // namespace @KWSYS_NAMESPACE@

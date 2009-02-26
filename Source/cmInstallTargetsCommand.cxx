@@ -3,8 +3,8 @@
   Program:   CMake - Cross-Platform Makefile Generator
   Module:    $RCSfile: cmInstallTargetsCommand.cxx,v $
   Language:  C++
-  Date:      $Date: 2006/10/13 14:52:02 $
-  Version:   $Revision: 1.12.2.2 $
+  Date:      $Date: 2008-07-13 21:55:24 $
+  Version:   $Revision: 1.15.2.1 $
 
   Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
   See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
@@ -18,7 +18,7 @@
 
 // cmExecutableCommand
 bool cmInstallTargetsCommand
-::InitialPass(std::vector<std::string> const& args)
+::InitialPass(std::vector<std::string> const& args, cmExecutionStatus &)
 {
   if(args.size() < 2 )
     {
@@ -61,6 +61,9 @@ bool cmInstallTargetsCommand
       return false;
       }
     }
+
+  this->Makefile->GetLocalGenerator()->GetGlobalGenerator()
+                       ->AddInstallComponent("Unspecified");
 
   return true;
 }
