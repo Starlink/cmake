@@ -5,12 +5,12 @@
 #  TCL_FOUND              = Tcl was found
 #  TK_FOUND               = Tk was found
 #  TCLTK_FOUND            = Tcl and Tk were found
-#  TCL_LIBRARY        = path to Tcl library (tcl tcl80)
-#  TCL_INCLUDE_PATH   = path to where tcl.h can be found
-#  TCL_TCLSH          = path to tclsh binary (tcl tcl80)
-#  TK_LIBRARY         = path to Tk library (tk tk80 etc)
-#  TK_INCLUDE_PATH    = path to where tk.h can be found
-#  TK_WISH            = full path to the wish executable
+#  TCL_LIBRARY            = path to Tcl library (tcl tcl80)
+#  TCL_INCLUDE_PATH       = path to where tcl.h can be found
+#  TCL_TCLSH              = path to tclsh binary (tcl tcl80)
+#  TK_LIBRARY             = path to Tk library (tk tk80 etc)
+#  TK_INCLUDE_PATH        = path to where tk.h can be found
+#  TK_WISH                = full path to the wish executable
 #
 # In an effort to remove some clutter and clear up some issues for people
 # who are not necessarily Tcl/Tk gurus/developpers, some variables were
@@ -82,9 +82,9 @@ IF(WIN32)
     "[HKEY_LOCAL_MACHINE\\SOFTWARE\\Scriptics\\Tcl\\8.3;Root]/lib"
     "[HKEY_LOCAL_MACHINE\\SOFTWARE\\Scriptics\\Tcl\\8.2;Root]/lib"
     "[HKEY_LOCAL_MACHINE\\SOFTWARE\\Scriptics\\Tcl\\8.0;Root]/lib"
-  "$ENV{ProgramFiles}/Tcl/Lib"
-  "C:/Program Files/Tcl/lib" 
-  "C:/Tcl/lib" 
+    "$ENV{ProgramFiles}/Tcl/Lib"
+    "C:/Program Files/Tcl/lib" 
+    "C:/Tcl/lib" 
     )
 ENDIF(WIN32)
 
@@ -195,8 +195,8 @@ SET(TK_FIND_QUIETLY  ${TCL_FIND_QUIETLY})
 FIND_PACKAGE_HANDLE_STANDARD_ARGS(TK DEFAULT_MSG TK_LIBRARY TK_INCLUDE_PATH)
 
 MARK_AS_ADVANCED(
-    TCL_INCLUDE_PATH
-    TK_INCLUDE_PATH
-    TCL_LIBRARY
-    TK_LIBRARY  
+  TCL_INCLUDE_PATH
+  TK_INCLUDE_PATH
+  TCL_LIBRARY
+  TK_LIBRARY
   )
