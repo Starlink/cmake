@@ -78,11 +78,11 @@ ENDIF(WIN32)
 
 FIND_LIBRARY(TCL_STUB_LIBRARY
   NAMES 
+  tclstub84 tclstub8.4 
   tclstub 
   tclstub${TK_LIBRARY_VERSION} tclstub${TCL_TCLSH_VERSION} tclstub${TK_WISH_VERSION}
   tclstub86 tclstub8.6
   tclstub85 tclstub8.5 
-  tclstub84 tclstub8.4 
   tclstub83 tclstub8.3 
   tclstub82 tclstub8.2 
   tclstub80 tclstub8.0
@@ -91,11 +91,11 @@ FIND_LIBRARY(TCL_STUB_LIBRARY
 
 FIND_LIBRARY(TK_STUB_LIBRARY 
   NAMES 
+  tkstub84 tkstub8.4 
   tkstub 
   tkstub${TCL_LIBRARY_VERSION} tkstub${TCL_TCLSH_VERSION} tkstub${TK_WISH_VERSION}
   tkstub86 tkstub8.6
   tkstub85 tkstub8.5 
-  tkstub84 tkstub8.4 
   tkstub83 tkstub8.3 
   tkstub82 tkstub8.2 
   tkstub80 tkstub8.0

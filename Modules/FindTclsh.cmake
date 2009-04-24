@@ -54,11 +54,11 @@ IF(WIN32)
 ENDIF(WIN32)
 
 SET(TCL_TCLSH_NAMES
+  tclsh84 tclsh8.4
   tclsh
   tclsh${TCL_LIBRARY_VERSION} tclsh${TK_LIBRARY_VERSION} tclsh${TK_WISH_VERSION}
   tclsh86 tclsh8.6
   tclsh85 tclsh8.5
-  tclsh84 tclsh8.4
   tclsh83 tclsh8.3
   tclsh82 tclsh8.2
   tclsh80 tclsh8.0

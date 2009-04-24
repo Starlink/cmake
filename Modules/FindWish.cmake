@@ -53,11 +53,11 @@ IF(WIN32)
 ENDIF(WIN32)
 
 SET(TK_WISH_NAMES
+  wish84 wish8.4 
   wish 
   wish${TCL_LIBRARY_VERSION} wish${TK_LIBRARY_VERSION} wish${TCL_TCLSH_VERSION}
   wish86 wish8.6
   wish85 wish8.5 
-  wish84 wish8.4 
   wish83 wish8.3 
   wish82 wish8.2 
   wish80 wish8.0

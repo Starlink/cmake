@@ -149,9 +149,9 @@ SET(TCLTK_POSSIBLE_INCLUDE_PATHS
   /usr/local/include
   /usr/include/tcl${TK_LIBRARY_VERSION}
   /usr/include/tcl${TCL_LIBRARY_VERSION}
+  /usr/include/tcl8.4
   /usr/include/tcl8.6
   /usr/include/tcl8.5
-  /usr/include/tcl8.4
   /usr/include/tcl8.3
   /usr/include/tcl8.2
   /usr/include/tcl8.0
