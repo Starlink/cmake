@@ -1,19 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmCursesMainForm.h,v $
-  Language:  C++
-  Date:      $Date: 2006-03-16 15:44:55 $
-  Version:   $Revision: 1.24 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even 
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR 
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #ifndef __cmCursesMainForm_h
 #define __cmCursesMainForm_h
 
@@ -127,9 +122,8 @@ protected:
   // Remove an entry from the interface and the cache.
   void RemoveEntry(const char* value);
 
-  // Jump to the cache value with index idx. If string str is
-  // specified, it will stop on widget that contain that string.
-  void JumpToCacheEntry(int idx, const char* str);
+  // Jump to the cache entry whose name matches the string.
+  void JumpToCacheEntry(const char* str);
 
   // Copies of cache entries stored in the user interface
   std::vector<cmCursesCacheEntryComposite*>* Entries;
@@ -152,7 +146,7 @@ protected:
   // Where is cmake executable
   std::string WhereCMake;
   // Number of entries shown (depends on mode -normal or advanced-)
-  int NumberOfVisibleEntries;
+  size_t NumberOfVisibleEntries;
   bool AdvancedMode;
   // Did the iteration converge (no new entries) ?
   bool OkToGenerate;

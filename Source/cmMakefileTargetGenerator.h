@@ -1,19 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmMakefileTargetGenerator.h,v $
-  Language:  C++
-  Date:      $Date: 2008-10-24 15:18:53 $
-  Version:   $Revision: 1.24.2.2 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #ifndef cmMakefileTargetGenerator_h
 #define cmMakefileTargetGenerator_h
 
@@ -47,14 +42,11 @@ public:
      with this target */
   virtual void WriteRuleFiles() = 0;
 
-  /* the main entry point for this class. Writes the Makefiles associated
-     with this target */
-  virtual void WriteProgressVariables(unsigned long total, 
-                                      unsigned long &current);
-  
   /* return the number of actions that have progress reporting on them */
   virtual unsigned long GetNumberOfProgressActions() {
     return this->NumberOfProgressActions;}
+  std::string GetProgressFileNameFull()
+    { return this->ProgressFileNameFull; }
 
   cmTarget* GetTarget() { return this->Target;}
 protected:
@@ -103,6 +95,8 @@ protected:
   void GenerateExtraOutput(const char* out, const char* in,
                            bool symbolic = false);
 
+  void AppendProgress(std::vector<std::string>& commands);
+
   // write out the variable that lists the objects for this target
   void WriteObjectsVariable(std::string& variableName,
                             std::string& variableNameExternal);
@@ -120,6 +114,9 @@ protected:
 
   // append intertarget dependencies
   void AppendTargetDepends(std::vector<std::string>& depends);
+
+  // Append link rule dependencies (objects, etc.).
+  void AppendLinkDepends(std::vector<std::string>& depends);
 
   /** In order to support parallel builds for custom commands with
       multiple outputs the outputs are given a serial order, and only
@@ -149,6 +146,8 @@ protected:
                          bool useResponseFile, std::string& buildObjs,
                          std::vector<std::string>& makefile_depends);
 
+  void AddIncludeFlags(std::string& flags, const char* lang);
+
   virtual void CloseFileStreams();
   void RemoveForbiddenFlags(const char* flagVar, const char* linkLang,
                             std::string& linkFlags);
@@ -156,6 +155,7 @@ protected:
   cmLocalUnixMakefileGenerator3 *LocalGenerator;
   cmGlobalUnixMakefileGenerator3 *GlobalGenerator;
   cmMakefile *Makefile;
+  const char *ConfigName;
 
   enum CustomCommandDriveType { OnBuild, OnDepends, OnUtility };
   CustomCommandDriveType CustomCommandDriver;
@@ -165,9 +165,9 @@ protected:
   std::string BuildFileNameFull;
 
   // the full path to the progress file
-  std::string ProgressFileName;
   std::string ProgressFileNameFull;
   unsigned long NumberOfProgressActions;
+  bool NoRuleMessages;
 
   // the path to the directory the build file is in
   std::string TargetBuildDirectory;
@@ -179,6 +179,8 @@ protected:
   // the stream for the flag file
   std::string FlagFileNameFull;
   cmGeneratedFileStream *FlagFileStream;
+  class StringList: public std::vector<std::string> {};
+  std::map<cmStdString, StringList> FlagFileDepends;
 
   // the stream for the info file
   std::string InfoFileNameFull;
@@ -190,6 +192,9 @@ protected:
   // objects used by this target
   std::vector<std::string> Objects;
   std::vector<std::string> ExternalObjects;
+
+  // The windows module definition source file (.def), if any.
+  std::string ModuleDefinitionFile;
 
   // Set of object file names that will be built in this directory.
   std::set<cmStdString> ObjectFiles;
@@ -211,6 +216,12 @@ protected:
   std::string MacContentDirectory;
   std::set<cmStdString> MacContentFolders;
 
+  typedef std::map<cmStdString, cmStdString> ByLanguageMap;
+  std::string GetFlags(const std::string &l);
+  ByLanguageMap FlagsByLanguage;
+  std::string GetDefines(const std::string &l);
+  ByLanguageMap DefinesByLanguage;
+
   // Target-wide Fortran module output directory.
   bool FortranModuleDirectoryComputed;
   std::string FortranModuleDirectory;
@@ -218,6 +229,16 @@ protected:
 
   // Compute target-specific Fortran language flags.
   void AddFortranFlags(std::string& flags);
+
+  // Helper to add flag for windows .def file.
+  void AddModuleDefinitionFlag(std::string& flags);
+
+  // Add language feature flags.
+  void AddFeatureFlags(std::string& flags, const char* lang);
+
+  // Feature query methods.
+  const char* GetFeature(const char* feature);
+  bool GetFeatureAsBool(const char* feature);
 
   //==================================================================
   // Convenience routines that do nothing more than forward to

@@ -1,19 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmLoadCacheCommand.cxx,v $
-  Language:  C++
-  Date:      $Date: 2008-01-23 15:27:59 $
-  Version:   $Revision: 1.19 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even 
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR 
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #include "cmLoadCacheCommand.h"
 
 #include <cmsys/RegularExpression.hxx>
@@ -179,7 +174,8 @@ void cmLoadCacheCommand::CheckLine(const char* line)
   // Check one line of the cache file.
   std::string var;
   std::string value;
-  if(this->ParseEntry(line, var, value))
+  cmCacheManager::CacheEntryType type = cmCacheManager::UNINITIALIZED;
+  if(cmCacheManager::ParseEntry(line, var, value, type))
     {
     // Found a real entry.  See if this one was requested.
     if(this->VariablesToRead.find(var) != this->VariablesToRead.end())
@@ -197,39 +193,4 @@ void cmLoadCacheCommand::CheckLine(const char* line)
         }
       }
     }
-}
-
-//----------------------------------------------------------------------------
-bool cmLoadCacheCommand::ParseEntry(const char* entry, std::string& var,
-                                    std::string& value)
-{
-  // input line is:         key:type=value
-  cmsys::RegularExpression reg("^([^:]*):([^=]*)=(.*[^\t ]|[\t ]*)[\t ]*$");
-  // input line is:         "key":type=value
-  cmsys::RegularExpression 
-    regQuoted("^\"([^\"]*)\":([^=]*)=(.*[^\t ]|[\t ]*)[\t ]*$");
-  bool flag = false;
-  if(regQuoted.find(entry))
-    {
-    var = regQuoted.match(1);
-    value = regQuoted.match(3);
-    flag = true;
-    }
-  else if (reg.find(entry))
-    {
-    var = reg.match(1);
-    value = reg.match(3);
-    flag = true;
-    }
-
-  // if value is enclosed in single quotes ('foo') then remove them
-  // it is used to enclose trailing space or tab
-  if (flag && 
-      value.size() >= 2 &&
-      value[0] == '\'' && 
-      value[value.size() - 1] == '\'') 
-    {
-    value = value.substr(1, value.size() - 2);
-    }
-  return flag;
 }

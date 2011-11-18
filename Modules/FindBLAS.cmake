@@ -18,24 +18,44 @@
 #    is found
 #  BLA_STATIC  if set on this determines what kind of linkage we do (static)
 #  BLA_VENDOR  if set checks only the specified vendor, if not set checks
-#     all the posibilities
+#     all the possibilities
 #  BLA_F95     if set on tries to find the f95 interfaces for BLAS/LAPACK
 ##########
 ### List of vendors (BLA_VENDOR) valid in this module
 ##  ATLAS, PhiPACK,CXML,DXML,SunPerf,SCSL,SGIMATH,IBMESSL,Intel10_32 (intel mkl v10 32 bit),Intel10_64lp (intel mkl v10 64 bit,lp thread model, lp64 model),
-##  Intel( older versions of mkl 32 and 64 bit), ACML,Apple, NAS, Generic
+##  Intel( older versions of mkl 32 and 64 bit), ACML,ACML_MP,Apple, NAS, Generic
 # C/CXX should be enabled to use Intel mkl
-get_property(_LANGUAGES_ GLOBAL PROPERTY ENABLED_LANGUAGES)
-if(NOT _LANGUAGES_ MATCHES Fortran)
+
+#=============================================================================
+# Copyright 2007-2009 Kitware, Inc.
+#
+# Distributed under the OSI-approved BSD License (the "License");
+# see accompanying file Copyright.txt for details.
+#
+# This software is distributed WITHOUT ANY WARRANTY; without even the
+# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the License for more information.
+#=============================================================================
+# (To distribute this file outside of CMake, substitute the full
+#  License text for the above reference.)
+
+include(CheckFunctionExists)
+include(CheckFortranFunctionExists)
+
+# Check the language being used
+get_property( _LANGUAGES_ GLOBAL PROPERTY ENABLED_LANGUAGES )
+if( _LANGUAGES_ MATCHES Fortran )
+  set( _CHECK_FORTRAN TRUE )
+elseif( (_LANGUAGES_ MATCHES C) OR (_LANGUAGES_ MATCHES CXX) )
+  set( _CHECK_FORTRAN FALSE )
+else()
   if(BLAS_FIND_REQUIRED)
-    message(FATAL_ERROR "FindBLAS is Fortran-only so Fortran must be enabled.")
+    message(FATAL_ERROR "FindBLAS requires Fortran, C, or C++ to be enabled.")
   else(BLAS_FIND_REQUIRED)
-    message(STATUS "Looking for BLAS... - NOT found (Fortran not enabled)") #
+    message(STATUS "Looking for BLAS... - NOT found (Unsupported languages)")
     return()
   endif(BLAS_FIND_REQUIRED)
-endif(NOT _LANGUAGES_ MATCHES Fortran)
-
-include(CheckFortranFunctionExists)
+endif( )
 
 macro(Check_Fortran_Libraries LIBRARIES _prefix _name _flags _list _threads)
 # This macro checks for the existence of the combination of fortran libraries
@@ -93,7 +113,11 @@ if(_libraries_work)
   # Test this combination of libraries.
   set(CMAKE_REQUIRED_LIBRARIES ${_flags} ${${LIBRARIES}} ${_threads})
 #  message("DEBUG: CMAKE_REQUIRED_LIBRARIES = ${CMAKE_REQUIRED_LIBRARIES}")
-  check_fortran_function_exists(${_name} ${_prefix}${_combined_name}_WORKS)
+  if (_CHECK_FORTRAN)
+    check_fortran_function_exists("${_name}" ${_prefix}${_combined_name}_WORKS)
+  else()
+    check_function_exists("${_name}_" ${_prefix}${_combined_name}_WORKS)
+  endif()
   set(CMAKE_REQUIRED_LIBRARIES)
   mark_as_advanced(${_prefix}${_combined_name}_WORKS)
   set(_libraries_work ${${_prefix}${_combined_name}_WORKS})
@@ -231,18 +255,98 @@ if (BLA_VENDOR STREQUAL "IBMESSL" OR BLA_VENDOR STREQUAL "All")
 endif (BLA_VENDOR STREQUAL "IBMESSL" OR BLA_VENDOR STREQUAL "All")
 
 #BLAS in acml library?
-if (BLA_VENDOR STREQUAL "ACML" OR BLA_VENDOR STREQUAL "All")
+if (BLA_VENDOR STREQUAL "ACML" OR BLA_VENDOR STREQUAL "ACML_MP" OR BLA_VENDOR STREQUAL "All")
+# the patch from Chuck Atkins:
+ if( ((_BLAS_VENDOR STREQUAL "ACML") AND (NOT BLAS_ACML_LIB_DIRS)) OR
+    ((_BLAS_VENDOR STREQUAL "ACML_MP") AND (NOT BLAS_ACML_MP_LIB_DIRS)) )
+   if( WIN32 )
+    file( GLOB _ACML_ROOT "C:/AMD/acml*/ACML-EULA.txt" )
+   else()
+    file( GLOB _ACML_ROOT "/opt/acml*/ACML-EULA.txt" )
+   endif()
+   if( _ACML_ROOT )
+    get_filename_component( _ACML_ROOT ${_ACML_ROOT} PATH )
+    if( SIZEOF_INTEGER EQUAL 8 )
+     set( _ACML_PATH_SUFFIX "_int64" )
+    else()
+    set( _ACML_PATH_SUFFIX "" )
+   endif()
+   if( CMAKE_Fortran_COMPILER_ID STREQUAL "Intel" )
+    set( _ACML_COMPILER32 "ifort32" )
+    set( _ACML_COMPILER64 "ifort64" )
+   elseif( CMAKE_Fortran_COMPILER_ID STREQUAL "SunPro" )
+    set( _ACML_COMPILER32 "sun32" )
+    set( _ACML_COMPILER64 "sun64" )
+   elseif( CMAKE_Fortran_COMPILER_ID STREQUAL "PGI" )
+    set( _ACML_COMPILER32 "pgi32" )
+    if( WIN32 )
+     set( _ACML_COMPILER64 "win64" )
+    else()
+     set( _ACML_COMPILER64 "pgi64" )
+    endif()
+   elseif( CMAKE_Fortran_COMPILER_ID STREQUAL "Open64" )
+    # 32 bit builds not supported on Open64 but for code simplicity
+    # We'll just use the same directory twice
+    set( _ACML_COMPILER32 "open64_64" )
+    set( _ACML_COMPILER64 "open64_64" )
+   elseif( CMAKE_Fortran_COMPILER_ID STREQUAL "NAG" )
+    set( _ACML_COMPILER32 "nag32" )
+    set( _ACML_COMPILER64 "nag64" )
+   else() #if( CMAKE_Fortran_COMPILER_ID STREQUAL "GNU" )
+    set( _ACML_COMPILER32 "gfortran32" )
+    set( _ACML_COMPILER64 "gfortran64" )
+   endif()
+
+   if( _BLAS_VENDOR STREQUAL "ACML_MP" )
+    set(_ACML_MP_LIB_DIRS
+     "${_ACML_ROOT}/${_ACML_COMPILER32}_mp${_ACML_PATH_SUFFIX}/lib"
+     "${_ACML_ROOT}/${_ACML_COMPILER64}_mp${_ACML_PATH_SUFFIX}/lib" )
+   else() #if( _BLAS_VENDOR STREQUAL "ACML" )
+    set(_ACML_LIB_DIRS
+     "${_ACML_ROOT}/${_ACML_COMPILER32}${_ACML_PATH_SUFFIX}/lib"
+     "${_ACML_ROOT}/${_ACML_COMPILER64}${_ACML_PATH_SUFFIX}/lib" )
+   endif()
+  endif()
+ endif()
+
+ if( _BLAS_VENDOR STREQUAL "ACML_MP" )
+  foreach( BLAS_ACML_MP_LIB_DIRS ${_ACML_MP_LIB_DIRS} )
+   _BLAS_LOCATE_AND_TEST( ${_BLAS_VENDOR} "acml_mp;acml_mv" "" )
+   if( BLAS_${_BLAS_VENDOR}_FOUND )
+    break()
+   endif()
+  endforeach()
+ else() #if( _BLAS_VENDOR STREQUAL "ACML" )
+  foreach( BLAS_ACML_LIB_DIRS ${_ACML_LIB_DIRS} )
+   _BLAS_LOCATE_AND_TEST( ${_BLAS_VENDOR} "acml;acml_mv" "" )
+   if( BLAS_${_BLAS_VENDOR}_FOUND )
+    break()
+   endif()
+  endforeach()
+ endif()
+
+ # Either acml or acml_mp should be in LD_LIBRARY_PATH but not both
  if(NOT BLAS_LIBRARIES)
   check_fortran_libraries(
   BLAS_LIBRARIES
   BLAS
   sgemm
   ""
-  "acml"
+  "acml;acml_mv"
   ""
   )
  endif(NOT BLAS_LIBRARIES)
-endif (BLA_VENDOR STREQUAL "ACML" OR BLA_VENDOR STREQUAL "All")
+ if(NOT BLAS_LIBRARIES)
+  check_fortran_libraries(
+  BLAS_LIBRARIES
+  BLAS
+  sgemm
+  ""
+  "acml_mp;acml_mv"
+  ""
+  )
+ endif(NOT BLAS_LIBRARIES)
+endif () # ACML
 
 # Apple BLAS library?
 if (BLA_VENDOR STREQUAL "Apple" OR BLA_VENDOR STREQUAL "All")
@@ -286,6 +390,9 @@ endif (BLA_VENDOR STREQUAL "Generic" OR BLA_VENDOR STREQUAL "All")
 
 #BLAS in intel mkl 10 library? (em64t 64bit)
 if (BLA_VENDOR MATCHES "Intel*" OR BLA_VENDOR STREQUAL "All")
+ if (NOT WIN32)
+  set(LM "-lm")
+ endif ()
  if (_LANGUAGES_ MATCHES C OR _LANGUAGES_ MATCHES CXX)
   if(BLAS_FIND_QUIETLY OR NOT BLAS_FIND_REQUIRED)
     find_package(Threads)
@@ -326,7 +433,7 @@ if (BLA_VENDOR MATCHES "Intel*" OR BLA_VENDOR STREQUAL "All")
       sgemm
       ""
       "mkl_blas95;mkl_intel;mkl_intel_thread;mkl_core;guide"
-      "${CMAKE_THREAD_LIBS_INIT}"
+      "${CMAKE_THREAD_LIBS_INIT};${LM}"
       )
       endif(NOT BLAS95_LIBRARIES)
     else(BLA_F95)
@@ -338,6 +445,7 @@ if (BLA_VENDOR MATCHES "Intel*" OR BLA_VENDOR STREQUAL "All")
       ""
       "mkl_intel;mkl_intel_thread;mkl_core;guide"
       "${CMAKE_THREAD_LIBS_INIT}"
+      "${LM}"
       )
       endif(NOT BLAS_LIBRARIES)
     endif(BLA_F95)
@@ -351,7 +459,7 @@ if (BLA_VENDOR MATCHES "Intel*" OR BLA_VENDOR STREQUAL "All")
       sgemm
       ""
       "mkl_blas95;mkl_intel_lp64;mkl_intel_thread;mkl_core;guide"
-      "${CMAKE_THREAD_LIBS_INIT}"
+      "${CMAKE_THREAD_LIBS_INIT};${LM}"
       )
     endif(NOT BLAS95_LIBRARIES)
    else(BLA_F95)
@@ -362,7 +470,7 @@ if (BLA_VENDOR MATCHES "Intel*" OR BLA_VENDOR STREQUAL "All")
       sgemm
       ""
       "mkl_intel_lp64;mkl_intel_thread;mkl_core;guide"
-      "${CMAKE_THREAD_LIBS_INIT}"
+      "${CMAKE_THREAD_LIBS_INIT};${LM}"
       )
      endif(NOT BLAS_LIBRARIES)
    endif(BLA_F95)
@@ -377,7 +485,7 @@ if (BLA_VENDOR MATCHES "Intel*" OR BLA_VENDOR STREQUAL "All")
     sgemm
     ""
     "mkl;guide"
-    "${CMAKE_THREAD_LIBS_INIT}"
+    "${CMAKE_THREAD_LIBS_INIT};${LM}"
     )
   endif(NOT BLAS_LIBRARIES)
   #BLAS in intel mkl library? (static, 32bit)
@@ -388,7 +496,7 @@ if (BLA_VENDOR MATCHES "Intel*" OR BLA_VENDOR STREQUAL "All")
     sgemm
     ""
     "mkl_ia32;guide"
-    "${CMAKE_THREAD_LIBS_INIT}"
+    "${CMAKE_THREAD_LIBS_INIT};${LM}"
     )
   endif(NOT BLAS_LIBRARIES)
   #BLAS in intel mkl library? (static, em64t 64bit)
@@ -399,7 +507,7 @@ if (BLA_VENDOR MATCHES "Intel*" OR BLA_VENDOR STREQUAL "All")
     sgemm
     ""
     "mkl_em64t;guide"
-    "${CMAKE_THREAD_LIBS_INIT}"
+    "${CMAKE_THREAD_LIBS_INIT};${LM}"
     )
   endif(NOT BLAS_LIBRARIES)
  endif (_LANGUAGES_ MATCHES C OR _LANGUAGES_ MATCHES CXX)

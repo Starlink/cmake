@@ -1,31 +1,42 @@
-if(NOT DEFINED CMAKE_VERSION)
-  message(FATAL_ERROR "CMAKE_VERSION not defined")
-endif(NOT DEFINED CMAKE_VERSION)
+if(NOT DEFINED CMAKE_CREATE_VERSION)
+  set(CMAKE_CREATE_VERSION "release")
+  message("Using default value of 'release' for CMAKE_CREATE_VERSION")
+endif()
 
-set(RELEASE_SCRIPTS
+file(MAKE_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/logs)
+
+set(RELEASE_SCRIPTS_BATCH_1
+  dash2win64_release.cmake    # Windows
   dashmacmini2_release.cmake  # Mac Darwin universal
-  dashsun1_release.cmake      # SunOS
-  destiny_release.cmake       # HPUX
   magrathea_release.cmake     # Linux
-  dashsgi1_release.cmake      # IRIX
-  dashsgi1_release64.cmake    # IRIX 64
-  vogon_release.cmake         # Windows
-  v20n17_aix_release.cmake    # AIX 5.3
-  vogon_cygwin.cmake          # Cygwin
-#  r36n11_aix_release.cmake    # AIX 5.3
-#  r15n65_aix_release.cmake    # AIX 5.2
+  dashsun1_release.cmake      # SunOS
+  v20n250_aix_release.cmake   # AIX 5.3
+  ferrari_sgi64_release.cmake # IRIX 64
+  ferrari_sgi_release.cmake   # IRIX
 )
 
-file(WRITE create-${CMAKE_VERSION}.sh "#!/bin/sh")
-make_directory(${CMAKE_CURRENT_SOURCE_DIR}/logs)
+set(RELEASE_SCRIPTS_BATCH_2
+  dash2win64_cygwin.cmake     # Cygwin
+)
 
-foreach(f ${RELEASE_SCRIPTS})
-  file(APPEND create-${CMAKE_VERSION}.sh
+function(write_batch_shell_script filename)
+  set(scripts ${ARGN})
+  set(i 0)
+  file(WRITE ${filename} "#!/bin/bash")
+  foreach(f ${scripts})
+    math(EXPR x "420*(${i}/4)")
+    math(EXPR y "160*(${i}%4)")
+    file(APPEND ${filename}
     "
-${CMAKE_COMMAND} -DCMAKE_VERSION=${CMAKE_VERSION} -P ${CMAKE_ROOT}/Utilities/Release/${f} < /dev/null >& ${CMAKE_CURRENT_SOURCE_DIR}/logs/${f}-${CMAKE_VERSION}.log &
- xterm -geometry 80x10 -sb -sl 2000 -T ${f}-${CMAKE_VERSION}.log -e tail -f  ${CMAKE_CURRENT_SOURCE_DIR}/logs/${f}-${CMAKE_VERSION}.log&")
-endforeach(f)
-execute_process(COMMAND chmod a+x create-${CMAKE_VERSION}.sh)
-message("Run ./create-${CMAKE_VERSION}.sh")
+${CMAKE_COMMAND} -DCMAKE_CREATE_VERSION=${CMAKE_CREATE_VERSION} -P ${CMAKE_ROOT}/Utilities/Release/${f} < /dev/null >& ${CMAKE_CURRENT_SOURCE_DIR}/logs/${f}-${CMAKE_CREATE_VERSION}.log &
+xterm -geometry 64x6+${x}+${y} -sb -sl 2000 -T ${f}-${CMAKE_CREATE_VERSION}.log -e tail -f  ${CMAKE_CURRENT_SOURCE_DIR}/logs/${f}-${CMAKE_CREATE_VERSION}.log&
+")
+    math(EXPR i "${i}+1")
+  endforeach(f)
+  execute_process(COMMAND chmod a+x ${filename})
+endfunction()
 
+write_batch_shell_script("create-${CMAKE_CREATE_VERSION}-batch1.sh" ${RELEASE_SCRIPTS_BATCH_1})
+write_batch_shell_script("create-${CMAKE_CREATE_VERSION}-batch2.sh" ${RELEASE_SCRIPTS_BATCH_2})
 
+message("Run ./create-${CMAKE_CREATE_VERSION}-batch1.sh, then after all those builds complete, run ./create-${CMAKE_CREATE_VERSION}-batch2.sh")

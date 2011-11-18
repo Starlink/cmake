@@ -1,23 +1,20 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmCustomCommand.h,v $
-  Language:  C++
-  Date:      $Date: 2008-06-13 12:55:17 $
-  Version:   $Revision: 1.23.2.2 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #ifndef cmCustomCommand_h
 #define cmCustomCommand_h
 
 #include "cmStandardIncludes.h"
+class cmMakefile;
+class cmListFileBacktrace;
 
 /** \class cmCustomCommand
  * \brief A class to encapsulate a custom command
@@ -32,11 +29,14 @@ public:
   cmCustomCommand(const cmCustomCommand& r);
 
   /** Main constructor specifies all information for the command.  */
-  cmCustomCommand(const std::vector<std::string>& outputs,
+  cmCustomCommand(cmMakefile* mf,
+                  const std::vector<std::string>& outputs,
                   const std::vector<std::string>& depends,
                   const cmCustomCommandLines& commandLines,
                   const char* comment,
                   const char* workingDirectory);
+
+  ~cmCustomCommand();
 
   /** Get the output file produced by the command.  */
   const std::vector<std::string>& GetOutputs() const;
@@ -68,6 +68,9 @@ public:
   bool GetEscapeAllowMakeVars() const;
   void SetEscapeAllowMakeVars(bool b);
 
+  /** Backtrace of the command that created this custom command.  */
+  cmListFileBacktrace const& GetBacktrace() const;
+
   typedef std::pair<cmStdString, cmStdString> ImplicitDependsPair;
   class ImplicitDependsList: public std::vector<ImplicitDependsPair> {};
   void SetImplicitDepends(ImplicitDependsList const&);
@@ -83,6 +86,7 @@ private:
   std::string WorkingDirectory;
   bool EscapeAllowMakeVars;
   bool EscapeOldStyle;
+  cmListFileBacktrace* Backtrace;
   ImplicitDependsList ImplicitDepends;
 };
 

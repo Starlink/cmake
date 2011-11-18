@@ -1,19 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmXCodeObject.cxx,v $
-  Language:  C++
-  Date:      $Date: 2008-09-03 13:43:18 $
-  Version:   $Revision: 1.24.2.2 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even 
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR 
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #include "cmXCodeObject.h"
 #include "cmSystemTools.h"
 
@@ -151,13 +146,15 @@ void cmXCodeObject::Print(std::ostream& out)
 
         if(j->second->TypeValue == STRING)
           {
-          out << j->first << " = ";
+          cmXCodeObject::PrintString(out,j->first);
+          out << " = ";
           j->second->PrintString(out);
           out << ";";
           }
         else if(j->second->TypeValue == OBJECT_LIST)
           {
-          out << j->first << " = (";
+          cmXCodeObject::PrintString(out,j->first);
+          out << " = (";
           for(unsigned int k = 0; k < j->second->List.size(); k++)
             {
             if(j->second->List[k]->TypeValue == STRING)
@@ -174,7 +171,8 @@ void cmXCodeObject::Print(std::ostream& out)
           }
         else
           {
-          out << j->first << " = error_unexpected_TypeValue_" <<
+          cmXCodeObject::PrintString(out,j->first);
+          out << " = error_unexpected_TypeValue_" <<
             j->second->TypeValue << ";";
           }
 
@@ -185,7 +183,8 @@ void cmXCodeObject::Print(std::ostream& out)
       }
     else if(object->TypeValue == OBJECT_REF)
       {
-      out << i->first << " = " << object->Object->Id;
+      cmXCodeObject::PrintString(out,i->first);
+      out << " = " << object->Object->Id;
       if(object->Object->HasComment() && i->first != "remoteGlobalIDString")
         {
         out << " ";
@@ -195,7 +194,8 @@ void cmXCodeObject::Print(std::ostream& out)
       }
     else if(object->TypeValue == STRING)
       {
-      out << i->first << " = ";
+      cmXCodeObject::PrintString(out,i->first);
+      out << " = ";
       object->PrintString(out);
       out << ";" << separator;
       }
@@ -235,19 +235,19 @@ void cmXCodeObject::CopyAttributes(cmXCodeObject* copy)
 }
 
 //----------------------------------------------------------------------------
-void cmXCodeObject::PrintString(std::ostream& os) const
+void cmXCodeObject::PrintString(std::ostream& os,cmStdString String)
 {
   // The string needs to be quoted if it contains any characters
   // considered special by the Xcode project file parser.
   bool needQuote =
-    (this->String.empty() ||
-     this->String.find_first_of(" <>.+-=@") != this->String.npos);
+    (String.empty() ||
+     String.find_first_of(" <>.+-=@$[]") != String.npos);
   const char* quote = needQuote? "\"" : "";
 
   // Print the string, quoted and escaped as necessary.
   os << quote;
-  for(std::string::const_iterator i = this->String.begin();
-      i != this->String.end(); ++i)
+  for(std::string::const_iterator i = String.begin();
+      i != String.end(); ++i)
     {
     if(*i == '"')
       {
@@ -257,6 +257,11 @@ void cmXCodeObject::PrintString(std::ostream& os) const
     os << *i;
     }
   os << quote;
+}
+
+void cmXCodeObject::PrintString(std::ostream& os) const
+{
+  cmXCodeObject::PrintString(os,this->String);
 }
 
 //----------------------------------------------------------------------------

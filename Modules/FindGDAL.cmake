@@ -9,6 +9,20 @@
 #    GDAL_FOUND - True if libgdal is found
 #    GDAL_LIBRARY - A variable pointing to the GDAL library
 #    GDAL_INCLUDE_DIR - Where to find the headers
+
+#=============================================================================
+# Copyright 2007-2009 Kitware, Inc.
+#
+# Distributed under the OSI-approved BSD License (the "License");
+# see accompanying file Copyright.txt for details.
+#
+# This software is distributed WITHOUT ANY WARRANTY; without even the
+# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the License for more information.
+#=============================================================================
+# (To distribute this file outside of CMake, substitute the full
+#  License text for the above reference.)
+
 #
 # $GDALDIR is an environment variable that would
 # correspond to the ./configure --prefix=$GDAL_DIR
@@ -86,7 +100,7 @@ FIND_LIBRARY(GDAL_LIBRARY
     /usr/freeware
 )
 
-include(FindPackageHandleStandardArgs)
+include(${CMAKE_CURRENT_LIST_DIR}/FindPackageHandleStandardArgs.cmake)
 FIND_PACKAGE_HANDLE_STANDARD_ARGS(GDAL DEFAULT_MSG GDAL_LIBRARY GDAL_INCLUDE_DIR)
 
 set(GDAL_LIBRARIES ${GDAL_LIBRARY})

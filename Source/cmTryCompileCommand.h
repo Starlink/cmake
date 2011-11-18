@@ -1,19 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmTryCompileCommand.h,v $
-  Language:  C++
-  Date:      $Date: 2008-01-23 15:27:59 $
-  Version:   $Revision: 1.27 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even 
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR 
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #ifndef cmTryCompileCommand_h
 #define cmTryCompileCommand_h
 
@@ -52,7 +47,7 @@ public:
    */
   virtual const char* GetTerseDocumentation() 
     {
-    return "Try compiling some code.";
+    return "Try building some code.";
     }
 
   /**
@@ -60,31 +55,42 @@ public:
   virtual const char* GetFullDocumentation()
     {
     return
-      "  try_compile(RESULT_VAR bindir srcdir\n"
-      "              projectName <targetname> [CMAKE_FLAGS <Flags>]\n"
-      "              [OUTPUT_VARIABLE var])\n"
-      "Try compiling a program.  In this form, srcdir should contain a "
-      "complete CMake project with a CMakeLists.txt file and all sources. The "
-      "bindir and srcdir will not be deleted after this command is run. "
-      "If <target name> is specified then build just that target "
-      "otherwise the all or ALL_BUILD target is built.\n"
-      "  try_compile(RESULT_VAR bindir srcfile\n"
-      "              [CMAKE_FLAGS <Flags>]\n"
-      "              [COMPILE_DEFINITIONS <flags> ...]\n"
-      "              [OUTPUT_VARIABLE var]\n"
-      "              [COPY_FILE <filename> )\n"
-      "Try compiling a srcfile.  In this case, the user need only supply a "
-      "source file.  CMake will create the appropriate CMakeLists.txt file "
-      "to build the source. If COPY_FILE is used, the compiled file will be "
-      "copied to the given file.\n"
-      "In this version all files in bindir/CMakeFiles/CMakeTmp, "
-      "will be cleaned automatically, for debugging a --debug-trycompile can "
-      "be passed to cmake to avoid the clean. Some extra flags that "
-      " can be included are,  "
+      "  try_compile(RESULT_VAR <bindir> <srcdir>\n"
+      "              <projectName> [targetName] [CMAKE_FLAGS flags...]\n"
+      "              [OUTPUT_VARIABLE <var>])\n"
+      "Try building a project.  In this form, srcdir should contain a "
+      "complete CMake project with a CMakeLists.txt file and all sources. "
+      "The bindir and srcdir will not be deleted after this command is run. "
+      "Specify targetName to build a specific target instead of the 'all' or "
+      "'ALL_BUILD' target."
+      "\n"
+      "  try_compile(RESULT_VAR <bindir> <srcfile>\n"
+      "              [CMAKE_FLAGS flags...]\n"
+      "              [COMPILE_DEFINITIONS flags...]\n"
+      "              [OUTPUT_VARIABLE <var>]\n"
+      "              [COPY_FILE <fileName>])\n"
+      "Try building a source file into an executable.  "
+      "In this form the user need only supply a source file that defines "
+      "a 'main'.  "
+      "CMake will create a CMakeLists.txt file to build the source "
+      "as an executable.  "
+      "Specify COPY_FILE to get a copy of the linked executable at the "
+      "given fileName."
+      "\n"
+      "In this version all files in bindir/CMakeFiles/CMakeTmp "
+      "will be cleaned automatically. For debugging, --debug-trycompile can "
+      "be passed to cmake to avoid this clean. However, multiple sequential "
+      "try_compile operations reuse this single output directory. If you "
+      "use --debug-trycompile, you can only debug one try_compile call at a "
+      "time. The recommended procedure is to configure with cmake all the "
+      "way through once, then delete the cache entry associated with "
+      "the try_compile call of interest, and then re-run cmake again with "
+      "--debug-trycompile."
+      "\n"
+      "Some extra flags that can be included are,  "
       "INCLUDE_DIRECTORIES, LINK_DIRECTORIES, and LINK_LIBRARIES.  "
       "COMPILE_DEFINITIONS are -Ddefinition that will be passed to the "
       "compile line.  "
-
       "try_compile creates a CMakeList.txt "
       "file on the fly that looks like this:\n"
       "  add_definitions( <expanded COMPILE_DEFINITIONS from calling "
@@ -99,7 +105,9 @@ public:
       "Return the success or failure in "
       "RESULT_VAR. CMAKE_FLAGS can be used to pass -DVAR:TYPE=VALUE flags "
       "to the cmake that is run during the build. "
-      "";
+      "Set variable CMAKE_TRY_COMPILE_CONFIGURATION to choose a build "
+      "configuration."
+      ;
     }
   
   cmTypeMacro(cmTryCompileCommand, cmCoreTryCompile);

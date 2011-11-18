@@ -1,19 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmGetCMakePropertyCommand.h,v $
-  Language:  C++
-  Date:      $Date: 2008-07-13 21:55:23 $
-  Version:   $Revision: 1.8.2.1 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even 
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR 
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #ifndef cmGetCMakePropertyCommand_h
 #define cmGetCMakePropertyCommand_h
 
@@ -59,11 +54,14 @@ public:
     {
       return
         "  get_cmake_property(VAR property)\n"
-        "Get a property from the CMake instance.  The value of the "
-        "property is stored in the variable VAR. If the property is "
-        "not found, CMake will report an error. Some supported properties "
+        "Get a property from the CMake instance.  "
+        "The value of the property is stored in the variable VAR.  "
+        "If the property is not found, VAR will be set to \"NOTFOUND\".  "
+        "Some supported properties "
         "include: VARIABLES, CACHE_VARIABLES, COMMANDS, MACROS, and "
-        "COMPONENTS.";
+        "COMPONENTS."
+        "\n"
+        "See also the more general get_property() command.";
     }
   
   cmTypeMacro(cmGetCMakePropertyCommand, cmCommand);

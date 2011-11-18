@@ -12,6 +12,19 @@
 # Set CURSES_NEED_NCURSES to TRUE before the FIND_PACKAGE() command if NCurses 
 # functionality is required.
 
+#=============================================================================
+# Copyright 2001-2009 Kitware, Inc.
+#
+# Distributed under the OSI-approved BSD License (the "License");
+# see accompanying file Copyright.txt for details.
+#
+# This software is distributed WITHOUT ANY WARRANTY; without even the
+# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the License for more information.
+#=============================================================================
+# (To distribute this file outside of CMake, substitute the full
+#  License text for the above reference.)
+
 FIND_LIBRARY(CURSES_CURSES_LIBRARY NAMES curses )
 
 FIND_LIBRARY(CURSES_NCURSES_LIBRARY NAMES ncurses )
@@ -20,6 +33,15 @@ SET(CURSES_USE_NCURSES FALSE)
 IF(CURSES_NCURSES_LIBRARY  AND NOT  CURSES_CURSES_LIBRARY)
   SET(CURSES_USE_NCURSES TRUE)
 ENDIF(CURSES_NCURSES_LIBRARY  AND NOT  CURSES_CURSES_LIBRARY)
+# http://cygwin.com/ml/cygwin-announce/2010-01/msg00002.html
+# cygwin ncurses stopped providing curses.h symlinks see above
+# message.  Cygwin is an ncurses package, so force ncurses on
+# cygwin if the curses.h is missing
+IF(CYGWIN)
+  IF(NOT EXISTS /usr/include/curses.h)
+    SET(CURSES_USE_NCURSES TRUE)
+  ENDIF()
+ENDIF()
 
 
 # Not sure the logic is correct here.
@@ -133,7 +155,7 @@ SET(CURSES_INCLUDE_DIR ${CURSES_INCLUDE_PATH})
 
 # handle the QUIETLY and REQUIRED arguments and set CURSES_FOUND to TRUE if 
 # all listed variables are TRUE
-INCLUDE(FindPackageHandleStandardArgs)
+INCLUDE(${CMAKE_CURRENT_LIST_DIR}/FindPackageHandleStandardArgs.cmake)
 FIND_PACKAGE_HANDLE_STANDARD_ARGS(Curses DEFAULT_MSG
   CURSES_LIBRARY CURSES_INCLUDE_PATH)
 

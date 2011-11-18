@@ -1,16 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  KWSys - Kitware System Library
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   KWSys - Kitware System Library
-  Module:    $RCSfile: MD5.c,v $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.kitware.com/Copyright.htm for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #include "kwsysPrivate.h"
 #include KWSYS_HEADER(MD5.h)
 
@@ -20,6 +18,7 @@
 # include "MD5.h.in"
 #endif
 
+#include <stddef.h>    /* size_t */
 #include <stdlib.h>    /* malloc, free */
 #include <string.h>    /* memcpy, strlen */
 
@@ -29,6 +28,11 @@
    modifications to the arrangement of the code have been made to put
    it in a single source file instead of a separate header and
    implementation file.  */
+
+#if defined(__clang__)
+# pragma clang diagnostic push
+# pragma clang diagnostic ignored "-Wcast-align"
+#endif
 
 /*
   Copyright (C) 1999, 2000, 2002 Aladdin Enterprises.  All rights reserved.
@@ -53,7 +57,6 @@
   ghost@aladdin.com
 
  */
-/* $Id: MD5.c,v 1.1 2007-03-14 19:12:10 king Exp $ */
 /*
   Independent implementation of MD5 (RFC 1321).
 
@@ -238,7 +241,8 @@ md5_process(md5_state_t *pms, const md5_byte_t *data /*[64]*/)
 #    define xbuf X              /* (static only) */
 #  endif
             for (i = 0; i < 16; ++i, xp += 4)
-              xbuf[i] = xp[0] + (xp[1] << 8) + (xp[2] << 16) + (xp[3] << 24);
+              xbuf[i] = (md5_word_t)(xp[0] + (xp[1] << 8) +
+                                     (xp[2] << 16) + (xp[3] << 24));
         }
 #endif
     }
@@ -369,25 +373,25 @@ static void md5_init(md5_state_t *pms)
 }
 
 /* Append a string to the message. */
-static void md5_append(md5_state_t *pms, const md5_byte_t *data, int nbytes)
+static void md5_append(md5_state_t *pms, const md5_byte_t *data, size_t nbytes)
 {
     const md5_byte_t *p = data;
-    int left = nbytes;
-    int offset = (pms->count[0] >> 3) & 63;
+    size_t left = nbytes;
+    size_t offset = (pms->count[0] >> 3) & 63;
     md5_word_t nbits = (md5_word_t)(nbytes << 3);
 
     if (nbytes <= 0)
         return;
 
     /* Update the message length. */
-    pms->count[1] += nbytes >> 29;
+    pms->count[1] += (md5_word_t)(nbytes >> 29);
     pms->count[0] += nbits;
     if (pms->count[0] < nbits)
         pms->count[1]++;
 
     /* Process an initial partial block. */
     if (offset) {
-        int copy = (offset + nbytes > 64 ? 64 - offset : nbytes);
+        size_t copy = (offset + nbytes > 64 ? 64 - offset : nbytes);
 
         memcpy(pms->buf + offset, p, copy);
         if (offset + copy < 64)
@@ -428,6 +432,10 @@ static void md5_finish(md5_state_t *pms, md5_byte_t digest[16])
     for (i = 0; i < 16; ++i)
         digest[i] = (md5_byte_t)(pms->abcd[i >> 2] >> ((i & 3) << 3));
 }
+
+#if defined(__clang__)
+# pragma clang diagnostic pop
+#endif
 
 /*--------------------------------------------------------------------------*/
 /* Wrap up the MD5 state in our opaque structure.  */
@@ -474,7 +482,7 @@ void kwsysMD5_Append(kwsysMD5* md5, unsigned char const* data, int length)
     {
     length = (int)strlen((char const*)data);
     }
-  md5_append(&md5->md5_state, (md5_byte_t const*)data, length);
+  md5_append(&md5->md5_state, (md5_byte_t const*)data, (size_t)length);
 }
 
 /*--------------------------------------------------------------------------*/

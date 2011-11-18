@@ -20,7 +20,7 @@
  * This software is distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY
  * KIND, either express or implied.
  *
- * $Id: multi.h,v 1.2 2007-03-15 19:22:15 andy Exp $
+ * $Id$
  ***************************************************************************/
 /*
   This is an "external" header file. Don't give away any internals here!
@@ -181,7 +181,7 @@ CURL_EXTERN CURLMcode curl_multi_cleanup(CURLM *multi_handle);
  *          curl_multi_cleanup().
  *
  *          The 'CURLMsg' struct is meant to be very simple and only contain
- *          very basic informations. If more involved information is wanted,
+ *          very basic information. If more involved information is wanted,
  *          we will provide the particular "transfer handle" in that struct
  *          and that should/could/would be used in subsequent
  *          curl_easy_getinfo() calls (or similar). The point being that we

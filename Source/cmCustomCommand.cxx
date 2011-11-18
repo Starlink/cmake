@@ -1,20 +1,17 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmCustomCommand.cxx,v $
-  Language:  C++
-  Date:      $Date: 2008-06-13 12:55:17 $
-  Version:   $Revision: 1.24.2.2 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #include "cmCustomCommand.h"
+
+#include "cmMakefile.h"
 
 //----------------------------------------------------------------------------
 cmCustomCommand::cmCustomCommand()
@@ -33,12 +30,14 @@ cmCustomCommand::cmCustomCommand(const cmCustomCommand& r):
   Comment(r.Comment),
   WorkingDirectory(r.WorkingDirectory),
   EscapeAllowMakeVars(r.EscapeAllowMakeVars),
-  EscapeOldStyle(r.EscapeOldStyle)
+  EscapeOldStyle(r.EscapeOldStyle),
+  Backtrace(new cmListFileBacktrace(*r.Backtrace))
 {
 }
 
 //----------------------------------------------------------------------------
-cmCustomCommand::cmCustomCommand(const std::vector<std::string>& outputs,
+cmCustomCommand::cmCustomCommand(cmMakefile* mf,
+                                 const std::vector<std::string>& outputs,
                                  const std::vector<std::string>& depends,
                                  const cmCustomCommandLines& commandLines,
                                  const char* comment,
@@ -50,10 +49,21 @@ cmCustomCommand::cmCustomCommand(const std::vector<std::string>& outputs,
   Comment(comment?comment:""),
   WorkingDirectory(workingDirectory?workingDirectory:""),
   EscapeAllowMakeVars(false),
-  EscapeOldStyle(true)
+  EscapeOldStyle(true),
+  Backtrace(new cmListFileBacktrace)
 {
   this->EscapeOldStyle = true;
   this->EscapeAllowMakeVars = false;
+  if(mf)
+    {
+    mf->GetBacktrace(*this->Backtrace);
+    }
+}
+
+//----------------------------------------------------------------------------
+cmCustomCommand::~cmCustomCommand()
+{
+  delete this->Backtrace;
 }
 
 //----------------------------------------------------------------------------
@@ -133,6 +143,12 @@ bool cmCustomCommand::GetEscapeAllowMakeVars() const
 void cmCustomCommand::SetEscapeAllowMakeVars(bool b)
 {
   this->EscapeAllowMakeVars = b;
+}
+
+//----------------------------------------------------------------------------
+cmListFileBacktrace const& cmCustomCommand::GetBacktrace() const
+{
+  return *this->Backtrace;
 }
 
 //----------------------------------------------------------------------------

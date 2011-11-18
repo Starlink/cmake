@@ -1,54 +1,64 @@
-SET(WIN32 1)
+if("${CMAKE_MINIMUM_REQUIRED_VERSION}" VERSION_LESS "2.8.3.20101214")
+  set(__USE_CMAKE_LEGACY_CYGWIN_WIN32 1)
+endif()
+if(NOT DEFINED WIN32)
+  set(WIN32 0)
+  if(DEFINED __USE_CMAKE_LEGACY_CYGWIN_WIN32)
+    if(NOT DEFINED CMAKE_LEGACY_CYGWIN_WIN32
+        AND DEFINED ENV{CMAKE_LEGACY_CYGWIN_WIN32})
+      set(CMAKE_LEGACY_CYGWIN_WIN32 $ENV{CMAKE_LEGACY_CYGWIN_WIN32})
+    endif()
+    if(CMAKE_LEGACY_CYGWIN_WIN32)
+      message(STATUS "Defining WIN32 under Cygwin due to CMAKE_LEGACY_CYGWIN_WIN32")
+      set(WIN32 1)
+    elseif("x${CMAKE_LEGACY_CYGWIN_WIN32}" STREQUAL "x")
+      message(WARNING "CMake no longer defines WIN32 on Cygwin!"
+        "\n"
+        "(1) If you are just trying to build this project, ignore this warning "
+        "or quiet it by setting CMAKE_LEGACY_CYGWIN_WIN32=0 in your environment or "
+        "in the CMake cache.  "
+        "If later configuration or build errors occur then this project may "
+        "have been written under the assumption that Cygwin is WIN32.  "
+        "In that case, set CMAKE_LEGACY_CYGWIN_WIN32=1 instead."
+        "\n"
+        "(2) If you are developing this project, add the line\n"
+        "  set(CMAKE_LEGACY_CYGWIN_WIN32 0) # Remove when CMake >= 2.8.4 is required\n"
+        "at the top of your top-level CMakeLists.txt file or set the minimum "
+        "required version of CMake to 2.8.4 or higher.  "
+        "Then teach your project to build on Cygwin without WIN32.")
+    endif()
+  elseif(DEFINED CMAKE_LEGACY_CYGWIN_WIN32)
+    message(AUTHOR_WARNING "CMAKE_LEGACY_CYGWIN_WIN32 ignored because\n"
+      "  cmake_minimum_required(VERSION ${CMAKE_MINIMUM_REQUIRED_VERSION})\n"
+      "is at least 2.8.4.")
+  endif()
+endif()
+if(DEFINED __USE_CMAKE_LEGACY_CYGWIN_WIN32)
+  # Pass WIN32 legacy setting to scripts.
+  if(WIN32)
+    set(ENV{CMAKE_LEGACY_CYGWIN_WIN32} 1)
+  else()
+    set(ENV{CMAKE_LEGACY_CYGWIN_WIN32} 0)
+  endif()
+  unset(__USE_CMAKE_LEGACY_CYGWIN_WIN32)
+endif()
+
 SET(CYGWIN 1)
 
-SET(CMAKE_SHARED_LIBRARY_CREATE_C_FLAGS "-shared -Wl,--export-all-symbols -Wl,--enable-auto-import")
-SET(CMAKE_SHARED_MODULE_CREATE_C_FLAGS ${CMAKE_SHARED_LIBRARY_CREATE_C_FLAGS})
-SET(CMAKE_DL_LIBS "-lgdi32" )
 SET(CMAKE_SHARED_LIBRARY_PREFIX "cyg")
 SET(CMAKE_SHARED_LIBRARY_SUFFIX ".dll")
-SET(CMAKE_SHARED_MODULE_PREFIX "lib")
+SET(CMAKE_SHARED_MODULE_PREFIX "cyg")
 SET(CMAKE_SHARED_MODULE_SUFFIX ".dll")
 SET(CMAKE_IMPORT_LIBRARY_PREFIX "lib")
 SET(CMAKE_IMPORT_LIBRARY_SUFFIX ".dll.a")
-# no pic for gcc on cygwin
-SET(CMAKE_SHARED_LIBRARY_C_FLAGS "")
-SET(CMAKE_SHARED_LIBRARY_CXX_FLAGS "")
 SET(CMAKE_EXECUTABLE_SUFFIX ".exe")          # .exe
-SET(CMAKE_CREATE_WIN32_EXE  "-mwindows")
 # Modules have a different default prefix that shared libs.
 SET(CMAKE_MODULE_EXISTS 1)
 
-SET(CMAKE_FIND_LIBRARY_PREFIXES "cyg" "lib")
-SET(CMAKE_FIND_LIBRARY_SUFFIXES ".dll" ".dll.a" ".a")
-
-SET(CMAKE_GNULD_IMAGE_VERSION
-  "-Wl,--major-image-version,<TARGET_VERSION_MAJOR>,--minor-image-version,<TARGET_VERSION_MINOR>")
-
-SET(CMAKE_C_CREATE_SHARED_MODULE
-  "<CMAKE_C_COMPILER> <LANGUAGE_COMPILE_FLAGS> <CMAKE_SHARED_MODULE_C_FLAGS> <LINK_FLAGS> <CMAKE_SHARED_MODULE_CREATE_C_FLAGS> -o <TARGET> ${CMAKE_GNULD_IMAGE_VERSION} <OBJECTS> <LINK_LIBRARIES>")
-SET(CMAKE_CXX_CREATE_SHARED_MODULE
-  "<CMAKE_CXX_COMPILER> <LANGUAGE_COMPILE_FLAGS> <CMAKE_SHARED_MODULE_CXX_FLAGS> <LINK_FLAGS> <CMAKE_SHARED_MODULE_CREATE_CXX_FLAGS> -o <TARGET> ${CMAKE_GNULD_IMAGE_VERSION} <OBJECTS> <LINK_LIBRARIES>")
-
-SET(CMAKE_C_CREATE_SHARED_LIBRARY
-  "<CMAKE_C_COMPILER> <LANGUAGE_COMPILE_FLAGS> <CMAKE_SHARED_LIBRARY_C_FLAGS> <LINK_FLAGS> <CMAKE_SHARED_LIBRARY_CREATE_C_FLAGS> -o <TARGET> -Wl,--out-implib,<TARGET_IMPLIB> ${CMAKE_GNULD_IMAGE_VERSION} <OBJECTS> <LINK_LIBRARIES>")
-SET(CMAKE_CXX_CREATE_SHARED_LIBRARY
-  "<CMAKE_CXX_COMPILER> <LANGUAGE_COMPILE_FLAGS> <CMAKE_SHARED_LIBRARY_CXX_FLAGS> <LINK_FLAGS> <CMAKE_SHARED_LIBRARY_CREATE_CXX_FLAGS> -o <TARGET> -Wl,--out-implib,<TARGET_IMPLIB> ${CMAKE_GNULD_IMAGE_VERSION} <OBJECTS> <LINK_LIBRARIES>")
-
-SET(CMAKE_C_LINK_EXECUTABLE
-  "<CMAKE_C_COMPILER> <FLAGS> <CMAKE_C_LINK_FLAGS> <LINK_FLAGS> <OBJECTS>  -o <TARGET> -Wl,--out-implib,<TARGET_IMPLIB> ${CMAKE_GNULD_IMAGE_VERSION} <LINK_LIBRARIES>")
-SET(CMAKE_CXX_LINK_EXECUTABLE
-  "<CMAKE_CXX_COMPILER>  <FLAGS> <CMAKE_CXX_LINK_FLAGS> <LINK_FLAGS> <OBJECTS>  -o <TARGET> -Wl,--out-implib,<TARGET_IMPLIB> ${CMAKE_GNULD_IMAGE_VERSION} <LINK_LIBRARIES>")
+SET(CMAKE_FIND_LIBRARY_PREFIXES "lib")
+SET(CMAKE_FIND_LIBRARY_SUFFIXES ".dll.a" ".a")
 
 # Shared libraries on cygwin can be named with their version number.
 SET(CMAKE_SHARED_LIBRARY_NAME_WITH_VERSION 1)
-
-# Initialize C link type selection flags.  These flags are used when
-# building a shared library, shared module, or executable that links
-# to other libraries to select whether to use the static or shared
-# versions of the libraries.
-FOREACH(type SHARED_LIBRARY SHARED_MODULE EXE)
-  SET(CMAKE_${type}_LINK_STATIC_C_FLAGS "-Wl,-Bstatic")
-  SET(CMAKE_${type}_LINK_DYNAMIC_C_FLAGS "-Wl,-Bdynamic")
-ENDFOREACH(type)
 
 INCLUDE(Platform/UnixPaths)

@@ -1,19 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmCursesMainForm.cxx,v $
-  Language:  C++
-  Date:      $Date: 2008-10-24 15:18:55 $
-  Version:   $Revision: 1.73.2.1 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even 
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR 
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #include "../cmCacheManager.h"
 #include "../cmSystemTools.h"
 #include "../cmVersion.h"
@@ -231,7 +226,8 @@ void cmCursesMainForm::RePost()
       {
       cmCacheManager::CacheIterator mit = 
         this->CMakeInstance->GetCacheManager()->GetCacheIterator((*it)->GetValue());
-      if (mit.IsAtEnd() || !this->AdvancedMode && mit.GetPropertyAsBool("ADVANCED"))
+      if (mit.IsAtEnd() ||
+          (!this->AdvancedMode && mit.GetPropertyAsBool("ADVANCED")))
         {
         continue;
         }
@@ -246,7 +242,7 @@ void cmCursesMainForm::RePost()
   // Assign the fields: 3 for each entry: label, new entry marker
   // ('*' or ' ') and entry widget
   this->Fields = new FIELD*[3*this->NumberOfVisibleEntries+1];
-  int cc;
+  size_t cc;
   for ( cc = 0; cc < 3 * this->NumberOfVisibleEntries+1; cc ++ )
     {
     this->Fields[cc] = 0;
@@ -259,7 +255,8 @@ void cmCursesMainForm::RePost()
     {
     cmCacheManager::CacheIterator mit = 
       this->CMakeInstance->GetCacheManager()->GetCacheIterator((*it)->GetValue());
-    if (mit.IsAtEnd() || !this->AdvancedMode && mit.GetPropertyAsBool("ADVANCED"))
+    if (mit.IsAtEnd() ||
+        (!this->AdvancedMode && mit.GetPropertyAsBool("ADVANCED")))
       {
       continue;
       }
@@ -327,7 +324,8 @@ void cmCursesMainForm::Render(int left, int top, int width, int height)
       {
       cmCacheManager::CacheIterator mit = 
         this->CMakeInstance->GetCacheManager()->GetCacheIterator((*it)->GetValue());
-      if (mit.IsAtEnd() || !this->AdvancedMode && mit.GetPropertyAsBool("ADVANCED"))
+      if (mit.IsAtEnd() ||
+          (!this->AdvancedMode && mit.GetPropertyAsBool("ADVANCED")))
         {
         continue;
         }
@@ -336,31 +334,35 @@ void cmCursesMainForm::Render(int left, int top, int width, int height)
     }
 
   // Re-adjust the fields according to their place
-  bool isNewPage;
-  int i=0;
   this->NumberOfPages = 1;
-  std::vector<cmCursesCacheEntryComposite*>::iterator it;
-  for (it = this->Entries->begin(); it != this->Entries->end(); ++it)
+  if (height > 0)
     {
-    cmCacheManager::CacheIterator mit = 
-      this->CMakeInstance->GetCacheManager()->GetCacheIterator((*it)->GetValue());
-    if (mit.IsAtEnd() || !this->AdvancedMode && mit.GetPropertyAsBool("ADVANCED"))
+    bool isNewPage;
+    int i=0;
+    std::vector<cmCursesCacheEntryComposite*>::iterator it;
+    for (it = this->Entries->begin(); it != this->Entries->end(); ++it)
       {
-      continue;
-      }
-    int row = (i % height) + 1;  
-    int page = (i / height) + 1;
-    isNewPage = ( page > 1 ) && ( row == 1 );
+      cmCacheManager::CacheIterator mit =
+        this->CMakeInstance->GetCacheManager()->GetCacheIterator((*it)->GetValue());
+      if (mit.IsAtEnd() ||
+          (!this->AdvancedMode && mit.GetPropertyAsBool("ADVANCED")))
+        {
+        continue;
+        }
+      int row = (i % height) + 1;
+      int page = (i / height) + 1;
+      isNewPage = ( page > 1 ) && ( row == 1 );
 
-    if (isNewPage)
-      {
-      this->NumberOfPages++;
+      if (isNewPage)
+        {
+        this->NumberOfPages++;
+        }
+      (*it)->Label->Move(left, top+row-1, isNewPage);
+      (*it)->IsNewLabel->Move(left+32, top+row-1, false);
+      (*it)->Entry->Move(left+33, top+row-1, false);
+      (*it)->Entry->SetPage(this->NumberOfPages);
+      i++;
       }
-    (*it)->Label->Move(left, top+row-1, isNewPage);
-    (*it)->IsNewLabel->Move(left+32, top+row-1, false);
-    (*it)->Entry->Move(left+33, top+row-1, false);
-    (*it)->Entry->SetPage(this->NumberOfPages);
-    i++;
     }
 
   // Post the form
@@ -455,7 +457,7 @@ void cmCursesMainForm::PrintKeys(int process /* = 0 */)
   if (cw)
     {
     sprintf(firstLine, "Page %d of %d", cw->GetPage(), this->NumberOfPages);
-    curses_move(0,65-strlen(firstLine)-1);
+    curses_move(0,65-static_cast<unsigned int>(strlen(firstLine))-1);
     printw(firstLine);
     }
 //    }
@@ -527,10 +529,10 @@ void cmCursesMainForm::UpdateStatusBar(const char* message)
   // Join the key, help string and pad with spaces
   // (or truncate) as necessary
   char bar[cmCursesMainForm::MAX_WIDTH];
-  int i, curFieldLen = strlen(curField);
-  int helpLen = strlen(help);
+  size_t i, curFieldLen = strlen(curField);
+  size_t helpLen = strlen(help);
 
-  int width;
+  size_t width;
   if (x < cmCursesMainForm::MAX_WIDTH )
     {
     width = x;
@@ -592,9 +594,8 @@ void cmCursesMainForm::UpdateStatusBar(const char* message)
   // We want to display this on the right
   char version[cmCursesMainForm::MAX_WIDTH];
   char vertmp[128];
-  sprintf(vertmp,"CMake Version %d.%d - %s", cmVersion::GetMajorVersion(),
-          cmVersion::GetMinorVersion(),cmVersion::GetReleaseVersion().c_str());
-  int sideSpace = (width-strlen(vertmp));
+  sprintf(vertmp,"CMake Version %s", cmVersion::GetCMakeVersion());
+  size_t sideSpace = (width-strlen(vertmp));
   for(i=0; i<sideSpace; i++) { version[i] = ' '; }
   sprintf(version+sideSpace, "%s", vertmp);
   version[width] = '\0';
@@ -788,6 +789,7 @@ void cmCursesMainForm::RemoveEntry(const char* value)
     const char* val = (*it)->GetValue();
     if (  val && !strcmp(value, val) )
       {
+      this->CMakeInstance->UnwatchUnusedCli(value);
       this->Entries->erase(it);
       break;
       }
@@ -797,8 +799,8 @@ void cmCursesMainForm::RemoveEntry(const char* value)
 // copy from the list box to the cache manager
 void cmCursesMainForm::FillCacheManagerFromUI()
 {   
-  int size = this->Entries->size();
-  for(int i=0; i < size; i++)
+  size_t size = this->Entries->size();
+  for(size_t i=0; i < size; i++)
     {
     cmCacheManager::CacheIterator it = 
       this->CMakeInstance->GetCacheManager()->GetCacheIterator(
@@ -868,7 +870,7 @@ void cmCursesMainForm::HandleInput()
       std::string searchstr = "Search: " + this->SearchString;
       this->UpdateStatusBar( searchstr.c_str() );
       this->PrintKeys(1);
-      curses_move(y-5,searchstr.size());
+      curses_move(y-5,static_cast<unsigned int>(searchstr.size()));
       //curses_move(1,1);
       touchwin(stdscr); 
       refresh();
@@ -904,7 +906,7 @@ void cmCursesMainForm::HandleInput()
         this->SearchMode = false;
         if ( this->SearchString.size() > 0 )
           {
-          this->JumpToCacheEntry(-1, this->SearchString.c_str());
+          this->JumpToCacheEntry(this->SearchString.c_str());
           this->OldSearchString = this->SearchString;
           }
         this->SearchString = "";
@@ -915,14 +917,14 @@ void cmCursesMainForm::HandleInput()
         this->SearchMode = false;
         }
       */
-      else if ( key >= 'a' && key <= 'z' || 
-                key >= 'A' && key <= 'Z' ||
-                key >= '0' && key <= '9' ||
-                key == '_' )
+      else if ((key >= 'a' && key <= 'z') ||
+               (key >= 'A' && key <= 'Z') ||
+               (key >= '0' && key <= '9') ||
+               (key == '_' ))
         {
         if ( this->SearchString.size() < static_cast<std::string::size_type>(x-10) )
           {
-          this->SearchString += key;
+          this->SearchString += static_cast<char>(key);
           }
         }
       else if ( key == ctrl('h') || key == KEY_BACKSPACE || key == KEY_DC )
@@ -963,7 +965,7 @@ void cmCursesMainForm::HandleInput()
       else if ( key == KEY_DOWN || key == ctrl('n') )
         {
         FIELD* cur = current_field(this->Form);
-        int findex = field_index(cur);
+        size_t findex = field_index(cur);
         if ( findex == 3*this->NumberOfVisibleEntries-1 )
           {
           continue;
@@ -1078,7 +1080,7 @@ void cmCursesMainForm::HandleInput()
         {
         if ( this->OldSearchString.size() > 0 )
           {
-          this->JumpToCacheEntry(-1, this->OldSearchString.c_str());
+          this->JumpToCacheEntry(this->OldSearchString.c_str());
           }
         }
       // switch advanced on/off
@@ -1110,7 +1112,7 @@ void cmCursesMainForm::HandleInput()
         {
         this->OkToGenerate = false;
         FIELD* cur = current_field(this->Form);
-        int findex = field_index(cur);
+        size_t findex = field_index(cur);
 
         // make the next or prev. current field after deletion
         // each entry consists of fields: label, isnew, value
@@ -1193,7 +1195,7 @@ int cmCursesMainForm::LoadCache(const char *)
   return r;
 }
   
-void cmCursesMainForm::JumpToCacheEntry(int idx, const char* astr)
+void cmCursesMainForm::JumpToCacheEntry(const char* astr)
 {
   std::string str;
   if ( astr )
@@ -1201,18 +1203,14 @@ void cmCursesMainForm::JumpToCacheEntry(int idx, const char* astr)
     str = cmSystemTools::LowerCase(astr);
     }
 
-  if ( idx > this->NumberOfVisibleEntries )
-    {
-    return;
-    }
-  if ( idx < 0 && str.size() == 0)
+  if(str.empty())
     {
     return;
     }
   FIELD* cur = current_field(this->Form);
   int start_index = field_index(cur);
   int findex = start_index;
-  while ( (findex / 3) != idx ) 
+  for(;;)
     {
     if ( str.size() > 0 )
       {
@@ -1234,7 +1232,7 @@ void cmCursesMainForm::JumpToCacheEntry(int idx, const char* astr)
           }
         }
       }
-    if ( findex >= 3* this->NumberOfVisibleEntries-1 )
+    if ( size_t(findex) >= 3* this->NumberOfVisibleEntries-1 )
       {
       set_current_field(this->Form, this->Fields[2]);
       }

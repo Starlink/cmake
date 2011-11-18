@@ -9,12 +9,16 @@ ADD_SUBDIRECTORY(GeneratedHeader)
 #
 # Lib and exe path
 #
-SET (LIBRARY_OUTPUT_PATH 
-  ${PROJECT_BINARY_DIR}/bin/ CACHE INTERNAL 
+IF(NOT DEFINED bin_dir)
+  SET(bin_dir "bin")
+ENDIF()
+
+SET (LIBRARY_OUTPUT_PATH
+  ${PROJECT_BINARY_DIR}/${bin_dir} CACHE INTERNAL
   "Single output directory for building all libraries.")
 
-SET (EXECUTABLE_OUTPUT_PATH 
-  ${PROJECT_BINARY_DIR}/bin/ CACHE INTERNAL 
+SET (EXECUTABLE_OUTPUT_PATH
+  ${PROJECT_BINARY_DIR}/${bin_dir} CACHE INTERNAL
   "Single output directory for building all executables.")
 
 ################################################################
@@ -51,7 +55,7 @@ ADD_CUSTOM_COMMAND(
 #  Test creating files from a custom target
 #
 ################################################################
-ADD_CUSTOM_COMMAND(OUTPUT ${PROJECT_BINARY_DIR}/doc1.dvi
+ADD_CUSTOM_COMMAND(OUTPUT ${PROJECT_BINARY_DIR}//doc1.dvi # test 2 slashes
   DEPENDS ${PROJECT_SOURCE_DIR}/doc1.tex 
   COMMAND   ${CMAKE_COMMAND}  
   ARGS      -E copy ${PROJECT_SOURCE_DIR}/doc1.tex 
@@ -98,7 +102,7 @@ ADD_CUSTOM_TARGET(TDocument ALL
   COMMAND ${CMAKE_COMMAND} -E echo " Copying doc1.h to doc2.h."
   COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_BINARY_DIR}/doc1.h
                                    ${PROJECT_BINARY_DIR}/doc2.h
-  DEPENDS ${PROJECT_BINARY_DIR}/doc1.h doc1.txt
+  DEPENDS doc1.txt ${PROJECT_BINARY_DIR}//doc1.h # test 2 slashes
   COMMENT "Running top-level TDocument commands"
   SOURCES doc1.tex
   )
@@ -126,6 +130,7 @@ ADD_CUSTOM_COMMAND(
 ################################################################
 ADD_CUSTOM_COMMAND(OUTPUT ${PROJECT_BINARY_DIR}/foo.pre
   DEPENDS ${PROJECT_SOURCE_DIR}/foo.in
+          TDocument # Ensure doc1.h generates before this target
   COMMAND   ${CMAKE_COMMAND}  
   ARGS      -E copy ${PROJECT_SOURCE_DIR}/foo.in 
   ${PROJECT_BINARY_DIR}/foo.pre
@@ -177,10 +182,6 @@ ADD_CUSTOM_COMMAND(OUTPUT ${PROJECT_BINARY_DIR}/generated.c
 
 TARGET_LINK_LIBRARIES(CustomCommand GeneratedHeader)
 
-# must add a dependency on TDocument otherwise it might never build and 
-# the CustomCommand executable really needs doc1.h
-ADD_DEPENDENCIES(CustomCommand TDocument)
-
 ##############################################################################
 # Test for using just the target name as executable in the COMMAND
 # section. Has to be recognized and replaced by CMake with the output
@@ -220,7 +221,12 @@ ADD_CUSTOM_COMMAND(OUTPUT gen_redirect.c
 ##############################################################################
 # Test non-trivial command line arguments in custom commands.
 SET(EXPECTED_ARGUMENTS)
+SET(CHECK_ARGS)
+IF(NOT MSVC71)
+  SET(CHECK_ARGS -DPATH=c:/posix/path)
+ENDIF()
 SET(CHECK_ARGS
+  ${CHECK_ARGS}
   c:/posix/path
   c:\\windows\\path
   'single-quotes'
@@ -354,19 +360,21 @@ FOREACH(arg ${CHECK_ARGS} "")
     "${EXPECTED_ARGUMENTS}  \"${ARG}\",
 ")
 ENDFOREACH(arg)
-SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${CMAKE_ANSI_CFLAGS}")
 CONFIGURE_FILE(${CMAKE_CURRENT_SOURCE_DIR}/check_command_line.c.in
                ${CMAKE_CURRENT_BINARY_DIR}/check_command_line.c
                @ONLY IMMEDIATE)
 ADD_EXECUTABLE(check_command_line
   ${CMAKE_CURRENT_BINARY_DIR}/check_command_line.c)
+SET(output_name "check_command_line")
+SET_PROPERTY(TARGET check_command_line
+  PROPERTY OUTPUT_NAME ${output_name})
 # SET_TARGET_PROPERTIES(check_command_line PROPERTIES
 #   COMPILE_FLAGS -DCHECK_COMMAND_LINE_VERBOSE)
 ADD_CUSTOM_COMMAND(
   OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/command_line_check
   COMMAND ${CMAKE_COMMAND} -DMARK_FILE=${CMAKE_CURRENT_BINARY_DIR}/check_mark.txt
   -P ${CMAKE_CURRENT_SOURCE_DIR}/check_mark.cmake
-  COMMAND ${EXECUTABLE_OUTPUT_PATH}/${CMAKE_CFG_INTDIR}/check_command_line
+  COMMAND ${EXECUTABLE_OUTPUT_PATH}/${CMAKE_CFG_INTDIR}/${output_name}
   ${CHECK_ARGS} ""
   VERBATIM
   COMMENT "Checking custom command line escapes (single'quote)"
@@ -376,7 +384,7 @@ SET_SOURCE_FILES_PROPERTIES(${CMAKE_CURRENT_BINARY_DIR}/command_line_check
 ADD_CUSTOM_TARGET(do_check_command_line ALL
   DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/command_line_check
   COMMAND ${CMAKE_COMMAND} -E echo "Checking custom target command escapes"
-  COMMAND ${EXECUTABLE_OUTPUT_PATH}/${CMAKE_CFG_INTDIR}/check_command_line
+  COMMAND ${EXECUTABLE_OUTPUT_PATH}/${CMAKE_CFG_INTDIR}/${output_name}
   ${CHECK_ARGS} ""
   VERBATIM
   COMMENT "Checking custom target command line escapes ($dollar-signs$)"
@@ -387,3 +395,44 @@ ADD_CUSTOM_TARGET(pre_check_command_line
   COMMAND ${CMAKE_COMMAND} -E remove ${CMAKE_CURRENT_BINARY_DIR}/check_mark.txt
   )
 ADD_DEPENDENCIES(do_check_command_line pre_check_command_line)
+
+# <SameNameTest>
+#
+# Add a custom target called "SameName" -- then add a custom command in a
+# different target whose output is a full-path file called "SameName" -- then
+# add a second custom target that depends on the full-path file ".../SameName"
+#
+# At first, this reproduces a bug reported by a customer. After fixing it,
+# having this test here makes sure it stays fixed moving forward.
+#
+ADD_CUSTOM_COMMAND(
+  OUTPUT SameName1.txt
+  COMMAND ${CMAKE_COMMAND} -E touch SameName1.txt
+  )
+ADD_CUSTOM_TARGET(SameName ALL
+  DEPENDS SameName1.txt
+  )
+
+ADD_CUSTOM_COMMAND(
+  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/subdir/SameName
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/subdir
+  COMMAND ${CMAKE_COMMAND} -E touch ${CMAKE_CURRENT_BINARY_DIR}/subdir/SameName
+  )
+ADD_CUSTOM_TARGET(DifferentName ALL
+  DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/subdir/SameName
+  )
+#
+# </SameNameTest>
+
+# Per-config target name and generator expressions.
+ADD_SUBDIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/../PerConfig PerConfig)
+ADD_CUSTOM_COMMAND(
+  OUTPUT perconfig.out
+  COMMAND ${PerConfig_COMMAND}
+  DEPENDS ${PerConfig_DEPENDS}
+  VERBATIM
+  )
+SET_PROPERTY(SOURCE perconfig.out PROPERTY SYMBOLIC 1)
+ADD_CUSTOM_TARGET(perconfig_target ALL
+  COMMAND ${CMAKE_COMMAND} -E echo "perconfig=$<TARGET_FILE:perconfig>" "config=$<CONFIGURATION>"
+  DEPENDS perconfig.out)

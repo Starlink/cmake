@@ -1,19 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmFileCommand.cxx,v $
-  Language:  C++
-  Date:      $Date: 2009-03-23 17:58:40 $
-  Version:   $Revision: 1.103.2.9 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #include "cmFileCommand.h"
 #include "cmake.h"
 #include "cmHexFileConverter.h"
@@ -80,6 +75,10 @@ bool cmFileCommand
     {
     return this->HandleDownloadCommand(args);
     }
+  else if ( subCommand == "UPLOAD" )
+    {
+    return this->HandleUploadCommand(args);
+    }
   else if ( subCommand == "READ" )
     {
     return this->HandleReadCommand(args);
@@ -100,6 +99,10 @@ bool cmFileCommand
     {
     return this->HandleMakeDirectoryCommand(args);
     }
+  else if ( subCommand == "RENAME" )
+    {
+    return this->HandleRename(args);
+    }
   else if ( subCommand == "REMOVE" )
     {
     return this->HandleRemove(args, false);
@@ -107,6 +110,10 @@ bool cmFileCommand
   else if ( subCommand == "REMOVE_RECURSE" )
     {
     return this->HandleRemove(args, true);
+    }
+  else if ( subCommand == "COPY" )
+    {
+    return this->HandleCopyCommand(args);
     }
   else if ( subCommand == "INSTALL" )
     {
@@ -180,26 +187,18 @@ bool cmFileCommand::HandleWriteCommand(std::vector<std::string> const& args,
   std::string dir = cmSystemTools::GetFilenamePath(fileName);
   cmSystemTools::MakeDirectory(dir.c_str());
 
-  mode_t mode =
-#if defined( _MSC_VER ) || defined( __MINGW32__ )
-    S_IREAD | S_IWRITE
-#elif defined( __BORLANDC__ )
-    S_IRUSR | S_IWUSR
-#else
-    S_IRUSR | S_IWUSR |
-    S_IRGRP |
-    S_IROTH
-#endif
-    ;
+  mode_t mode = 0;
 
   // Set permissions to writable
   if ( cmSystemTools::GetPermissions(fileName.c_str(), mode) )
     {
     cmSystemTools::SetPermissions(fileName.c_str(),
 #if defined( _MSC_VER ) || defined( __MINGW32__ )
-      S_IREAD | S_IWRITE
+      mode | S_IWRITE
+#elif defined( __BORLANDC__ )
+      mode | S_IWUSR
 #else
-      S_IRUSR | S_IWUSR
+      mode | S_IWUSR | S_IWGRP
 #endif
     );
     }
@@ -216,7 +215,10 @@ bool cmFileCommand::HandleWriteCommand(std::vector<std::string> const& args,
     }
   file << message;
   file.close();
-  cmSystemTools::SetPermissions(fileName.c_str(), mode);
+  if(mode)
+    {
+    cmSystemTools::SetPermissions(fileName.c_str(), mode);
+    }
   return true;
 }
 
@@ -293,11 +295,11 @@ bool cmFileCommand::HandleReadCommand(std::vector<std::string> const& args)
   if (hexOutputArg.IsEnabled())
     {
     // Convert part of the file into hex code
-    int c;
-    while((sizeLimit != 0) && (c = file.get(), file))
+    char c;
+    while((sizeLimit != 0) && (file.get(c)))
       {
       char hex[4];
-      sprintf(hex, "%x", c&0xff);
+      sprintf(hex, "%.2x", c&0xff);
       output += hex;
       if (sizeLimit > 0)
         {
@@ -537,28 +539,7 @@ bool cmFileCommand::HandleStringsCommand(std::vector<std::string> const& args)
         (limit_input < 0 || static_cast<int>(fin.tellg()) < limit_input) &&
         (c = fin.get(), fin))
     {
-    if(c == '\0')
-      {
-      // A terminating null character has been found.  Check if the
-      // current string matches the requirements.  Since it was
-      // terminated by a null character, we require that the length be
-      // at least one no matter what the user specified.
-      if(s.length() >= minlen && s.length() >= 1 &&
-         (!have_regex || regex.find(s.c_str())))
-        {
-        output_size += static_cast<int>(s.size()) + 1;
-        if(limit_output >= 0 && output_size >= limit_output)
-          {
-          s = "";
-          break;
-          }
-        strings.push_back(s);
-        }
-
-      // Reset the string to empty.
-      s = "";
-      }
-    else if(c == '\n' && !newline_consume)
+    if(c == '\n' && !newline_consume)
       {
       // The current line has been terminated.  Check if the current
       // string matches the requirements.  The length may now be as
@@ -582,15 +563,33 @@ bool cmFileCommand::HandleStringsCommand(std::vector<std::string> const& args)
       {
       // Ignore CR character to make output always have UNIX newlines.
       }
-    else if(c >= 0x20 && c < 0x7F || c == '\t' || c == '\f' ||
+    else if((c >= 0x20 && c < 0x7F) || c == '\t' ||
             (c == '\n' && newline_consume))
       {
       // This is an ASCII character that may be part of a string.
-      s += c;
+      // Cast added to avoid compiler warning. Cast is ok because
+      // c is guaranteed to fit in char by the above if...
+      s += static_cast<char>(c);
       }
     else
       {
-      // This is a non-string character.  Reset the string to emtpy.
+      // TODO: Support ENCODING option.  See issue #10519.
+      // A non-string character has been found.  Check if the current
+      // string matches the requirements.  We require that the length
+      // be at least one no matter what the user specified.
+      if(s.length() >= minlen && s.length() >= 1 &&
+         (!have_regex || regex.find(s.c_str())))
+        {
+        output_size += static_cast<int>(s.size()) + 1;
+        if(limit_output >= 0 && output_size >= limit_output)
+          {
+          s = "";
+          break;
+          }
+        strings.push_back(s);
+        }
+
+      // Reset the string to empty.
       s = "";
       }
 
@@ -897,42 +896,36 @@ cmFileCommand::HandleDifferentCommand(std::vector<std::string> const& args)
 
 //----------------------------------------------------------------------------
 // File installation helper class.
-struct cmFileInstaller
+struct cmFileCopier
 {
-  // Methods to actually install files.
-  bool InstallFile(const char* fromFile, const char* toFile, bool always);
-  bool InstallDirectory(const char* source, const char* destination,
-                        bool always);
-
-  // All instances need the file command and makefile using them.
-  cmFileInstaller(cmFileCommand* fc, cmMakefile* mf):
-    FileCommand(fc), Makefile(mf), DestDirLength(0), MatchlessFiles(true)
+  cmFileCopier(cmFileCommand* command, const char* name = "COPY"):
+    FileCommand(command),
+    Makefile(command->GetMakefile()),
+    Name(name),
+    Always(false),
+    MatchlessFiles(true),
+    FilePermissions(0),
+    DirPermissions(0),
+    CurrentMatchRule(0),
+    UseGivenPermissionsFile(false),
+    UseGivenPermissionsDir(false),
+    UseSourcePermissions(true),
+    Doing(DoingNone)
     {
-    // Get the current manifest.
-    this->Manifest =
-      this->Makefile->GetSafeDefinition("CMAKE_INSTALL_MANIFEST_FILES");
     }
-  ~cmFileInstaller()
-    {
-    // Save the updated install manifest.
-    this->Makefile->AddDefinition("CMAKE_INSTALL_MANIFEST_FILES",
-                                  this->Manifest.c_str());
-    }
+  virtual ~cmFileCopier() {}
 
-private:
+  bool Run(std::vector<std::string> const& args);
+protected:
+
   cmFileCommand* FileCommand;
   cmMakefile* Makefile;
+  const char* Name;
+  bool Always;
   cmFileTimeComparison FileTimes;
-public:
-
-  // The length of the destdir setting.
-  int DestDirLength;
 
   // Whether to install a file not matching any expression.
   bool MatchlessFiles;
-
-  // The current file manifest (semicolon separated list).
-  std::string Manifest;
 
   // Permissions for files and directories installed by this object.
   mode_t FilePermissions;
@@ -945,6 +938,8 @@ public:
     mode_t Permissions;
     MatchProperties(): Exclude(false), Permissions(0) {}
   };
+  struct MatchRule;
+  friend struct MatchRule;
   struct MatchRule
   {
     cmsys::RegularExpression Regex;
@@ -956,8 +951,7 @@ public:
   std::vector<MatchRule> MatchRules;
 
   // Get the properties from rules matching this input file.
-  MatchProperties CollectMatchProperties(const char* file,
-                                         bool isDirectory)
+  MatchProperties CollectMatchProperties(const char* file)
     {
     // Match rules are case-insensitive on some platforms.
 #if defined(_WIN32) || defined(__APPLE__) || defined(__CYGWIN__)
@@ -978,18 +972,23 @@ public:
         result.Permissions |= mr->Properties.Permissions;
         }
       }
-    if(!matched && !this->MatchlessFiles && !isDirectory)
+    if(!matched && !this->MatchlessFiles)
       {
-      result.Exclude = true;
+      result.Exclude = !cmSystemTools::FileIsDirectory(file);
       }
     return result;
     }
 
-  // Append a file to the installation manifest.
-  void ManifestAppend(std::string const& file)
+  bool SetPermissions(const char* toFile, mode_t permissions)
     {
-    this->Manifest += ";";
-    this->Manifest += file.substr(this->DestDirLength);
+    if(permissions && !cmSystemTools::SetPermissions(toFile, permissions))
+      {
+      cmOStringStream e;
+      e << this->Name << " cannot set permissions on \"" << toFile << "\"";
+      this->FileCommand->SetError(e.str().c_str());
+      return false;
+      }
+    return true;
     }
 
   // Translate an argument to a permissions bit.
@@ -1009,27 +1008,445 @@ public:
     else
       {
       cmOStringStream e;
-      e << "INSTALL given invalid permission \"" << arg << "\".";
+      e << this->Name << " given invalid permission \"" << arg << "\".";
       this->FileCommand->SetError(e.str().c_str());
       return false;
       }
     return true;
     }
 
-private:
-  bool InstallSymlink(const char* fromFile, const char* toFile, bool always);
+  bool InstallSymlink(const char* fromFile, const char* toFile);
+  bool InstallFile(const char* fromFile, const char* toFile,
+                   MatchProperties const& match_properties);
+  bool InstallDirectory(const char* source, const char* destination,
+                        MatchProperties const& match_properties);
+  virtual bool Install(const char* fromFile, const char* toFile);
+  virtual std::string const& ToName(std::string const& fromName)
+    { return fromName; }
+
+  enum Type
+  {
+    TypeFile,
+    TypeDir,
+    TypeLink
+  };
+  virtual void ReportCopy(const char*, Type, bool) {}
+  virtual bool ReportMissing(const char* fromFile)
+    {
+    // The input file does not exist and installation is not optional.
+    cmOStringStream e;
+    e << this->Name << " cannot find \"" << fromFile << "\".";
+    this->FileCommand->SetError(e.str().c_str());
+    return false;
+    }
+
+  MatchRule* CurrentMatchRule;
+  bool UseGivenPermissionsFile;
+  bool UseGivenPermissionsDir;
+  bool UseSourcePermissions;
+  std::string Destination;
+  std::vector<std::string> Files;
+  int Doing;
+
+  virtual bool Parse(std::vector<std::string> const& args);
+  enum
+  {
+    DoingNone,
+    DoingError,
+    DoingDestination,
+    DoingFiles,
+    DoingPattern,
+    DoingRegex,
+    DoingPermissionsFile,
+    DoingPermissionsDir,
+    DoingPermissionsMatch,
+    DoingLast1
+  };
+  virtual bool CheckKeyword(std::string const& arg);
+  virtual bool CheckValue(std::string const& arg);
+
+  void NotBeforeMatch(std::string const& arg)
+    {
+    cmOStringStream e;
+    e << "option " << arg << " may not appear before PATTERN or REGEX.";
+    this->FileCommand->SetError(e.str().c_str());
+    this->Doing = DoingError;
+    }
+  void NotAfterMatch(std::string const& arg)
+    {
+    cmOStringStream e;
+    e << "option " << arg << " may not appear after PATTERN or REGEX.";
+    this->FileCommand->SetError(e.str().c_str());
+    this->Doing = DoingError;
+    }
+  virtual void DefaultFilePermissions()
+    {
+    // Use read/write permissions.
+    this->FilePermissions = 0;
+    this->FilePermissions |= mode_owner_read;
+    this->FilePermissions |= mode_owner_write;
+    this->FilePermissions |= mode_group_read;
+    this->FilePermissions |= mode_world_read;
+    }
+  virtual void DefaultDirectoryPermissions()
+    {
+    // Use read/write/executable permissions.
+    this->DirPermissions = 0;
+    this->DirPermissions |= mode_owner_read;
+    this->DirPermissions |= mode_owner_write;
+    this->DirPermissions |= mode_owner_execute;
+    this->DirPermissions |= mode_group_read;
+    this->DirPermissions |= mode_group_execute;
+    this->DirPermissions |= mode_world_read;
+    this->DirPermissions |= mode_world_execute;
+    }
 };
 
 //----------------------------------------------------------------------------
-bool cmFileInstaller::InstallSymlink(const char* fromFile, const char* toFile,
-                                     bool always)
+bool cmFileCopier::Parse(std::vector<std::string> const& args)
+{
+  this->Doing = DoingFiles;
+  for(unsigned int i=1; i < args.size(); ++i)
+    {
+    // Check this argument.
+    if(!this->CheckKeyword(args[i]) &&
+       !this->CheckValue(args[i]))
+      {
+      cmOStringStream e;
+      e << "called with unknown argument \"" << args[i] << "\".";
+      this->FileCommand->SetError(e.str().c_str());
+      return false;
+      }
+
+    // Quit if an argument is invalid.
+    if(this->Doing == DoingError)
+      {
+      return false;
+      }
+    }
+
+  // Require a destination.
+  if(this->Destination.empty())
+    {
+    cmOStringStream e;
+    e << this->Name << " given no DESTINATION";
+    this->FileCommand->SetError(e.str().c_str());
+    return false;
+    }
+
+  // If file permissions were not specified set default permissions.
+  if(!this->UseGivenPermissionsFile && !this->UseSourcePermissions)
+    {
+    this->DefaultFilePermissions();
+    }
+
+  // If directory permissions were not specified set default permissions.
+  if(!this->UseGivenPermissionsDir && !this->UseSourcePermissions)
+    {
+    this->DefaultDirectoryPermissions();
+    }
+
+  return true;
+}
+
+//----------------------------------------------------------------------------
+bool cmFileCopier::CheckKeyword(std::string const& arg)
+{
+  if(arg == "DESTINATION")
+    {
+    if(this->CurrentMatchRule)
+      {
+      this->NotAfterMatch(arg);
+      }
+    else
+      {
+      this->Doing = DoingDestination;
+      }
+    }
+  else if(arg == "PATTERN")
+    {
+    this->Doing = DoingPattern;
+    }
+  else if(arg == "REGEX")
+    {
+    this->Doing = DoingRegex;
+    }
+  else if(arg == "EXCLUDE")
+    {
+    // Add this property to the current match rule.
+    if(this->CurrentMatchRule)
+      {
+      this->CurrentMatchRule->Properties.Exclude = true;
+      this->Doing = DoingNone;
+      }
+    else
+      {
+      this->NotBeforeMatch(arg);
+      }
+    }
+  else if(arg == "PERMISSIONS")
+    {
+    if(this->CurrentMatchRule)
+      {
+      this->Doing = DoingPermissionsMatch;
+      }
+    else
+      {
+      this->NotBeforeMatch(arg);
+      }
+    }
+  else if(arg == "FILE_PERMISSIONS")
+    {
+    if(this->CurrentMatchRule)
+      {
+      this->NotAfterMatch(arg);
+      }
+    else
+      {
+      this->Doing = DoingPermissionsFile;
+      this->UseGivenPermissionsFile = true;
+      }
+    }
+  else if(arg == "DIRECTORY_PERMISSIONS")
+    {
+    if(this->CurrentMatchRule)
+      {
+      this->NotAfterMatch(arg);
+      }
+    else
+      {
+      this->Doing = DoingPermissionsDir;
+      this->UseGivenPermissionsDir = true;
+      }
+    }
+  else if(arg == "USE_SOURCE_PERMISSIONS")
+    {
+    if(this->CurrentMatchRule)
+      {
+      this->NotAfterMatch(arg);
+      }
+    else
+      {
+      this->Doing = DoingNone;
+      this->UseSourcePermissions = true;
+      }
+    }
+  else if(arg == "NO_SOURCE_PERMISSIONS")
+    {
+    if(this->CurrentMatchRule)
+      {
+      this->NotAfterMatch(arg);
+      }
+    else
+      {
+      this->Doing = DoingNone;
+      this->UseSourcePermissions = false;
+      }
+    }
+  else if(arg == "FILES_MATCHING")
+    {
+    if(this->CurrentMatchRule)
+      {
+      this->NotAfterMatch(arg);
+      }
+    else
+      {
+      this->Doing = DoingNone;
+      this->MatchlessFiles = false;
+      }
+    }
+  else
+    {
+    return false;
+    }
+  return true;
+}
+
+//----------------------------------------------------------------------------
+bool cmFileCopier::CheckValue(std::string const& arg)
+{
+  switch(this->Doing)
+    {
+    case DoingFiles:
+      if(arg.empty() || cmSystemTools::FileIsFullPath(arg.c_str()))
+        {
+        this->Files.push_back(arg);
+        }
+      else
+        {
+        std::string file = this->Makefile->GetCurrentDirectory();
+        file += "/" + arg;
+        this->Files.push_back(file);
+        }
+      break;
+    case DoingDestination:
+      if(arg.empty() || cmSystemTools::FileIsFullPath(arg.c_str()))
+        {
+        this->Destination = arg;
+        }
+      else
+        {
+        this->Destination = this->Makefile->GetCurrentOutputDirectory();
+        this->Destination += "/" + arg;
+        }
+      this->Doing = DoingNone;
+      break;
+    case DoingPattern:
+      {
+      // Convert the pattern to a regular expression.  Require a
+      // leading slash and trailing end-of-string in the matched
+      // string to make sure the pattern matches only whole file
+      // names.
+      std::string regex = "/";
+      regex += cmsys::Glob::PatternToRegex(arg, false);
+      regex += "$";
+      this->MatchRules.push_back(MatchRule(regex));
+      this->CurrentMatchRule = &*(this->MatchRules.end()-1);
+      if(this->CurrentMatchRule->Regex.is_valid())
+        {
+        this->Doing = DoingNone;
+        }
+      else
+        {
+        cmOStringStream e;
+        e << "could not compile PATTERN \"" << arg << "\".";
+        this->FileCommand->SetError(e.str().c_str());
+        this->Doing = DoingError;
+        }
+      }
+      break;
+    case DoingRegex:
+      this->MatchRules.push_back(MatchRule(arg));
+      this->CurrentMatchRule = &*(this->MatchRules.end()-1);
+      if(this->CurrentMatchRule->Regex.is_valid())
+        {
+        this->Doing = DoingNone;
+        }
+      else
+        {
+        cmOStringStream e;
+        e << "could not compile REGEX \"" << arg << "\".";
+        this->FileCommand->SetError(e.str().c_str());
+        this->Doing = DoingError;
+        }
+      break;
+    case DoingPermissionsFile:
+      if(!this->CheckPermissions(arg, this->FilePermissions))
+        {
+        this->Doing = DoingError;
+        }
+      break;
+    case DoingPermissionsDir:
+      if(!this->CheckPermissions(arg, this->DirPermissions))
+        {
+        this->Doing = DoingError;
+        }
+      break;
+    case DoingPermissionsMatch:
+      if(!this->CheckPermissions(
+           arg, this->CurrentMatchRule->Properties.Permissions))
+        {
+        this->Doing = DoingError;
+        }
+      break;
+    default:
+      return false;
+    }
+  return true;
+}
+
+//----------------------------------------------------------------------------
+bool cmFileCopier::Run(std::vector<std::string> const& args)
+{
+  if(!this->Parse(args))
+    {
+    return false;
+    }
+
+  std::vector<std::string> const& files = this->Files;
+  for(std::vector<std::string>::size_type i = 0; i < files.size(); ++i)
+    {
+    // Split the input file into its directory and name components.
+    std::vector<std::string> fromPathComponents;
+    cmSystemTools::SplitPath(files[i].c_str(), fromPathComponents);
+    std::string fromName = *(fromPathComponents.end()-1);
+    std::string fromDir = cmSystemTools::JoinPath(fromPathComponents.begin(),
+                                                  fromPathComponents.end()-1);
+
+    // Compute the full path to the destination file.
+    std::string toFile = this->Destination;
+    std::string const& toName = this->ToName(fromName);
+    if(!toName.empty())
+      {
+      toFile += "/";
+      toFile += toName;
+      }
+
+    // Construct the full path to the source file.  The file name may
+    // have been changed above.
+    std::string fromFile = fromDir;
+    if(!fromName.empty())
+      {
+      fromFile += "/";
+      fromFile += fromName;
+      }
+
+    if(!this->Install(fromFile.c_str(), toFile.c_str()))
+      {
+      return false;
+      }
+    }
+  return true;
+}
+
+//----------------------------------------------------------------------------
+bool cmFileCopier::Install(const char* fromFile, const char* toFile)
+{
+  if(!*fromFile)
+    {
+    cmOStringStream e;
+    e << "INSTALL encountered an empty string input file name.";
+    this->FileCommand->SetError(e.str().c_str());
+    return false;
+    }
+
+  // Collect any properties matching this file name.
+  MatchProperties match_properties = this->CollectMatchProperties(fromFile);
+
+  // Skip the file if it is excluded.
+  if(match_properties.Exclude)
+    {
+    return true;
+    }
+
+  if(cmSystemTools::SameFile(fromFile, toFile))
+    {
+    return true;
+    }
+  else if(cmSystemTools::FileIsSymlink(fromFile))
+    {
+    return this->InstallSymlink(fromFile, toFile);
+    }
+  else if(cmSystemTools::FileIsDirectory(fromFile))
+    {
+    return this->InstallDirectory(fromFile, toFile, match_properties);
+    }
+  else if(cmSystemTools::FileExists(fromFile))
+    {
+    return this->InstallFile(fromFile, toFile, match_properties);
+    }
+  return this->ReportMissing(fromFile);
+}
+
+//----------------------------------------------------------------------------
+bool cmFileCopier::InstallSymlink(const char* fromFile, const char* toFile)
 {
   // Read the original symlink.
   std::string symlinkTarget;
   if(!cmSystemTools::ReadSymlink(fromFile, symlinkTarget))
     {
     cmOStringStream e;
-    e << "INSTALL cannot read symlink \"" << fromFile
+    e << this->Name << " cannot read symlink \"" << fromFile
       << "\" to duplicate at \"" << toFile << "\".";
     this->FileCommand->SetError(e.str().c_str());
     return false;
@@ -1038,7 +1455,7 @@ bool cmFileInstaller::InstallSymlink(const char* fromFile, const char* toFile,
   // Compare the symlink value to that at the destination if not
   // always installing.
   bool copy = true;
-  if(!always)
+  if(!this->Always)
     {
     std::string oldSymlinkTarget;
     if(cmSystemTools::ReadSymlink(toFile, oldSymlinkTarget))
@@ -1051,9 +1468,7 @@ bool cmFileInstaller::InstallSymlink(const char* fromFile, const char* toFile,
     }
 
   // Inform the user about this file installation.
-  std::string message = (copy? "Installing: " : "Up-to-date: ");
-  message += toFile;
-  this->Makefile->DisplayStatus(message.c_str(), -1);
+  this->ReportCopy(toFile, TypeLink, copy);
 
   if(copy)
     {
@@ -1064,42 +1479,23 @@ bool cmFileInstaller::InstallSymlink(const char* fromFile, const char* toFile,
     if(!cmSystemTools::CreateSymlink(symlinkTarget.c_str(), toFile))
       {
       cmOStringStream e;
-      e << "INSTALL cannot duplicate symlink \"" << fromFile
+      e << this->Name <<  " cannot duplicate symlink \"" << fromFile
         << "\" at \"" << toFile << "\".";
       this->FileCommand->SetError(e.str().c_str());
       return false;
       }
     }
 
-  // Add the file to the manifest.
-  this->ManifestAppend(toFile);
-
   return true;
 }
 
 //----------------------------------------------------------------------------
-bool cmFileInstaller::InstallFile(const char* fromFile, const char* toFile,
-                                  bool always)
+bool cmFileCopier::InstallFile(const char* fromFile, const char* toFile,
+                               MatchProperties const& match_properties)
 {
-  // Collect any properties matching this file name.
-  MatchProperties match_properties =
-    this->CollectMatchProperties(fromFile, false);
-
-  // Skip the file if it is excluded.
-  if(match_properties.Exclude)
-    {
-    return true;
-    }
-
-  // Short-circuit for symbolic links.
-  if(cmSystemTools::FileIsSymlink(fromFile))
-    {
-    return this->InstallSymlink(fromFile, toFile, always);
-    }
-
   // Determine whether we will copy the file.
   bool copy = true;
-  if(!always)
+  if(!this->Always)
     {
     // If both files exist with the same time do not copy.
     if(!this->FileTimes.FileTimesDiffer(fromFile, toFile))
@@ -1109,30 +1505,33 @@ bool cmFileInstaller::InstallFile(const char* fromFile, const char* toFile,
     }
 
   // Inform the user about this file installation.
-  std::string message = (copy? "Installing: " : "Up-to-date: ");
-  message += toFile;
-  this->Makefile->DisplayStatus(message.c_str(), -1);
+  this->ReportCopy(toFile, TypeFile, copy);
 
   // Copy the file.
-  if(copy && !cmSystemTools::CopyAFile(fromFile, toFile, true, false))
+  if(copy && !cmSystemTools::CopyAFile(fromFile, toFile, true))
     {
     cmOStringStream e;
-    e << "INSTALL cannot copy file \"" << fromFile
+    e << this->Name << " cannot copy file \"" << fromFile
       << "\" to \"" << toFile << "\".";
     this->FileCommand->SetError(e.str().c_str());
     return false;
     }
 
-  // Add the file to the manifest.
-  this->ManifestAppend(toFile);
-
   // Set the file modification time of the destination file.
-  if(copy && !always)
+  if(copy && !this->Always)
     {
+    // Add write permission so we can set the file time.
+    // Permissions are set unconditionally below anyway.
+    mode_t perm = 0;
+    if(cmSystemTools::GetPermissions(toFile, perm))
+      {
+      cmSystemTools::SetPermissions(toFile, perm | mode_owner_write);
+      }
     if (!cmSystemTools::CopyFileTime(fromFile, toFile))
       {
       cmOStringStream e;
-      e << "Problem setting modification time on file \"" << toFile << "\"";
+      e << this->Name << " cannot set modification time on \""
+        << toFile << "\"";
       this->FileCommand->SetError(e.str().c_str());
       return false;
       }
@@ -1147,46 +1546,24 @@ bool cmFileInstaller::InstallFile(const char* fromFile, const char* toFile,
     // that the source file permissions be used.
     cmSystemTools::GetPermissions(fromFile, permissions);
     }
-  if(permissions && !cmSystemTools::SetPermissions(toFile, permissions))
-    {
-    cmOStringStream e;
-    e << "Problem setting permissions on file \"" << toFile << "\"";
-    this->FileCommand->SetError(e.str().c_str());
-    return false;
-    }
-
-  return true;
+  return this->SetPermissions(toFile, permissions);
 }
 
 //----------------------------------------------------------------------------
-bool cmFileInstaller::InstallDirectory(const char* source,
-                                       const char* destination,
-                                       bool always)
+bool cmFileCopier::InstallDirectory(const char* source,
+                                    const char* destination,
+                                    MatchProperties const& match_properties)
 {
-  // Collect any properties matching this directory name.
-  MatchProperties match_properties =
-    this->CollectMatchProperties(source, true);
-
-  // Skip the directory if it is excluded.
-  if(match_properties.Exclude)
-    {
-    return true;
-    }
-
-  // Short-circuit for symbolic links.
-  if(cmSystemTools::FileIsSymlink(source))
-    {
-    return this->InstallSymlink(source, destination, always);
-    }
-
   // Inform the user about this directory installation.
-  std::string message = "Installing: ";
-  message += destination;
-  this->Makefile->DisplayStatus(message.c_str(), -1);
+  this->ReportCopy(destination, TypeDir, true);
 
   // Make sure the destination directory exists.
   if(!cmSystemTools::MakeDirectory(destination))
     {
+    cmOStringStream e;
+    e << this->Name << " cannot make directory \"" << destination << "\": "
+      << cmSystemTools::GetLastSystemError();
+    this->FileCommand->SetError(e.str().c_str());
     return false;
     }
 
@@ -1210,7 +1587,7 @@ bool cmFileInstaller::InstallDirectory(const char* source,
   // permissions temporarily during file installation.
   mode_t permissions_before = 0;
   mode_t permissions_after = 0;
-  if(permissions & required_permissions)
+  if((permissions & required_permissions) == required_permissions)
     {
     permissions_before = permissions;
     }
@@ -1221,13 +1598,8 @@ bool cmFileInstaller::InstallDirectory(const char* source,
     }
 
   // Set the required permissions of the destination directory.
-  if(permissions_before &&
-     !cmSystemTools::SetPermissions(destination, permissions_before))
+  if(!this->SetPermissions(destination, permissions_before))
     {
-    cmOStringStream e;
-    e << "Problem setting permissions on directory \""
-      << destination << "\"";
-    this->FileCommand->SetError(e.str().c_str());
     return false;
     }
 
@@ -1246,37 +1618,155 @@ bool cmFileInstaller::InstallDirectory(const char* source,
       cmsys_stl::string fromPath = source;
       fromPath += "/";
       fromPath += dir.GetFile(fileNum);
-      if(cmSystemTools::FileIsDirectory(fromPath.c_str()))
+      std::string toPath = destination;
+      toPath += "/";
+      toPath += dir.GetFile(fileNum);
+      if(!this->Install(fromPath.c_str(), toPath.c_str()))
         {
-        cmsys_stl::string toDir = destination;
-        toDir += "/";
-        toDir += dir.GetFile(fileNum);
-        if(!this->InstallDirectory(fromPath.c_str(), toDir.c_str(), always))
-          {
-          return false;
-          }
-        }
-      else
-        {
-        // Install this file.
-        std::string toFile = destination;
-        toFile += "/";
-        toFile += dir.GetFile(fileNum);
-        if(!this->InstallFile(fromPath.c_str(), toFile.c_str(), always))
-          {
-          return false;
-          }
+        return false;
         }
       }
     }
 
   // Set the requested permissions of the destination directory.
-  if(permissions_after &&
-     !cmSystemTools::SetPermissions(destination, permissions_after))
+  return this->SetPermissions(destination, permissions_after);
+}
+
+//----------------------------------------------------------------------------
+bool cmFileCommand::HandleCopyCommand(std::vector<std::string> const& args)
+{
+  cmFileCopier copier(this);
+  return copier.Run(args);
+}
+
+//----------------------------------------------------------------------------
+struct cmFileInstaller: public cmFileCopier
+{
+  cmFileInstaller(cmFileCommand* command):
+    cmFileCopier(command, "INSTALL"),
+    InstallType(cmTarget::INSTALL_FILES),
+    Optional(false),
+    DestDirLength(0)
     {
-    cmOStringStream e;
-    e << "Problem setting permissions on directory \"" << destination << "\"";
-    this->FileCommand->SetError(e.str().c_str());
+    // Installation does not use source permissions by default.
+    this->UseSourcePermissions = false;
+    // Check whether to copy files always or only if they have changed.
+    this->Always =
+      cmSystemTools::IsOn(cmSystemTools::GetEnv("CMAKE_INSTALL_ALWAYS"));
+    // Get the current manifest.
+    this->Manifest =
+      this->Makefile->GetSafeDefinition("CMAKE_INSTALL_MANIFEST_FILES");
+    }
+  ~cmFileInstaller()
+    {
+    // Save the updated install manifest.
+    this->Makefile->AddDefinition("CMAKE_INSTALL_MANIFEST_FILES",
+                                  this->Manifest.c_str());
+    }
+
+protected:
+  cmTarget::TargetType InstallType;
+  bool Optional;
+  int DestDirLength;
+  std::string Rename;
+
+  std::string Manifest;
+  void ManifestAppend(std::string const& file)
+    {
+    this->Manifest += ";";
+    this->Manifest += file.substr(this->DestDirLength);
+    }
+
+  virtual std::string const& ToName(std::string const& fromName)
+    { return this->Rename.empty()? fromName : this->Rename; }
+
+  virtual void ReportCopy(const char* toFile, Type type, bool copy)
+    {
+    std::string message = (copy? "Installing: " : "Up-to-date: ");
+    message += toFile;
+    this->Makefile->DisplayStatus(message.c_str(), -1);
+    if(type != TypeDir)
+      {
+      // Add the file to the manifest.
+      this->ManifestAppend(toFile);
+      }
+    }
+  virtual bool ReportMissing(const char* fromFile)
+    {
+    return (this->Optional ||
+            this->cmFileCopier::ReportMissing(fromFile));
+    }
+  virtual bool Install(const char* fromFile, const char* toFile)
+    {
+    // Support installing from empty source to make a directory.
+    if(this->InstallType == cmTarget::INSTALL_DIRECTORY && !*fromFile)
+      {
+      return this->InstallDirectory(fromFile, toFile, MatchProperties());
+      }
+    return this->cmFileCopier::Install(fromFile, toFile);
+    }
+
+  virtual bool Parse(std::vector<std::string> const& args);
+  enum
+  {
+    DoingType = DoingLast1,
+    DoingRename,
+    DoingLast2
+  };
+  virtual bool CheckKeyword(std::string const& arg);
+  virtual bool CheckValue(std::string const& arg);
+  virtual void DefaultFilePermissions()
+    {
+    this->cmFileCopier::DefaultFilePermissions();
+    // Add execute permissions based on the target type.
+    switch(this->InstallType)
+      {
+      case cmTarget::SHARED_LIBRARY:
+      case cmTarget::MODULE_LIBRARY:
+        if(this->Makefile->IsOn("CMAKE_INSTALL_SO_NO_EXE"))
+          {
+          break;
+          }
+      case cmTarget::EXECUTABLE:
+      case cmTarget::INSTALL_PROGRAMS:
+        this->FilePermissions |= mode_owner_execute;
+        this->FilePermissions |= mode_group_execute;
+        this->FilePermissions |= mode_world_execute;
+        break;
+      default: break;
+      }
+    }
+  bool GetTargetTypeFromString(const std::string& stype);
+  bool HandleInstallDestination();
+};
+
+//----------------------------------------------------------------------------
+bool cmFileInstaller::Parse(std::vector<std::string> const& args)
+{
+  if(!this->cmFileCopier::Parse(args))
+    {
+    return false;
+    }
+
+  if(!this->Rename.empty())
+    {
+    if(this->InstallType != cmTarget::INSTALL_FILES &&
+       this->InstallType != cmTarget::INSTALL_PROGRAMS)
+      {
+      this->FileCommand->SetError("INSTALL option RENAME may be used "
+                                  "only with FILES or PROGRAMS.");
+      return false;
+      }
+    if(this->Files.size() > 1)
+      {
+      this->FileCommand->SetError("INSTALL option RENAME may be used "
+                                  "only with one file.");
+      return false;
+      }
+    }
+
+  if(!this->HandleInstallDestination())
+    {
     return false;
     }
 
@@ -1284,114 +1774,167 @@ bool cmFileInstaller::InstallDirectory(const char* source,
 }
 
 //----------------------------------------------------------------------------
-void cmFileCommand::HandleInstallPermissions(cmFileInstaller& installer,
-                              mode_t& permissions_file,
-                              mode_t& permissions_dir,
-                              int itype,
-                              bool use_given_permissions_file,
-                              bool use_given_permissions_dir,
-                              bool use_source_permissions) const
+bool cmFileInstaller::CheckKeyword(std::string const& arg)
 {
-  // Choose a default for shared library permissions.
-  bool install_so_no_exe = this->Makefile->IsOn("CMAKE_INSTALL_SO_NO_EXE");
-  // If file permissions were not specified set default permissions
-  // for this target type.
-  if(!use_given_permissions_file && !use_source_permissions)
+  if(arg == "TYPE")
     {
-    switch(itype)
+    if(this->CurrentMatchRule)
       {
-      case cmTarget::SHARED_LIBRARY:
-      case cmTarget::MODULE_LIBRARY:
-        if(install_so_no_exe)
-          {
-          // Use read/write permissions.
-          permissions_file = 0;
-          permissions_file |= mode_owner_read;
-          permissions_file |= mode_owner_write;
-          permissions_file |= mode_group_read;
-          permissions_file |= mode_world_read;
-          break;
-          }
-      case cmTarget::EXECUTABLE:
-      case cmTarget::INSTALL_PROGRAMS:
-        // Use read/write/executable permissions.
-        permissions_file = 0;
-        permissions_file |= mode_owner_read;
-        permissions_file |= mode_owner_write;
-        permissions_file |= mode_owner_execute;
-        permissions_file |= mode_group_read;
-        permissions_file |= mode_group_execute;
-        permissions_file |= mode_world_read;
-        permissions_file |= mode_world_execute;
-        break;
-      default:
-        // Use read/write permissions.
-        permissions_file = 0;
-        permissions_file |= mode_owner_read;
-        permissions_file |= mode_owner_write;
-        permissions_file |= mode_group_read;
-        permissions_file |= mode_world_read;
-        break;
+      this->NotAfterMatch(arg);
+      }
+    else
+      {
+      this->Doing = DoingType;
       }
     }
-
-  // If directory permissions were not specified set default permissions.
-  if(!use_given_permissions_dir && !use_source_permissions)
+  else if(arg == "FILES")
     {
-    // Use read/write/executable permissions.
-    permissions_dir = 0;
-    permissions_dir |= mode_owner_read;
-    permissions_dir |= mode_owner_write;
-    permissions_dir |= mode_owner_execute;
-    permissions_dir |= mode_group_read;
-    permissions_dir |= mode_group_execute;
-    permissions_dir |= mode_world_read;
-    permissions_dir |= mode_world_execute;
+    if(this->CurrentMatchRule)
+      {
+      this->NotAfterMatch(arg);
+      }
+    else
+      {
+      this->Doing = DoingFiles;
+      }
     }
-  // Set the installer permissions.
-  installer.FilePermissions = permissions_file;
-  installer.DirPermissions = permissions_dir;
+  else if(arg == "RENAME")
+    {
+    if(this->CurrentMatchRule)
+      {
+      this->NotAfterMatch(arg);
+      }
+    else
+      {
+      this->Doing = DoingRename;
+      }
+    }
+  else if(arg == "OPTIONAL")
+    {
+    if(this->CurrentMatchRule)
+      {
+      this->NotAfterMatch(arg);
+      }
+    else
+      {
+      this->Doing = DoingNone;
+      this->Optional = true;
+      }
+    }
+  else if(arg == "PERMISSIONS")
+    {
+    if(this->CurrentMatchRule)
+      {
+      this->Doing = DoingPermissionsMatch;
+      }
+    else
+      {
+      // file(INSTALL) aliases PERMISSIONS to FILE_PERMISSIONS
+      this->Doing = DoingPermissionsFile;
+      this->UseGivenPermissionsFile = true;
+      }
+    }
+  else if(arg == "DIR_PERMISSIONS")
+    {
+    if(this->CurrentMatchRule)
+      {
+      this->NotAfterMatch(arg);
+      }
+    else
+      {
+      // file(INSTALL) aliases DIR_PERMISSIONS to DIRECTORY_PERMISSIONS
+      this->Doing = DoingPermissionsDir;
+      this->UseGivenPermissionsDir = true;
+      }
+    }
+  else if(arg == "COMPONENTS" || arg == "CONFIGURATIONS" ||
+          arg == "PROPERTIES")
+    {
+    cmOStringStream e;
+    e << "INSTALL called with old-style " << arg << " argument.  "
+      << "This script was generated with an older version of CMake.  "
+      << "Re-run this cmake version on your build tree.";
+    this->FileCommand->SetError(e.str().c_str());
+    this->Doing = DoingError;
+    }
+  else
+    {
+    return this->cmFileCopier::CheckKeyword(arg);
+    }
+  return true;
 }
 
 //----------------------------------------------------------------------------
-void cmFileCommand
-::GetTargetTypeFromString(const std::string& stype, int& itype) const
+bool cmFileInstaller::CheckValue(std::string const& arg)
+{
+  switch(this->Doing)
+    {
+    case DoingType:
+      if(!this->GetTargetTypeFromString(arg))
+        {
+        this->Doing = DoingError;
+        }
+      break;
+    case DoingRename:
+      this->Rename = arg;
+      break;
+    default:
+      return this->cmFileCopier::CheckValue(arg);
+    }
+  return true;
+}
+
+//----------------------------------------------------------------------------
+bool cmFileInstaller
+::GetTargetTypeFromString(const std::string& stype)
 {
   if ( stype == "EXECUTABLE" )
     {
-    itype = cmTarget::EXECUTABLE;
+    this->InstallType = cmTarget::EXECUTABLE;
+    }
+  else if ( stype == "FILE" )
+    {
+    this->InstallType = cmTarget::INSTALL_FILES;
     }
   else if ( stype == "PROGRAM" )
     {
-    itype = cmTarget::INSTALL_PROGRAMS;
+    this->InstallType = cmTarget::INSTALL_PROGRAMS;
     }
   else if ( stype == "STATIC_LIBRARY" )
     {
-    itype = cmTarget::STATIC_LIBRARY;
+    this->InstallType = cmTarget::STATIC_LIBRARY;
     }
   else if ( stype == "SHARED_LIBRARY" )
     {
-    itype = cmTarget::SHARED_LIBRARY;
+    this->InstallType = cmTarget::SHARED_LIBRARY;
     }
   else if ( stype == "MODULE" )
     {
-    itype = cmTarget::MODULE_LIBRARY;
+    this->InstallType = cmTarget::MODULE_LIBRARY;
     }
   else if ( stype == "DIRECTORY" )
     {
-    itype = cmTarget::INSTALL_DIRECTORY;
+    this->InstallType = cmTarget::INSTALL_DIRECTORY;
     }
+  else
+    {
+    cmOStringStream e;
+    e << "Option TYPE given uknown value \"" << stype << "\".";
+    this->FileCommand->SetError(e.str().c_str());
+    return false;
+    }
+  return true;
 }
 
-
 //----------------------------------------------------------------------------
-bool cmFileCommand::HandleInstallDestination(cmFileInstaller& installer,
-                                             std::string& destination)
+bool cmFileInstaller::HandleInstallDestination()
 {
+  std::string& destination = this->Destination;
+
   // allow for / to be a valid destination
   if ( destination.size() < 2 && destination != "/" )
     {
-    this->SetError("called with inapropriate arguments. "
+    this->FileCommand->SetError("called with inapropriate arguments. "
         "No DESTINATION provided or .");
     return false;
     }
@@ -1412,7 +1955,7 @@ bool cmFileCommand::HandleInstallDestination(cmFileInstaller& installer,
     if ( ch1 != '/' )
       {
       int relative = 0;
-      if ( ( ch1 >= 'a' && ch1 <= 'z' || ch1 >= 'A' && ch1 <= 'Z' ) &&
+      if (((ch1 >= 'a' && ch1 <= 'z') || (ch1 >= 'A' && ch1 <= 'Z')) &&
              ch2 == ':' )
         {
         // Assume windows
@@ -1431,9 +1974,10 @@ bool cmFileCommand::HandleInstallDestination(cmFileInstaller& installer,
         {
         // This is relative path on unix or windows. Since we are doing
         // destdir, this case does not make sense.
-        this->SetError("called with relative DESTINATION. This "
-            "does not make sense when using DESTDIR. Specify "
-            "absolute path or remove DESTDIR environment variable.");
+        this->FileCommand->SetError(
+          "called with relative DESTINATION. This "
+          "does not make sense when using DESTDIR. Specify "
+          "absolute path or remove DESTDIR environment variable.");
         return false;
         }
       }
@@ -1447,12 +1991,12 @@ bool cmFileCommand::HandleInstallDestination(cmFileInstaller& installer,
           "absolute path or remove DESTDIR environment variable."
           "\nDESTINATION=\n";
         message += destination;
-        this->SetError(message.c_str());
+        this->FileCommand->SetError(message.c_str());
         return false;
         }
       }
     destination = sdestdir + (destination.c_str() + skip);
-    installer.DestDirLength = int(sdestdir.size());
+    this->DestDirLength = int(sdestdir.size());
     }
 
   if ( !cmSystemTools::FileExists(destination.c_str()) )
@@ -1461,7 +2005,7 @@ bool cmFileCommand::HandleInstallDestination(cmFileInstaller& installer,
       {
       std::string errstring = "cannot create directory: " + destination +
           ". Maybe need administrative privileges.";
-      this->SetError(errstring.c_str());
+      this->FileCommand->SetError(errstring.c_str());
       return false;
       }
     }
@@ -1469,7 +2013,7 @@ bool cmFileCommand::HandleInstallDestination(cmFileInstaller& installer,
     {
     std::string errstring = "INSTALL destination: " + destination +
         " is not a directory.";
-    this->SetError(errstring.c_str());
+    this->FileCommand->SetError(errstring.c_str());
     return false;
     }
   return true;
@@ -1714,425 +2258,8 @@ cmFileCommand::HandleRPathCheckCommand(std::vector<std::string> const& args)
 //----------------------------------------------------------------------------
 bool cmFileCommand::HandleInstallCommand(std::vector<std::string> const& args)
 {
-  if ( args.size() < 6 )
-    {
-    this->SetError("called with incorrect number of arguments");
-    return false;
-    }
-
-  // Construct a file installer object.
-  cmFileInstaller installer(this, this->Makefile);
-
-  std::string rename = "";
-  std::string destination = "";
-
-  std::vector<std::string> files;
-  int itype = cmTarget::INSTALL_FILES;
-
-  std::map<cmStdString, const char*> properties;
-  bool optional = false;
-  bool result = this->ParseInstallArgs(args, installer, properties,
-                                       itype, rename, destination, files,
-                                       optional);
-  if (result == true)
-    {
-    result = this->DoInstall(installer,
-                             itype, rename, destination, files, optional);
-    }
-  return result;
-}
-
-//----------------------------------------------------------------------------
-bool cmFileCommand::ParseInstallArgs(std::vector<std::string> const& args,
-                                cmFileInstaller& installer,
-                                std::map<cmStdString, const char*>& properties,
-                                int& itype,
-                                std::string& rename,
-                                std::string& destination,
-                                std::vector<std::string>& files,
-                                bool& optional)
-{
-    std::string stype = "FILES";
-    enum Doing { DoingNone, DoingFiles, DoingProperties,
-                 DoingPermissionsFile, DoingPermissionsDir,
-                 DoingPermissionsMatch, DoingSelf24 };
-    Doing doing = DoingNone;
-    bool use_given_permissions_file = false;
-    bool use_given_permissions_dir = false;
-    bool use_source_permissions = false;
-    mode_t permissions_file = 0;
-    mode_t permissions_dir = 0;
-
-    cmFileInstaller::MatchRule* current_match_rule = 0;
-    std::vector<std::string>::size_type i = 0;
-    i++; // Get rid of subcommand
-    for ( ; i != args.size(); ++i )
-      {
-      const std::string* cstr = &args[i];
-      if ( *cstr == "DESTINATION" && i < args.size()-1 )
-        {
-        if(current_match_rule)
-          {
-          cmOStringStream e;
-          e << "INSTALL does not allow \"" << *cstr << "\" after REGEX.";
-          this->SetError(e.str().c_str());
-          return false;
-          }
-
-        i++;
-        destination = args[i];
-        doing = DoingNone;
-        }
-      else if ( *cstr == "TYPE" && i < args.size()-1 )
-        {
-        if(current_match_rule)
-          {
-          cmOStringStream e;
-          e << "INSTALL does not allow \"" << *cstr << "\" after REGEX.";
-          this->SetError(e.str().c_str());
-          return false;
-          }
-
-        i++;
-        stype = args[i];
-        if ( args[i+1] == "OPTIONAL" )
-          {
-          i++;
-          optional = true;
-          }
-        doing = DoingNone;
-        }
-      else if ( *cstr == "RENAME" && i < args.size()-1 )
-        {
-        if(current_match_rule)
-          {
-          cmOStringStream e;
-          e << "INSTALL does not allow \"" << *cstr << "\" after REGEX.";
-          this->SetError(e.str().c_str());
-          return false;
-          }
-
-        i++;
-        rename = args[i];
-        doing = DoingNone;
-        }
-      else if ( *cstr == "REGEX" && i < args.size()-1 )
-        {
-        i++;
-        installer.MatchRules.push_back(cmFileInstaller::MatchRule(args[i]));
-        current_match_rule = &*(installer.MatchRules.end()-1);
-        if(!current_match_rule->Regex.is_valid())
-          {
-          cmOStringStream e;
-          e << "INSTALL could not compile REGEX \"" << args[i] << "\".";
-          this->SetError(e.str().c_str());
-          return false;
-          }
-        doing = DoingNone;
-        }
-      else if ( *cstr == "EXCLUDE"  )
-        {
-      // Add this property to the current match rule.
-        if(!current_match_rule)
-          {
-          cmOStringStream e;
-          e << "INSTALL does not allow \""
-              << *cstr << "\" before a REGEX is given.";
-          this->SetError(e.str().c_str());
-          return false;
-          }
-        current_match_rule->Properties.Exclude = true;
-        doing = DoingPermissionsMatch;
-        }
-      else if ( *cstr == "PROPERTIES"  )
-        {
-        if(current_match_rule)
-          {
-          cmOStringStream e;
-          e << "INSTALL does not allow \"" << *cstr << "\" after REGEX.";
-          this->SetError(e.str().c_str());
-          return false;
-          }
-
-        doing = DoingProperties;
-        }
-      else if ( *cstr == "PERMISSIONS" )
-        {
-        if(current_match_rule)
-          {
-          doing = DoingPermissionsMatch;
-          }
-        else
-          {
-          doing = DoingPermissionsFile;
-          use_given_permissions_file = true;
-          }
-        }
-      else if ( *cstr == "DIR_PERMISSIONS" )
-        {
-        if(current_match_rule)
-          {
-          cmOStringStream e;
-          e << "INSTALL does not allow \"" << *cstr << "\" after REGEX.";
-          this->SetError(e.str().c_str());
-          return false;
-          }
-
-        use_given_permissions_dir = true;
-        doing = DoingPermissionsDir;
-        }
-      else if ( *cstr == "USE_SOURCE_PERMISSIONS" )
-        {
-        if(current_match_rule)
-          {
-          cmOStringStream e;
-          e << "INSTALL does not allow \"" << *cstr << "\" after REGEX.";
-          this->SetError(e.str().c_str());
-          return false;
-          }
-
-        doing = DoingNone;
-        use_source_permissions = true;
-        }
-      else if ( *cstr == "FILES_MATCHING" )
-        {
-        if(current_match_rule)
-          {
-          cmOStringStream e;
-          e << "INSTALL does not allow \"" << *cstr << "\" after REGEX.";
-          this->SetError(e.str().c_str());
-          return false;
-          }
-
-        doing = DoingNone;
-        installer.MatchlessFiles = false;
-        }
-      else if ( *cstr == "COMPONENTS"  )
-        {
-        if(this->Makefile->IsOn("CMAKE_INSTALL_SELF_2_4"))
-          {
-          // When CMake 2.4 builds this CMake version we need to support
-          // the install scripts it generates since it asks this CMake
-          // to install itself using the rules it generated.
-          doing = DoingSelf24;
-          continue;
-          }
-        cmOStringStream e;
-        e << "INSTALL called with old-style COMPONENTS argument.  "
-          << "This script was generated with an older version of CMake.  "
-          << "Re-run this cmake version on your build tree.";
-        this->SetError(e.str().c_str());
-        return false;
-        }
-      else if ( *cstr == "CONFIGURATIONS"  )
-        {
-        cmOStringStream e;
-        e << "INSTALL called with old-style CONFIGURATIONS argument.  "
-          << "This script was generated with an older version of CMake.  "
-          << "Re-run this cmake version on your build tree.";
-        this->SetError(e.str().c_str());
-        return false;
-        }
-      else if(*cstr == "FILES" && doing != DoingFiles)
-        {
-        if(current_match_rule)
-          {
-          cmOStringStream e;
-          e << "INSTALL does not allow \"" << *cstr << "\" after REGEX.";
-          this->SetError(e.str().c_str());
-          return false;
-          }
-
-        doing = DoingFiles;
-        }
-      else if(doing == DoingProperties && i < args.size()-1)
-        {
-        properties[args[i]] = args[i+1].c_str();
-        i++;
-        }
-      else if(doing == DoingFiles)
-        {
-        files.push_back(*cstr);
-        }
-      else if(doing == DoingPermissionsFile)
-        {
-        if(!installer.CheckPermissions(args[i], permissions_file))
-          {
-          return false;
-          }
-        }
-      else if(doing == DoingPermissionsDir)
-        {
-        if(!installer.CheckPermissions(args[i], permissions_dir))
-          {
-          return false;
-          }
-        }
-      else if(doing == DoingPermissionsMatch)
-        {
-        if(!installer.CheckPermissions(
-            args[i], current_match_rule->Properties.Permissions))
-          {
-          return false;
-          }
-        }
-      else if(doing == DoingSelf24)
-        {
-        // Ignore these arguments for compatibility.  This should be
-        // reached only when CMake 2.4 is installing the current
-        // CMake.  It can be removed when CMake 2.6 or higher is
-        // required to build CMake.
-        }
-      else
-        {
-        this->SetError("called with inappropriate arguments");
-        return false;
-        }
-      }
-
-    // now check and postprocess what has been parsed
-    if ( files.size() == 0 )
-      {
-      // nothing to do, no files were listed.
-      // if this is handled as error, INSTALL_FILES() creates an invalid
-      // cmake_install.cmake script with no FILES() arguments if no files were
-      // given to INSTALL_FILES(). This was accepted with CMake 2.4.x.
-      return true;
-      }
-
-    // Check rename form.
-    if(!rename.empty())
-      {
-      if(itype != cmTarget::INSTALL_FILES &&
-         itype != cmTarget::INSTALL_PROGRAMS)
-        {
-        this->SetError("INSTALL option RENAME may be used only with "
-            "FILES or PROGRAMS.");
-        return false;
-        }
-      if(files.size() > 1)
-        {
-        this->SetError("INSTALL option RENAME may be used only with "
-                       "one file.");
-        return false;
-        }
-      }
-
-      if (this->HandleInstallDestination(installer, destination) == false)
-      {
-      return false;
-      }
-
-    if(properties.find("VERSION") != properties.end())
-      {
-      cmOStringStream e;
-      e << "INSTALL called with old-style VERSION property.  "
-        << "This script was generated with an older version of CMake.  "
-        << "Re-run this cmake version on your build tree.";
-      this->SetError(e.str().c_str());
-      return false;
-      }
-    if(properties.find("SOVERSION") != properties.end())
-      {
-      cmOStringStream e;
-      e << "INSTALL called with old-style SOVERSION property.  "
-        << "This script was generated with an older version of CMake.  "
-        << "Re-run this cmake version on your build tree.";
-      this->SetError(e.str().c_str());
-      return false;
-      }
-
-    this->GetTargetTypeFromString(stype, itype);
-
-    this->HandleInstallPermissions(installer,
-                             permissions_file,
-                             permissions_dir,
-                             itype,
-                             use_given_permissions_file,
-                             use_given_permissions_dir,
-                             use_source_permissions);
-
-  return true;
-}
-
-//----------------------------------------------------------------------------
-bool cmFileCommand::DoInstall( cmFileInstaller& installer,
-                              const int itype,
-                              const std::string& rename,
-                              const std::string& destination,
-                              const std::vector<std::string>& files,
-                              const bool optional)
-{
-  typedef std::set<cmStdString>::const_iterator iter_type;
-
-  // Check whether files should be copied always or only if they have
-  // changed.
-  bool copy_always =
-    cmSystemTools::IsOn(cmSystemTools::GetEnv("CMAKE_INSTALL_ALWAYS"));
-
-  // Handle each file listed.
-  for (std::vector<std::string>::size_type i = 0; i < files.size(); i ++ )
-    {
-    // Split the input file into its directory and name components.
-    std::vector<std::string> fromPathComponents;
-    cmSystemTools::SplitPath(files[i].c_str(), fromPathComponents);
-    std::string fromName = *(fromPathComponents.end()-1);
-    std::string fromDir = cmSystemTools::JoinPath(fromPathComponents.begin(),
-                                                  fromPathComponents.end()-1);
-
-    // Compute the full path to the destination file.
-    std::string toFile = destination;
-    std::string const& toName = rename.empty()? fromName : rename;
-    if(!toName.empty())
-      {
-      toFile += "/";
-      toFile += toName;
-      }
-
-    // Construct the full path to the source file.  The file name may
-    // have been changed above.
-    std::string fromFile = fromDir;
-    if(!fromName.empty())
-      {
-      fromFile += "/";
-      fromFile += fromName;
-      }
-
-    std::string message;
-    if(!cmSystemTools::SameFile(fromFile.c_str(), toFile.c_str()))
-      {
-      if(itype == cmTarget::INSTALL_DIRECTORY &&
-         (fromFile.empty() ||
-          cmSystemTools::FileIsDirectory(fromFile.c_str())))
-        {
-        // Try installing this directory.
-        if(!installer.InstallDirectory(fromFile.c_str(), toFile.c_str(),
-                                       copy_always))
-          {
-          return false;
-          }
-        }
-      else if(cmSystemTools::FileExists(fromFile.c_str()))
-        {
-        // Install this file.
-        if(!installer.InstallFile(fromFile.c_str(), toFile.c_str(),
-                                  copy_always))
-          {
-          return false;
-          }
-        }
-      else if(!optional)
-        {
-        // The input file does not exist and installation is not optional.
-        cmOStringStream e;
-        e << "INSTALL cannot find file \"" << fromFile << "\" to install.";
-        this->SetError(e.str().c_str());
-        return false;
-        }
-      }
-    }
-
-  return true;
+  cmFileInstaller installer(this);
+  return installer.Run(args);
 }
 
 //----------------------------------------------------------------------------
@@ -2141,7 +2268,7 @@ bool cmFileCommand::HandleRelativePathCommand(
 {
   if(args.size() != 4 )
     {
-    this->SetError("called with incorrect number of arguments");
+    this->SetError("RELATIVE_PATH called with incorrect number of arguments");
     return false;
     }
 
@@ -2152,7 +2279,7 @@ bool cmFileCommand::HandleRelativePathCommand(
   if(!cmSystemTools::FileIsFullPath(directoryName.c_str()))
     {
     std::string errstring =
-      "RelativePath must be passed a full path to the directory: "
+      "RELATIVE_PATH must be passed a full path to the directory: "
       + directoryName;
     this->SetError(errstring.c_str());
     return false;
@@ -2160,7 +2287,7 @@ bool cmFileCommand::HandleRelativePathCommand(
   if(!cmSystemTools::FileIsFullPath(fileName.c_str()))
     {
     std::string errstring =
-      "RelativePath must be passed a full path to the file: "
+      "RELATIVE_PATH must be passed a full path to the file: "
       + fileName;
     this->SetError(errstring.c_str());
     return false;
@@ -2170,6 +2297,45 @@ bool cmFileCommand::HandleRelativePathCommand(
                                                 fileName.c_str());
   this->Makefile->AddDefinition(outVar.c_str(),
     res.c_str());
+  return true;
+}
+
+
+//----------------------------------------------------------------------------
+bool cmFileCommand::HandleRename(std::vector<std::string> const& args)
+{
+  if(args.size() != 3)
+    {
+    this->SetError("RENAME given incorrect number of arguments.");
+    return false;
+    }
+
+  // Compute full path for old and new names.
+  std::string oldname = args[1];
+  if(!cmsys::SystemTools::FileIsFullPath(oldname.c_str()))
+    {
+    oldname = this->Makefile->GetCurrentDirectory();
+    oldname += "/" + args[1];
+    }
+  std::string newname = args[2];
+  if(!cmsys::SystemTools::FileIsFullPath(newname.c_str()))
+    {
+    newname = this->Makefile->GetCurrentDirectory();
+    newname += "/" + args[2];
+    }
+
+  if(!cmSystemTools::RenameFile(oldname.c_str(), newname.c_str()))
+    {
+    std::string err = cmSystemTools::GetLastSystemError();
+    cmOStringStream e;
+    e << "RENAME failed to rename\n"
+      << "  " << oldname << "\n"
+      << "to\n"
+      << "  " << newname << "\n"
+      << "because: " << err << "\n";
+    this->SetError(e.str().c_str());
+    return false;
+    }
   return true;
 }
 
@@ -2212,8 +2378,8 @@ bool cmFileCommand::HandleCMakePathCommand(std::vector<std::string>
   std::vector<std::string>::const_iterator i = args.begin();
   if(args.size() != 3)
     {
-    this->SetError("FILE(SYSTEM_PATH ENV result) must be called with "
-                   "only three arguments.");
+    this->SetError("FILE([TO_CMAKE_PATH|TO_NATIVE_PATH] path result) must be "
+      "called with exactly three arguments.");
     return false;
     }
   i++; // Get rid of subcommand
@@ -2254,105 +2420,314 @@ bool cmFileCommand::HandleCMakePathCommand(std::vector<std::string>
   this->Makefile->AddDefinition(var, value.c_str());
   return true;
 }
+
+
 #if defined(CMAKE_BUILD_WITH_CMAKE)
 
-// Stuff for curl download
+// Stuff for curl download/upload
 typedef std::vector<char> cmFileCommandVectorOfChar;
-namespace{
+
+namespace {
+
   size_t
-  cmFileCommandWriteMemoryCallback(void *ptr, size_t size, size_t nmemb,
-                                          void *data)
-  { 
+  cmWriteToFileCallback(void *ptr, size_t size, size_t nmemb,
+                        void *data)
+    {
     register int realsize = (int)(size * nmemb);
     std::ofstream* fout = static_cast<std::ofstream*>(data);
     const char* chPtr = static_cast<char*>(ptr);
     fout->write(chPtr, realsize);
     return realsize;
-  }
-  
+    }
+
+
+  size_t
+  cmWriteToMemoryCallback(void *ptr, size_t size, size_t nmemb,
+                          void *data)
+    {
+    register int realsize = (int)(size * nmemb);
+    cmFileCommandVectorOfChar *vec
+      = static_cast<cmFileCommandVectorOfChar*>(data);
+    const char* chPtr = static_cast<char*>(ptr);
+    vec->insert(vec->end(), chPtr, chPtr + realsize);
+    return realsize;
+    }
+
+
   static size_t
   cmFileCommandCurlDebugCallback(CURL *, curl_infotype, char *chPtr,
-                                        size_t size, void *data)
-  {
+                                 size_t size, void *data)
+    {
     cmFileCommandVectorOfChar *vec
       = static_cast<cmFileCommandVectorOfChar*>(data);
     vec->insert(vec->end(), chPtr, chPtr + size);
-    
     return size;
-  }
-  
-  
+    }
+
+
+  class cURLProgressHelper
+  {
+  public:
+    cURLProgressHelper(cmFileCommand *fc, const char *text)
+      {
+      this->CurrentPercentage = -1;
+      this->FileCommand = fc;
+      this->Text = text;
+      }
+
+    bool UpdatePercentage(double value, double total, std::string &status)
+      {
+      int OldPercentage = this->CurrentPercentage;
+
+      if (total > 0.0)
+        {
+        this->CurrentPercentage = static_cast<int>(value/total*100.0 + 0.5);
+        }
+
+      bool updated = (OldPercentage != this->CurrentPercentage);
+
+      if (updated)
+        {
+        cmOStringStream oss;
+        oss << "[" << this->Text << " " << this->CurrentPercentage
+            << "% complete]";
+        status = oss.str();
+        }
+
+      return updated;
+      }
+
+    cmFileCommand *GetFileCommand()
+      {
+      return this->FileCommand;
+      }
+
+  private:
+    int CurrentPercentage;
+    cmFileCommand *FileCommand;
+    std::string Text;
+  };
+
+
+  static int
+  cmFileDownloadProgressCallback(void *clientp,
+                                 double dltotal, double dlnow,
+                                 double ultotal, double ulnow)
+    {
+    cURLProgressHelper *helper =
+      reinterpret_cast<cURLProgressHelper *>(clientp);
+
+    static_cast<void>(ultotal);
+    static_cast<void>(ulnow);
+
+    std::string status;
+    if (helper->UpdatePercentage(dlnow, dltotal, status))
+      {
+      cmFileCommand *fc = helper->GetFileCommand();
+      cmMakefile *mf = fc->GetMakefile();
+      mf->DisplayStatus(status.c_str(), -1);
+      }
+
+    return 0;
+    }
+
+
+  static int
+  cmFileUploadProgressCallback(void *clientp,
+                               double dltotal, double dlnow,
+                               double ultotal, double ulnow)
+    {
+    cURLProgressHelper *helper =
+    reinterpret_cast<cURLProgressHelper *>(clientp);
+
+    static_cast<void>(dltotal);
+    static_cast<void>(dlnow);
+
+    std::string status;
+    if (helper->UpdatePercentage(ulnow, ultotal, status))
+      {
+      cmFileCommand *fc = helper->GetFileCommand();
+      cmMakefile *mf = fc->GetMakefile();
+      mf->DisplayStatus(status.c_str(), -1);
+      }
+
+    return 0;
+    }
 }
 
+
+namespace {
+
+  class cURLEasyGuard
+  {
+  public:
+    cURLEasyGuard(CURL * easy)
+      : Easy(easy)
+      {}
+
+    ~cURLEasyGuard(void)
+      {
+        if (this->Easy)
+          {
+          ::curl_easy_cleanup(this->Easy);
+          }
+      }
+    
+    inline void release(void) 
+      {
+        this->Easy = 0;
+        return;
+      }
+    
+  private:
+    ::CURL * Easy;
+  };
+  
+}
 #endif
 
-bool 
-cmFileCommand::HandleDownloadCommand(std::vector<std::string> 
-                                     const& args)
+
+#define check_curl_result(result, errstr) \
+  if (result != CURLE_OK)                 \
+    {                                     \
+    std::string e(errstr);                \
+    e += ::curl_easy_strerror(result);    \
+    this->SetError(e.c_str());            \
+    return false;                         \
+    }
+
+
+bool
+cmFileCommand::HandleDownloadCommand(std::vector<std::string> const& args)
 {
 #if defined(CMAKE_BUILD_WITH_CMAKE)
   std::vector<std::string>::const_iterator i = args.begin();
   if(args.size() < 3)
     {
-    this->SetError("FILE(DOWNLOAD url file) must be called with "
-                   "at least three arguments.");
+    this->SetError("DOWNLOAD must be called with at least three arguments.");
     return false;
     }
-  i++; // Get rid of subcommand
+  ++i; // Get rid of subcommand
   std::string url = *i;
-  i++;
+  ++i;
   std::string file = *i;
-  i++;
-  double timeout = 0;
+  ++i;
+
+  long timeout = 0;
+  long inactivity_timeout = 0;
   std::string verboseLog;
   std::string statusVar;
+  std::string expectedMD5sum;
+  bool showProgress = false;
+
   while(i != args.end())
     {
     if(*i == "TIMEOUT")
       {
-      i++;
+      ++i;
       if(i != args.end())
         {
-        timeout = atof(i->c_str());
+        timeout = atol(i->c_str());
         }
       else
-        { 
-        this->SetError("FILE(DOWNLOAD url file TIMEOUT time) missing "
-                       "time for TIMEOUT.");
+        {
+        this->SetError("DOWNLOAD missing time for TIMEOUT.");
+        return false;
+        }
+      }
+    else if(*i == "INACTIVITY_TIMEOUT")
+      {
+      ++i;
+      if(i != args.end())
+        {
+        inactivity_timeout = atol(i->c_str());
+        }
+      else
+        {
+        this->SetError("DOWNLOAD missing time for INACTIVITY_TIMEOUT.");
         return false;
         }
       }
     else if(*i == "LOG")
       {
-      i++;
+      ++i;
       if( i == args.end())
         {
-        this->SetError("FILE(DOWNLOAD url file LOG VAR) missing "
-                       "VAR for LOG.");
+        this->SetError("DOWNLOAD missing VAR for LOG.");
         return false;
         }
       verboseLog = *i;
       }
     else if(*i == "STATUS")
       {
-      i++;
+      ++i;
       if( i == args.end())
         {
-        this->SetError("FILE(DOWNLOAD url file STATUS VAR) missing "
-                       "VAR for STATUS.");
+        this->SetError("DOWNLOAD missing VAR for STATUS.");
         return false;
         }
       statusVar = *i;
       }
-    i++;
+    else if(*i == "EXPECTED_MD5")
+      {
+      ++i;
+      if( i == args.end())
+        {
+        this->SetError("DOWNLOAD missing sum value for EXPECTED_MD5.");
+        return false;
+        }
+      expectedMD5sum = cmSystemTools::LowerCase(*i);
+      }
+    else if(*i == "SHOW_PROGRESS")
+      {
+      showProgress = true;
+      }
+    ++i;
     }
 
+  // If file exists already, and caller specified an expected md5 sum,
+  // and the existing file already has the expected md5 sum, then simply
+  // return.
+  //
+  if(cmSystemTools::FileExists(file.c_str()) &&
+    !expectedMD5sum.empty())
+    {
+    char computedMD5[32];
+
+    if (!cmSystemTools::ComputeFileMD5(file.c_str(), computedMD5))
+      {
+      this->SetError("DOWNLOAD cannot compute MD5 sum on pre-existing file");
+      return false;
+      }
+
+    std::string actualMD5sum = cmSystemTools::LowerCase(
+      std::string(computedMD5, 32));
+
+    if (expectedMD5sum == actualMD5sum)
+      {
+      if(statusVar.size())
+        {
+        cmOStringStream result;
+        result << (int)0 << ";\""
+          "returning early: file already exists with expected MD5 sum\"";
+        this->Makefile->AddDefinition(statusVar.c_str(),
+                                      result.str().c_str());
+        }
+
+      return true;
+      }
+    }
+
+  // Make sure parent directory exists so we can write to the file
+  // as we receive downloaded bits from curl...
+  //
   std::string dir = cmSystemTools::GetFilenamePath(file.c_str());
   if(!cmSystemTools::FileExists(dir.c_str()) &&
      !cmSystemTools::MakeDirectory(dir.c_str()))
     {
-    std::string errstring = "FILE(DOWNLOAD ) error; cannot create directory: "
-      + dir + ". Maybe need administrative privileges.";
+    std::string errstring = "DOWNLOAD error: cannot create directory '"
+      + dir + "' - Specify file by full path name and verify that you "
+      "have directory creation and file write privileges.";
     this->SetError(errstring.c_str());
     return false;
     }
@@ -2360,54 +2735,139 @@ cmFileCommand::HandleDownloadCommand(std::vector<std::string>
   std::ofstream fout(file.c_str(), std::ios::binary);
   if(!fout)
     {
-    this->SetError("FILE(DOWNLOAD url file TIMEOUT time) can not open "
-                       "file for write.");
+    this->SetError("DOWNLOAD cannot open file for write.");
     return false;
     }
-  CURL *curl;
-  curl_global_init(CURL_GLOBAL_DEFAULT);
-  curl = curl_easy_init();
+
+  ::CURL *curl;
+  ::curl_global_init(CURL_GLOBAL_DEFAULT);
+  curl = ::curl_easy_init();
   if(!curl)
     {
-    this->SetError("FILE(DOWNLOAD ) error "
-                   "initializing curl.");
+    this->SetError("DOWNLOAD error initializing curl.");
     return false;
     }
-  
-  curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
-  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, 
-                   cmFileCommandWriteMemoryCallback);
-  curl_easy_setopt(curl, CURLOPT_DEBUGFUNCTION,
-                   cmFileCommandCurlDebugCallback);
+
+  cURLEasyGuard g_curl(curl);
+
+  ::CURLcode res = ::curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+  check_curl_result(res, "DOWNLOAD cannot set url: ");
+
+  res = ::curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
+                           cmWriteToFileCallback);
+  check_curl_result(res, "DOWNLOAD cannot set write function: ");
+
+  res = ::curl_easy_setopt(curl, CURLOPT_DEBUGFUNCTION,
+                           cmFileCommandCurlDebugCallback);
+  check_curl_result(res, "DOWNLOAD cannot set debug function: ");
+
   cmFileCommandVectorOfChar chunkDebug;
-  ::curl_easy_setopt(curl, CURLOPT_FILE, (void *)&fout);
-  ::curl_easy_setopt(curl, CURLOPT_DEBUGDATA, (void *)&chunkDebug);
+
+  res = ::curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&fout);
+  check_curl_result(res, "DOWNLOAD cannot set write data: ");
+
+  res = ::curl_easy_setopt(curl, CURLOPT_DEBUGDATA, (void *)&chunkDebug);
+  check_curl_result(res, "DOWNLOAD cannot set debug data: ");
+
+  res = ::curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+  check_curl_result(res, "DOWNLOAD cannot set follow-redirect option: ");
+
   if(verboseLog.size())
     {
-    curl_easy_setopt(curl, CURLOPT_VERBOSE, 1);
+    res = ::curl_easy_setopt(curl, CURLOPT_VERBOSE, 1);
+    check_curl_result(res, "DOWNLOAD cannot set verbose: ");
     }
+
   if(timeout > 0)
     {
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout ); 
+    res = ::curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout );
+    check_curl_result(res, "DOWNLOAD cannot set timeout: ");
     }
-  CURLcode res = curl_easy_perform(curl);
+
+  if(inactivity_timeout > 0)
+    {
+    // Give up if there is no progress for a long time.
+    ::curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1);
+    ::curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, inactivity_timeout);
+    }
+
+  // Need the progress helper's scope to last through the duration of
+  // the curl_easy_perform call... so this object is declared at function
+  // scope intentionally, rather than inside the "if(showProgress)"
+  // block...
+  //
+  cURLProgressHelper helper(this, "download");
+
+  if(showProgress)
+    {
+    res = ::curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0);
+    check_curl_result(res, "DOWNLOAD cannot set noprogress value: ");
+
+    res = ::curl_easy_setopt(curl,
+      CURLOPT_PROGRESSFUNCTION, cmFileDownloadProgressCallback);
+    check_curl_result(res, "DOWNLOAD cannot set progress function: ");
+
+    res = ::curl_easy_setopt(curl,
+      CURLOPT_PROGRESSDATA, reinterpret_cast<void*>(&helper));
+    check_curl_result(res, "DOWNLOAD cannot set progress data: ");
+    }
+
+  res = ::curl_easy_perform(curl);
+
   /* always cleanup */
-  curl_easy_cleanup(curl);
+  g_curl.release();
+  ::curl_easy_cleanup(curl);
+
   if(statusVar.size())
     {
     cmOStringStream result;
-    result << (int)res << ";\"" << curl_easy_strerror(res) << "\"";
-    this->Makefile->AddDefinition(statusVar.c_str(), 
+    result << (int)res << ";\"" << ::curl_easy_strerror(res) << "\"";
+    this->Makefile->AddDefinition(statusVar.c_str(),
                                   result.str().c_str());
     }
-  curl_global_cleanup();
+
+  ::curl_global_cleanup();
+
+  // Explicitly flush/close so we can measure the md5 accurately.
+  //
+  fout.flush();
+  fout.close();
+
+  // Verify MD5 sum if requested:
+  //
+  if (!expectedMD5sum.empty())
+    {
+    char computedMD5[32];
+
+    if (!cmSystemTools::ComputeFileMD5(file.c_str(), computedMD5))
+      {
+      this->SetError("DOWNLOAD cannot compute MD5 sum on downloaded file");
+      return false;
+      }
+
+    std::string actualMD5sum = cmSystemTools::LowerCase(
+      std::string(computedMD5, 32));
+
+    if (expectedMD5sum != actualMD5sum)
+      {
+      cmOStringStream oss;
+      oss << "DOWNLOAD MD5 mismatch" << std::endl
+        << "  for file: [" << file << "]" << std::endl
+        << "    expected MD5 sum: [" << expectedMD5sum << "]" << std::endl
+        << "      actual MD5 sum: [" << actualMD5sum << "]" << std::endl
+        ;
+      this->SetError(oss.str().c_str());
+      return false;
+      }
+    }
+
   if(chunkDebug.size())
     {
     chunkDebug.push_back(0);
     if(CURLE_OPERATION_TIMEOUTED == res)
-      { 
+      {
       std::string output = &*chunkDebug.begin();
-      
+
       if(verboseLog.size())
         {
         this->Makefile->AddDefinition(verboseLog.c_str(),
@@ -2418,10 +2878,248 @@ cmFileCommand::HandleDownloadCommand(std::vector<std::string>
     this->Makefile->AddDefinition(verboseLog.c_str(),
                                   &*chunkDebug.begin());
     }
+
   return true;
-#else 
-  this->SetError("FILE(DOWNLOAD ) "
-                 "not supported in bootstrap cmake ");
+#else
+  this->SetError("DOWNLOAD not supported by bootstrap cmake.");
   return false;
-#endif  
+#endif
+}
+
+
+bool
+cmFileCommand::HandleUploadCommand(std::vector<std::string> const& args)
+{
+#if defined(CMAKE_BUILD_WITH_CMAKE)
+  if(args.size() < 3)
+    {
+    this->SetError("UPLOAD must be called with at least three arguments.");
+    return false;
+    }
+  std::vector<std::string>::const_iterator i = args.begin();
+  ++i;
+  std::string filename = *i;
+  ++i;
+  std::string url = *i;
+  ++i;
+
+  long timeout = 0;
+  long inactivity_timeout = 0;
+  std::string logVar;
+  std::string statusVar;
+  bool showProgress = false;
+
+  while(i != args.end())
+    {
+    if(*i == "TIMEOUT")
+      {
+      ++i;
+      if(i != args.end())
+        {
+        timeout = atol(i->c_str());
+        }
+      else
+        {
+        this->SetError("UPLOAD missing time for TIMEOUT.");
+        return false;
+        }
+      }
+    else if(*i == "INACTIVITY_TIMEOUT")
+      {
+      ++i;
+      if(i != args.end())
+        {
+        inactivity_timeout = atol(i->c_str());
+        }
+      else
+        {
+        this->SetError("UPLOAD missing time for INACTIVITY_TIMEOUT.");
+        return false;
+        }
+      }
+    else if(*i == "LOG")
+      {
+      ++i;
+      if( i == args.end())
+        {
+        this->SetError("UPLOAD missing VAR for LOG.");
+        return false;
+        }
+      logVar = *i;
+      }
+    else if(*i == "STATUS")
+      {
+      ++i;
+      if( i == args.end())
+        {
+        this->SetError("UPLOAD missing VAR for STATUS.");
+        return false;
+        }
+      statusVar = *i;
+      }
+    else if(*i == "SHOW_PROGRESS")
+      {
+      showProgress = true;
+      }
+
+    ++i;
+    }
+
+  // Open file for reading:
+  //
+  FILE *fin = fopen(filename.c_str(), "rb");
+  if(!fin)
+    {
+    std::string errStr = "UPLOAD cannot open file '";
+    errStr += filename + "' for reading.";
+    this->SetError(errStr.c_str());
+    return false;
+    }
+
+  struct stat st;
+  if(::stat(filename.c_str(), &st))
+    {
+    std::string errStr = "UPLOAD cannot stat file '";
+    errStr += filename + "'.";
+    this->SetError(errStr.c_str());
+    return false;
+    }
+
+  ::CURL *curl;
+  ::curl_global_init(CURL_GLOBAL_DEFAULT);
+  curl = ::curl_easy_init();
+  if(!curl)
+    {
+    this->SetError("UPLOAD error initializing curl.");
+    return false;
+    }
+
+  cURLEasyGuard g_curl(curl);
+
+  // enable HTTP ERROR parsing
+  ::CURLcode res = ::curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1);
+
+  // enable uploading
+  res = ::curl_easy_setopt(curl, CURLOPT_UPLOAD, 1);
+  check_curl_result(res, "UPLOAD cannot set upload flag: ");
+
+  res = ::curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+  check_curl_result(res, "UPLOAD cannot set url: ");
+
+  res = ::curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
+                           cmWriteToMemoryCallback);
+  check_curl_result(res, "UPLOAD cannot set write function: ");
+
+  res = ::curl_easy_setopt(curl, CURLOPT_DEBUGFUNCTION,
+                           cmFileCommandCurlDebugCallback);
+  check_curl_result(res, "UPLOAD cannot set debug function: ");
+
+  cmFileCommandVectorOfChar chunkResponse;
+  cmFileCommandVectorOfChar chunkDebug;
+
+  res = ::curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunkResponse);
+  check_curl_result(res, "UPLOAD cannot set write data: ");
+
+  res = ::curl_easy_setopt(curl, CURLOPT_DEBUGDATA, (void *)&chunkDebug);
+  check_curl_result(res, "UPLOAD cannot set debug data: ");
+
+  res = ::curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+  check_curl_result(res, "UPLOAD cannot set follow-redirect option: ");
+
+  if(logVar.size())
+    {
+    res = ::curl_easy_setopt(curl, CURLOPT_VERBOSE, 1);
+    check_curl_result(res, "UPLOAD cannot set verbose: ");
+    }
+
+  if(timeout > 0)
+    {
+    res = ::curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout );
+    check_curl_result(res, "UPLOAD cannot set timeout: ");
+    }
+
+  if(inactivity_timeout > 0)
+    {
+    // Give up if there is no progress for a long time.
+    ::curl_easy_setopt(curl, CURLOPT_LOW_SPEED_LIMIT, 1);
+    ::curl_easy_setopt(curl, CURLOPT_LOW_SPEED_TIME, inactivity_timeout);
+    }
+
+  // Need the progress helper's scope to last through the duration of
+  // the curl_easy_perform call... so this object is declared at function
+  // scope intentionally, rather than inside the "if(showProgress)"
+  // block...
+  //
+  cURLProgressHelper helper(this, "upload");
+
+  if(showProgress)
+    {
+    res = ::curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0);
+    check_curl_result(res, "UPLOAD cannot set noprogress value: ");
+
+    res = ::curl_easy_setopt(curl,
+      CURLOPT_PROGRESSFUNCTION, cmFileUploadProgressCallback);
+    check_curl_result(res, "UPLOAD cannot set progress function: ");
+
+    res = ::curl_easy_setopt(curl,
+      CURLOPT_PROGRESSDATA, reinterpret_cast<void*>(&helper));
+    check_curl_result(res, "UPLOAD cannot set progress data: ");
+    }
+
+  // now specify which file to upload
+  res = ::curl_easy_setopt(curl, CURLOPT_INFILE, fin);
+  check_curl_result(res, "UPLOAD cannot set input file: ");
+
+  // and give the size of the upload (optional)
+  res = ::curl_easy_setopt(curl,
+    CURLOPT_INFILESIZE, static_cast<long>(st.st_size));
+  check_curl_result(res, "UPLOAD cannot set input file size: ");
+
+  res = ::curl_easy_perform(curl);
+
+  /* always cleanup */
+  g_curl.release();
+  ::curl_easy_cleanup(curl);
+
+  if(statusVar.size())
+    {
+    cmOStringStream result;
+    result << (int)res << ";\"" << ::curl_easy_strerror(res) << "\"";
+    this->Makefile->AddDefinition(statusVar.c_str(),
+                                  result.str().c_str());
+    }
+
+  ::curl_global_cleanup();
+
+  fclose(fin);
+  fin = NULL;
+
+  if(logVar.size())
+    {
+    std::string log;
+
+    if(chunkResponse.size())
+      {
+      chunkResponse.push_back(0);
+      log += "Response:\n";
+      log += &*chunkResponse.begin();
+      log += "\n";
+      }
+
+    if(chunkDebug.size())
+      {
+      chunkDebug.push_back(0);
+      log += "Debug:\n";
+      log += &*chunkDebug.begin();
+      log += "\n";
+      }
+
+    this->Makefile->AddDefinition(logVar.c_str(), log.c_str());
+    }
+
+  return true;
+#else
+  this->SetError("UPLOAD not supported by bootstrap cmake.");
+  return false;
+#endif
 }

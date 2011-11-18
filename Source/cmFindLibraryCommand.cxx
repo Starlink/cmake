@@ -1,19 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmFindLibraryCommand.cxx,v $
-  Language:  C++
-  Date:      $Date: 2008-10-24 15:18:46 $
-  Version:   $Revision: 1.58.2.2 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even 
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR 
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #include "cmFindLibraryCommand.h"
 #include "cmCacheManager.h"
 #include <cmsys/Directory.hxx>
@@ -21,6 +16,13 @@
 
 cmFindLibraryCommand::cmFindLibraryCommand()
 { 
+  this->EnvironmentPath = "LIB";
+}
+
+//----------------------------------------------------------------------------
+void cmFindLibraryCommand::GenerateDocumentation()
+{
+  this->cmFindBase::GenerateDocumentation();
   cmSystemTools::ReplaceString(this->GenericDocumentation,
                                "FIND_XXX", "find_library");
   cmSystemTools::ReplaceString(this->GenericDocumentation,
@@ -34,7 +36,7 @@ cmFindLibraryCommand::cmFindLibraryCommand()
   cmSystemTools::ReplaceString(this->GenericDocumentation,
                                "XXX_SYSTEM", "LIB");
   cmSystemTools::ReplaceString(this->GenericDocumentation,
-                               "CMAKE_SYSTEM_XXX_PATH", 
+                               "CMAKE_SYSTEM_XXX_PATH",
                                "CMAKE_SYSTEM_LIBRARY_PATH");
   cmSystemTools::ReplaceString(this->GenericDocumentation,
                                "SEARCH_XXX_DESC", "library");
@@ -42,12 +44,14 @@ cmFindLibraryCommand::cmFindLibraryCommand()
                                "SEARCH_XXX", "library");
   cmSystemTools::ReplaceString(this->GenericDocumentation,
                                "XXX_SUBDIR", "lib");
+  cmSystemTools::ReplaceString(
+    this->GenericDocumentation,
+    "XXX_EXTRA_PREFIX_ENTRY",
+    "   <prefix>/lib/<arch> if CMAKE_LIBRARY_ARCHITECTURE is set, and\n");
   cmSystemTools::ReplaceString(this->GenericDocumentation,
-                               "CMAKE_FIND_ROOT_PATH_MODE_XXX", 
+                               "CMAKE_FIND_ROOT_PATH_MODE_XXX",
                                "CMAKE_FIND_ROOT_PATH_MODE_LIBRARY");
-
-  this->EnvironmentPath = "LIB";
-  this->GenericDocumentation += 
+  this->GenericDocumentation +=
     "\n"
     "If the library found is a framework, then VAR will be set to "
     "the full path to the framework <fullPath>/A.framework. "
@@ -160,11 +164,6 @@ void cmFindLibraryCommand::AddArchitecturePaths(const char* suffix)
 
 void cmFindLibraryCommand::AddLib64Paths()
 {  
-  if(!this->Makefile->GetLocalGenerator()->GetGlobalGenerator()->
-     GetLanguageEnabled("C"))
-    {
-    return;
-    }
   std::string voidsize =
     this->Makefile->GetSafeDefinition("CMAKE_SIZEOF_VOID_P");
   int size = atoi(voidsize.c_str());

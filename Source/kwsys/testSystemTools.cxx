@@ -1,16 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  KWSys - Kitware System Library
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   KWSys - Kitware System Library
-  Module:    $RCSfile: testSystemTools.cxx,v $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.kitware.com/Copyright.htm for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #include "kwsysPrivate.h"
 
 #if defined(_MSC_VER)
@@ -299,7 +297,7 @@ bool CheckStringOperations()
 
   if (kwsys::SystemTools::ConvertToUnixOutputPath
       ("//Local Mojo/Hex Power Pack/Iffy Voodoo") != 
-      "/Local\\ Mojo/Hex\\ Power\\ Pack/Iffy\\ Voodoo")
+      "//Local\\ Mojo/Hex\\ Power\\ Pack/Iffy\\ Voodoo")
     {
     kwsys_ios::cerr
       << "Problem with ConvertToUnixOutputPath "

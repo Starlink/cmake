@@ -18,7 +18,7 @@
  * This software is distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY
  * KIND, either express or implied.
  *
- * $Id: url.c,v 1.3 2007-05-03 17:03:13 king Exp $
+ * $Id$
  ***************************************************************************/
 
 /* -- WIN32 approved -- */
@@ -3983,7 +3983,7 @@ static CURLcode SetupConnection(struct connectdata *conn,
         conn->bits.tcpconnect = FALSE;
 
       /* if the connection was closed by the server while exchanging
-         authentication informations, retry with the new set
+         authentication information, retry with the new set
          authentication information */
       if(conn->bits.proxy_connect_closed) {
         /* reset the error buffer */

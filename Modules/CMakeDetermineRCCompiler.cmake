@@ -1,4 +1,17 @@
 
+#=============================================================================
+# Copyright 2004-2009 Kitware, Inc.
+#
+# Distributed under the OSI-approved BSD License (the "License");
+# see accompanying file Copyright.txt for details.
+#
+# This software is distributed WITHOUT ANY WARRANTY; without even the
+# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the License for more information.
+#=============================================================================
+# (To distribute this file outside of CMake, substitute the full
+#  License text for the above reference.)
+
 # determine the compiler to use for C programs
 # NOTE, a generator may set CMAKE_C_COMPILER before
 # loading this file to force a compiler.
@@ -41,6 +54,12 @@ ENDIF(NOT CMAKE_RC_COMPILER)
 
 MARK_AS_ADVANCED(CMAKE_RC_COMPILER)  
 
+GET_FILENAME_COMPONENT(_CMAKE_RC_COMPILER_NAME_WE ${CMAKE_RC_COMPILER} NAME_WE)
+IF(_CMAKE_RC_COMPILER_NAME_WE STREQUAL "windres")
+  SET(CMAKE_RC_OUTPUT_EXTENSION .obj)
+ELSE()
+  SET(CMAKE_RC_OUTPUT_EXTENSION .res)
+ENDIF()
 
 # configure variables set in this file for fast reload later on
 CONFIGURE_FILE(${CMAKE_ROOT}/Modules/CMakeRCCompiler.cmake.in 

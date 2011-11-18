@@ -1,19 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmGlobalMinGWMakefileGenerator.cxx,v $
-  Language:  C++
-  Date:      $Date: 2007-10-22 16:48:39 $
-  Version:   $Revision: 1.12 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even 
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR 
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #include "cmGlobalMinGWMakefileGenerator.h"
 #include "cmLocalUnixMakefileGenerator3.h"
 #include "cmMakefile.h"
@@ -49,8 +44,15 @@ void cmGlobalMinGWMakefileGenerator
     {
     gxx = tgxx;
     }
+  std::string trc = cmSystemTools::FindProgram("windres", locations);
+  std::string rc = "windres.exe";
+  if(trc.size())
+    {
+    rc = trc;
+    }
   mf->AddDefinition("CMAKE_GENERATOR_CC", gcc.c_str());
   mf->AddDefinition("CMAKE_GENERATOR_CXX", gxx.c_str());
+  mf->AddDefinition("CMAKE_GENERATOR_RC", rc.c_str());
   this->cmGlobalUnixMakefileGenerator3::EnableLanguage(l, mf, optional);
 }
 

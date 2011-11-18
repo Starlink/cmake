@@ -1,24 +1,18 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmMakefile.h,v $
-  Language:  C++
-  Date:      $Date: 2009-02-04 16:44:17 $
-  Version:   $Revision: 1.230.2.8 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even 
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR 
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #ifndef cmMakefile_h
 #define cmMakefile_h
 
 #include "cmCacheManager.h"
-#include "cmData.h"
 #include "cmExecutionStatus.h"
 #include "cmListFileCache.h"
 #include "cmPolicies.h"
@@ -41,6 +35,7 @@ class cmLocalGenerator;
 class cmMakeDepend;
 class cmSourceFile;
 class cmTest;
+class cmTestGenerator;
 class cmVariableWatch;
 class cmake;
 class cmMakefileCall;
@@ -55,6 +50,8 @@ class cmCMakePolicyCommand;
  */
 class cmMakefile
 {
+  class Internals;
+  cmsys::auto_ptr<Internals> Internal;
 public:
   /**
    * Return the major and minor version of the cmake that
@@ -64,6 +61,14 @@ public:
   unsigned int GetCacheMajorVersion();
   unsigned int GetCacheMinorVersion();
 
+  /* Check for unused variables in this scope */
+  void CheckForUnusedVariables() const;
+  /* Mark a variable as used */
+  void MarkVariableAsUsed(const char* var);
+  /* return true if a variable has been initialized */
+  bool VariableInitialized(const char* ) const;
+  /* return true if a variable has been used */
+  bool VariableUsed(const char* ) const;
   /** Return whether compatibility features needed for a version of
       the cache or lower should be enabled.  */
   bool NeedCacheCompatibility(int major, int minor);
@@ -118,6 +123,7 @@ public:
    */
   int TryCompile(const char *srcdir, const char *bindir, 
                  const char *projectName, const char *targetName,
+                 bool fast,
                  const std::vector<std::string> *cmakeArgs,
                  std::string *output);
     
@@ -290,8 +296,6 @@ public:
    * Add bool variable definition to the build. 
    */
   void AddDefinition(const char* name, bool);
-  ///! Add a definition to this makefile and the global cmake cache.
-  void AddCacheDefinition(const char* name, bool, const char* doc);
 
   /**
    * Remove a variable definition from the build.  This is not valid
@@ -313,7 +317,11 @@ public:
     {
       return this->ProjectName.c_str();
     }
-  
+
+  /** Get the configurations to be generated.  */
+  const char* GetConfigurations(std::vector<std::string>& configs,
+                                bool single = true) const;
+
   /**
    * Set the name of the library.
    */
@@ -403,7 +411,17 @@ public:
       return this->HomeOutputDirectory.c_str();
     }
   //@}
-  
+
+  /**
+   * Set CMAKE_SCRIPT_MODE_FILE variable when running a -P script.
+   */
+  void SetScriptModeFile(const char* scriptfile);
+
+  /**
+   * Set CMAKE_ARGC, CMAKE_ARGV0 ... variables.
+   */
+  void SetArgcArgv(const std::vector<std::string>& args);
+
   //@{
   /**
    * Set/Get the start directory (or output directory). The start directory
@@ -586,6 +604,9 @@ public:
   bool IsOn(const char* name) const;
   bool IsSet(const char* name) const;
 
+  /** Return whether the target platform is 64-bit.  */
+  bool PlatformIs64Bit() const;
+
   /**
    * Get a list of preprocessor define flags.
    */
@@ -692,10 +713,6 @@ public:
                                  std::vector<cmSourceGroup> &groups);
 #endif
 
-  void RegisterData(cmData*);
-  void RegisterData(const char*, cmData*);
-  cmData* LookupData(const char*) const;
-  
   /**
    * Execute a single CMake command.  Returns true if the command
    * succeeded or false if it failed.
@@ -769,8 +786,6 @@ public:
    *  not found, then a null pointer is returned.
    */
   cmTest* GetTest(const char* testName) const;
-  const std::vector<cmTest*> *GetTests() const;
-  std::vector<cmTest*> *GetTests();
 
   /**
    * Get a list of macros as a ; separated string
@@ -790,10 +805,11 @@ public:
   const char *GetProperty(const char *prop, cmProperty::ScopeType scope);
   bool GetPropertyAsBool(const char *prop);
 
+  const char* GetFeature(const char* feature, const char* config);
+
   // Get the properties
   cmPropertyMap &GetProperties() { return this->Properties; };
 
-  typedef std::map<cmStdString, cmStdString> DefinitionMap;
   ///! Initialize a makefile from its parent
   void InitializeFromParent();
   
@@ -805,6 +821,11 @@ public:
     { if(g) this->InstallGenerators.push_back(g); }
   std::vector<cmInstallGenerator*>& GetInstallGenerators()
     { return this->InstallGenerators; }
+
+  void AddTestGenerator(cmTestGenerator* g)
+    { if(g) this->TestGenerators.push_back(g); }
+  std::vector<cmTestGenerator*>& GetTestGenerators()
+    { return this->TestGenerators; }
 
   // Define the properties
   static void DefineProperties(cmake *cm);
@@ -833,7 +854,10 @@ public:
 protected:
   // add link libraries and directories to the target
   void AddGlobalLinkInformation(const char* name, cmTarget& target);
-  
+
+  // Check for a an unused variable
+  void CheckForUnused(const char* reason, const char* name) const;
+
   std::string Prefix;
   std::vector<std::string> AuxSourceDirectories; // 
 
@@ -850,7 +874,7 @@ protected:
   std::vector<cmSourceFile*> SourceFiles;
 
   // Tests
-  std::vector<cmTest*> Tests;
+  std::map<cmStdString, cmTest*> Tests;
   
   // The include and link-library paths.  These may have order
   // dependency, so they must be vectors (not set).
@@ -868,6 +892,7 @@ protected:
   cmTarget::LinkLibraryVectorType LinkLibraries;
 
   std::vector<cmInstallGenerator*> InstallGenerators;
+  std::vector<cmTestGenerator*> TestGenerators;
 
   std::string IncludeFileRegularExpression;
   std::string ComplainFileRegularExpression;
@@ -884,7 +909,6 @@ protected:
   std::vector<cmSourceGroup> SourceGroups;
 #endif
 
-  std::vector<DefinitionMap> DefinitionStack;
   std::vector<cmCommand*> UsedCommands;
   cmLocalGenerator* LocalGenerator;
   bool IsFunctionBlocked(const cmListFileFunction& lff, 
@@ -894,6 +918,8 @@ private:
   void Initialize();
 
   bool ParseDefineFlag(std::string const& definition, bool remove);
+
+  bool EnforceUniqueDir(const char* srcPath, const char* binPath);
 
   void ReadSources(std::ifstream& fin, bool t);
   friend class cmMakeDepend;    // make depend needs direct access
@@ -910,15 +936,10 @@ private:
   void PushFunctionBlockerBarrier();
   void PopFunctionBlockerBarrier(bool reportError = true);
 
-  typedef std::map<cmStdString, cmData*> DataMapType;
-  DataMapType DataMap;
-
   typedef std::map<cmStdString, cmStdString> StringStringMap;
   StringStringMap MacrosMap;
 
   std::map<cmStdString, bool> SubDirectoryOrder;
-  // used in AddDefinition for performance improvement
-  DefinitionMap::key_type  TemporaryDefinitionKey;
 
   cmsys::RegularExpression cmDefineRegex;
   cmsys::RegularExpression cmDefine01Regex;
@@ -928,6 +949,10 @@ private:
 
   // should this makefile be processed before or after processing the parent
   bool PreOrder;
+
+  // Unused variable flags
+  bool WarnUnused;
+  bool CheckSystemVars;
 
   // stack of list files being read 
   std::deque<cmStdString> ListFileStack;

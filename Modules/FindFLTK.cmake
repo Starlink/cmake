@@ -29,6 +29,19 @@
 #     FLTK_FORMS_LIBRARY  = the full path to fltk_forms.lib
 #     FLTK_IMAGES_LIBRARY = the full path to fltk_images.lib
 
+#=============================================================================
+# Copyright 2001-2009 Kitware, Inc.
+#
+# Distributed under the OSI-approved BSD License (the "License");
+# see accompanying file Copyright.txt for details.
+#
+# This software is distributed WITHOUT ANY WARRANTY; without even the
+# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the License for more information.
+#=============================================================================
+# (To distribute this file outside of CMake, substitute the full
+#  License text for the above reference.)
+
 IF(NOT FLTK_SKIP_OPENGL)
   FIND_PACKAGE(OpenGL)
 ENDIF()
@@ -45,7 +58,7 @@ IF(WIN32)
 ENDIF(WIN32)
 
 IF(UNIX)
-  INCLUDE(${CMAKE_ROOT}/Modules/FindX11.cmake)
+  INCLUDE(FindX11)
   FIND_LIBRARY(FLTK_MATH_LIBRARY m)
   SET( FLTK_PLATFORM_DEPENDENT_LIBS ${X11_LIBRARIES} ${FLTK_MATH_LIBRARY})
 ENDIF(UNIX)
@@ -53,11 +66,6 @@ ENDIF(UNIX)
 IF(APPLE)
   SET( FLTK_PLATFORM_DEPENDENT_LIBS  "-framework Carbon -framework Cocoa -framework ApplicationServices -lz")
 ENDIF(APPLE)
-
-IF(CYGWIN)
-  FIND_LIBRARY(FLTK_MATH_LIBRARY m)
-  SET( FLTK_PLATFORM_DEPENDENT_LIBS ole32 uuid comctl32 wsock32 supc++ ${FLTK_MATH_LIBRARY} -lgdi32)
-ENDIF(CYGWIN)
 
 # If FLTK_INCLUDE_DIR is already defined we assigne its value to FLTK_DIR
 IF(FLTK_INCLUDE_DIR)
@@ -284,7 +292,7 @@ ENDIF(NOT FLTK_DIR)
   ENDIF()
   LIST(APPEND FLTK_LIBRARIES ${FLTK_BASE_LIBRARY})
 
-INCLUDE(FindPackageHandleStandardArgs)
+INCLUDE(${CMAKE_CURRENT_LIST_DIR}/FindPackageHandleStandardArgs.cmake)
 IF(FLTK_SKIP_FLUID)
   FIND_PACKAGE_HANDLE_STANDARD_ARGS(FLTK DEFAULT_MSG FLTK_LIBRARIES FLTK_INCLUDE_DIR)
 ELSE()

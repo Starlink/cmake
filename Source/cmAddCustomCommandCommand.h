@@ -1,23 +1,19 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmAddCustomCommandCommand.h,v $
-  Language:  C++
-  Date:      $Date: 2009-04-07 19:32:07 $
-  Version:   $Revision: 1.33.2.4 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even 
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR 
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #ifndef cmAddCustomCommandCommand_h
 #define cmAddCustomCommandCommand_h
 
 #include "cmCommand.h"
+#include "cmDocumentGeneratorExpressions.h"
 
 /** \class cmAddCustomCommandCommand
  * \brief 
@@ -114,6 +110,8 @@ public:
       "will be treated as PRE_LINK.\n"
       "If WORKING_DIRECTORY is specified the command will be executed "
       "in the directory given. "
+      "If it is a relative path it will be interpreted relative to the "
+      "build tree directory corresponding to the current source directory. "
       "If COMMENT is set, the value will be displayed as a "
       "message before the commands are executed at build time. "
       "If APPEND is specified the COMMAND and DEPENDS option values "
@@ -151,12 +149,22 @@ public:
       "target-level dependency will be added so that the executable target "
       "will be built before any target using this custom command.  However "
       "this does NOT add a file-level dependency that would cause the "
-      "custom command to re-run whenever the executable is recompiled.\n"
-
+      "custom command to re-run whenever the executable is recompiled."
+      "\n"
+      "Arguments to COMMAND may use \"generator expressions\" with the "
+      "syntax \"$<...>\".  "
+      CM_DOCUMENT_COMMAND_GENERATOR_EXPRESSIONS
+      "References to target names in generator expressions imply "
+      "target-level dependencies, but NOT file-level dependencies.  "
+      "List target names with the DEPENDS option to add file dependencies."
+      "\n"
       "The DEPENDS option specifies files on which the command depends.  "
       "If any dependency is an OUTPUT of another custom command in the "
       "same directory (CMakeLists.txt file) CMake automatically brings the "
       "other custom command into the target in which this command is built.  "
+      "If DEPENDS is not specified the command will run whenever the OUTPUT "
+      "is missing; if the command does not actually create the OUTPUT then "
+      "the rule will always run.  "
       "If DEPENDS specifies any target (created by an ADD_* command) "
       "a target-level dependency is created to make sure the target is "
       "built before any target using this custom command.  Additionally, "

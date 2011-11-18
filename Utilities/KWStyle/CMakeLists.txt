@@ -1,3 +1,15 @@
+#=============================================================================
+# CMake - Cross Platform Makefile Generator
+# Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
+#
+# Distributed under the OSI-approved BSD License (the "License");
+# see accompanying file Copyright.txt for details.
+#
+# This software is distributed WITHOUT ANY WARRANTY; without even the
+# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the License for more information.
+#=============================================================================
+
 #-----------------------------------------------------------------------------
 # CMake uses KWStyle for checking the coding style
 OPTION(CMAKE_USE_KWSTYLE "Run KWStyle in order to check for violations of the coding standard." OFF)
@@ -24,27 +36,27 @@ IF(CMAKE_USE_KWSTYLE)
     SET(KWSTYLE_ARGUMENTS -msvc ${KWSTYLE_ARGUMENTS})
   ENDIF(KWSTYLE_USE_MSVC_FORMAT)
 
-  CONFIGURE_FILE(${CMAKE_SOURCE_DIR}/Utilities/KWStyle/CMake.kws.xml.in
-               ${CMAKE_BINARY_DIR}/CMake.kws.xml)
-  CONFIGURE_FILE(${CMAKE_SOURCE_DIR}/Utilities/KWStyle/CMakeMoreChecks.kws.xml.in
-               ${CMAKE_BINARY_DIR}/CMakeMoreChecks.kws.xml)
+  CONFIGURE_FILE(${CMake_SOURCE_DIR}/Utilities/KWStyle/CMake.kws.xml.in
+               ${CMake_BINARY_DIR}/CMake.kws.xml)
+  CONFIGURE_FILE(${CMake_SOURCE_DIR}/Utilities/KWStyle/CMakeMoreChecks.kws.xml.in
+               ${CMake_BINARY_DIR}/CMakeMoreChecks.kws.xml)
 
-  CONFIGURE_FILE(${CMAKE_SOURCE_DIR}/Utilities/KWStyle/CMakeFiles.txt.in
-                 ${CMAKE_BINARY_DIR}/CMakeKWSFiles.txt)
+  CONFIGURE_FILE(${CMake_SOURCE_DIR}/Utilities/KWStyle/CMakeFiles.txt.in
+                 ${CMake_BINARY_DIR}/CMakeKWSFiles.txt)
 
   ADD_CUSTOM_COMMAND(
-    OUTPUT ${CMAKE_BINARY_DIR}/KWStyleReport.txt
+    OUTPUT ${CMake_BINARY_DIR}/KWStyleReport.txt
     COMMAND ${KWSTYLE_EXECUTABLE}
-    ARGS    -xml ${CMAKE_BINARY_DIR}/CMake.kws.xml -o ${CMAKE_SOURCE_DIR}/Utilities/KWStyle/CMakeOverwrite.txt -v ${KWSTYLE_ARGUMENTS} -D ${CMAKE_BINARY_DIR}/CMakeKWSFiles.txt 
+    ARGS    -xml ${CMake_BINARY_DIR}/CMake.kws.xml -o ${CMake_SOURCE_DIR}/Utilities/KWStyle/CMakeOverwrite.txt -v ${KWSTYLE_ARGUMENTS} -D ${CMake_BINARY_DIR}/CMakeKWSFiles.txt
     COMMENT "Coding Style Checker"
     )
 
   ADD_CUSTOM_TARGET(MoreStyleChecks
     COMMAND ${KWSTYLE_EXECUTABLE}
-    -xml ${CMAKE_BINARY_DIR}/CMakeMoreChecks.kws.xml -html ${CMAKE_BINARY_DIR}/html -o ${CMAKE_SOURCE_DIR}/Utilities/KWStyle/CMakeOverwrite.txt -v ${KWSTYLE_ARGUMENTS} -D ${CMAKE_BINARY_DIR}/CMakeKWSFiles.txt 
+    -xml ${CMake_BINARY_DIR}/CMakeMoreChecks.kws.xml -html ${CMake_BINARY_DIR}/html -o ${CMake_SOURCE_DIR}/Utilities/KWStyle/CMakeOverwrite.txt -v ${KWSTYLE_ARGUMENTS} -D ${CMake_BINARY_DIR}/CMakeKWSFiles.txt
     COMMENT "Coding Style Checker, more checks enabled"
     )
 
-  ADD_CUSTOM_TARGET(StyleCheck DEPENDS ${CMAKE_BINARY_DIR}/KWStyleReport.txt)
+  ADD_CUSTOM_TARGET(StyleCheck DEPENDS ${CMake_BINARY_DIR}/KWStyleReport.txt)
 ENDIF(CMAKE_USE_KWSTYLE)
 

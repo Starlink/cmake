@@ -10,6 +10,19 @@
 #  FLTK2_GL_LIBRARY     = the full path to fltk2_gl.lib
 #  FLTK2_IMAGES_LIBRARY = the full path to fltk2_images.lib
 
+#=============================================================================
+# Copyright 2007-2009 Kitware, Inc.
+#
+# Distributed under the OSI-approved BSD License (the "License");
+# see accompanying file Copyright.txt for details.
+#
+# This software is distributed WITHOUT ANY WARRANTY; without even the
+# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the License for more information.
+#=============================================================================
+# (To distribute this file outside of CMake, substitute the full
+#  License text for the above reference.)
+
 SET (FLTK2_DIR $ENV{FLTK2_DIR} )
 
 #  Platform dependent libraries required by FLTK2
@@ -31,10 +44,6 @@ ENDIF(UNIX)
 IF(APPLE)
   SET( FLTK2_PLATFORM_DEPENDENT_LIBS  "-framework Carbon -framework Cocoa -framework ApplicationServices -lz")
 ENDIF(APPLE)
-
-IF(CYGWIN)
-  SET( FLTK2_PLATFORM_DEPENDENT_LIBS ole32 uuid comctl32 wsock32 supc++ -lm -lgdi32)
-ENDIF(CYGWIN)
 
 # If FLTK2_INCLUDE_DIR is already defined we assigne its value to FLTK2_DIR
 IF(FLTK2_INCLUDE_DIR)

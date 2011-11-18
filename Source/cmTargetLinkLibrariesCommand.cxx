@@ -1,19 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmTargetLinkLibrariesCommand.cxx,v $
-  Language:  C++
-  Date:      $Date: 2009-01-13 18:03:53 $
-  Version:   $Revision: 1.25.2.2 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even 
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR 
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #include "cmTargetLinkLibrariesCommand.h"
 
 const char* cmTargetLinkLibrariesCommand::LinkLibraryTypeNames[3] =
@@ -34,23 +29,64 @@ bool cmTargetLinkLibrariesCommand
     return false;
     }
 
-  // but we might not have any libs after variable expansion
-  if(args.size() < 2)
-    {
-    return true;
-    }
-
   // Lookup the target for which libraries are specified.
   this->Target =
     this->Makefile->GetCMakeInstance()
     ->GetGlobalGenerator()->FindTarget(0, args[0].c_str());
   if(!this->Target)
     {
+    cmake::MessageType t = cmake::FATAL_ERROR;  // fail by default
     cmOStringStream e;
     e << "Cannot specify link libraries for target \"" << args[0] << "\" "
       << "which is not built by this project.";
-    this->Makefile->IssueMessage(cmake::FATAL_ERROR, e.str());
-    cmSystemTools::SetFatalErrorOccured();
+    // The bad target is the only argument. Check how policy CMP0016 is set,
+    // and accept, warn or fail respectively:
+    if (args.size() < 2)
+      {
+      switch (this->Makefile->GetPolicyStatus(cmPolicies::CMP0016))
+        {
+        case cmPolicies::WARN:
+          t = cmake::AUTHOR_WARNING;
+          // Print the warning.
+          e << "\n"
+            << "CMake does not support this but it used to work accidentally "
+            << "and is being allowed for compatibility."
+            << "\n" << this->Makefile->GetPolicies()->
+                                        GetPolicyWarning(cmPolicies::CMP0016);
+           break;
+        case cmPolicies::OLD:          // OLD behavior does not warn.
+          t = cmake::MESSAGE;
+          break;
+        case cmPolicies::REQUIRED_IF_USED:
+        case cmPolicies::REQUIRED_ALWAYS:
+          e << "\n" << this->Makefile->GetPolicies()->
+                                  GetRequiredPolicyError(cmPolicies::CMP0016);
+          break;
+        case cmPolicies::NEW:  // NEW behavior prints the error.
+        default:
+          break;
+        }
+      }
+
+    // now actually print the message
+    switch(t)
+      {
+      case cmake::AUTHOR_WARNING:
+        this->Makefile->IssueMessage(cmake::AUTHOR_WARNING, e.str());
+        break;
+      case cmake::FATAL_ERROR:
+        this->Makefile->IssueMessage(cmake::FATAL_ERROR, e.str());
+        cmSystemTools::SetFatalErrorOccured();
+        break;
+      default:
+        break;
+      }
+    return true;
+    }
+
+  // but we might not have any libs after variable expansion
+  if(args.size() < 2)
+    {
     return true;
     }
 
@@ -62,7 +98,7 @@ bool cmTargetLinkLibrariesCommand
   // specification when the keyword is encountered.
   this->DoingInterface = false;
 
-  // add libraries, nothe that there is an optional prefix 
+  // add libraries, nothe that there is an optional prefix
   // of debug and optimized than can be used
   for(unsigned int i=1; i < args.size(); ++i)
     {
@@ -123,7 +159,7 @@ bool cmTargetLinkLibrariesCommand
       llt = cmTarget::GENERAL;
       std::string linkType = args[0];
       linkType += "_LINK_TYPE";
-      const char* linkTypeString = 
+      const char* linkTypeString =
         this->Makefile->GetDefinition( linkType.c_str() );
       if(linkTypeString)
         {
@@ -138,7 +174,7 @@ bool cmTargetLinkLibrariesCommand
         }
       this->HandleLibrary(args[i].c_str(), llt);
       }
-    } 
+    }
 
   // Make sure the last argument was not a library type specifier.
   if(haveLLT)

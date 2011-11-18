@@ -6,6 +6,19 @@
 # $GIF_DIR is an environment variable that would
 # correspond to the ./configure --prefix=$GIF_DIR
 
+#=============================================================================
+# Copyright 2007-2009 Kitware, Inc.
+#
+# Distributed under the OSI-approved BSD License (the "License");
+# see accompanying file Copyright.txt for details.
+#
+# This software is distributed WITHOUT ANY WARRANTY; without even the
+# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the License for more information.
+#=============================================================================
+# (To distribute this file outside of CMake, substitute the full
+#  License text for the above reference.)
+
 # Created by Eric Wing. 
 # Modifications by Alexander Neundorf
 
@@ -47,7 +60,7 @@ SET(GIF_LIBRARIES ${GIF_LIBRARY})
 
 # handle the QUIETLY and REQUIRED arguments and set GIF_FOUND to TRUE if 
 # all listed variables are TRUE
-INCLUDE(FindPackageHandleStandardArgs)
+INCLUDE(${CMAKE_CURRENT_LIST_DIR}/FindPackageHandleStandardArgs.cmake)
 FIND_PACKAGE_HANDLE_STANDARD_ARGS(GIF  DEFAULT_MSG  GIF_LIBRARY  GIF_INCLUDE_DIR)
 
 MARK_AS_ADVANCED(GIF_INCLUDE_DIR GIF_LIBRARY)

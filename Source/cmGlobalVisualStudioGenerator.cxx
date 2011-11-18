@@ -1,19 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmGlobalVisualStudioGenerator.cxx,v $
-  Language:  C++
-  Date:      $Date: 2008-07-31 15:52:24 $
-  Version:   $Revision: 1.11.2.2 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #include "cmGlobalVisualStudioGenerator.h"
 
 #include "cmCallVisualStudioMacro.h"
@@ -29,6 +24,14 @@ cmGlobalVisualStudioGenerator::cmGlobalVisualStudioGenerator()
 //----------------------------------------------------------------------------
 cmGlobalVisualStudioGenerator::~cmGlobalVisualStudioGenerator()
 {
+}
+
+//----------------------------------------------------------------------------
+std::string cmGlobalVisualStudioGenerator::GetRegistryBase()
+{
+  std::string key = "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\VisualStudio\\";
+  key += this->GetIDEVersion();
+  return key;
 }
 
 //----------------------------------------------------------------------------
@@ -48,15 +51,43 @@ void cmGlobalVisualStudioGenerator::Generate()
       {
       // Use no actual command lines so that the target itself is not
       // considered always out of date.
-      gen[0]->GetMakefile()->
+      cmTarget* allBuild = 
+        gen[0]->GetMakefile()->
         AddUtilityCommand("ALL_BUILD", true, no_working_dir,
                           no_depends, no_commands, false,
                           "Build all projects");
+
+#if 0
+      // Can't activate this code because we want ALL_BUILD
+      // selected as the default "startup project" when first
+      // opened in Visual Studio... And if it's nested in a
+      // folder, then that doesn't happen.
+      //
+      // Organize in the "predefined targets" folder:
+      //
+      if (this->UseFolderProperty())
+        {
+        allBuild->SetProperty("FOLDER", this->GetPredefinedTargetsFolder());
+        }
+#endif
+
+      // Now make all targets depend on the ALL_BUILD target
+      cmTargets targets;
+      for(std::vector<cmLocalGenerator*>::iterator i = gen.begin();
+          i != gen.end(); ++i)
+        {
+        cmTargets& targets = (*i)->GetMakefile()->GetTargets();
+        for(cmTargets::iterator t = targets.begin();
+            t != targets.end(); ++t)
+          {
+          if(!this->IsExcluded(gen[0], t->second))
+            {
+            allBuild->AddUtility(t->second.GetName());
+            }
+          }
+        }
       }
     }
-
-  // Fix utility dependencies to avoid linking to libraries.
-  this->FixUtilityDepends();
 
   // Configure CMake Visual Studio macros, for this user on this version
   // of Visual Studio.
@@ -206,200 +237,192 @@ std::string cmGlobalVisualStudioGenerator::GetUserMacrosRegKeyBase()
 }
 
 //----------------------------------------------------------------------------
-void cmGlobalVisualStudioGenerator::FixUtilityDepends()
+void cmGlobalVisualStudioGenerator::FillLinkClosure(cmTarget* target,
+                                                    TargetSet& linked)
 {
-  // Skip for VS versions 8 and above.
-  if(!this->VSLinksDependencies())
+  if(linked.insert(target).second)
     {
-    return;
-    }
-
-  // For VS versions before 8:
-  //
-  // When a target that links contains a project-level dependency on a
-  // library target that library is automatically linked.  In order to
-  // allow utility-style project-level dependencies that do not
-  // actually link we need to automatically insert an intermediate
-  // custom target.
-  //
-  // Here we edit the utility dependencies of a target to add the
-  // intermediate custom target when necessary.
-  for(unsigned i = 0; i < this->LocalGenerators.size(); ++i)
-    {
-    cmTargets* targets =
-      &(this->LocalGenerators[i]->GetMakefile()->GetTargets());
-    for(cmTargets::iterator tarIt = targets->begin();
-        tarIt != targets->end(); ++tarIt)
+    TargetDependSet const& depends = this->GetTargetDirectDepends(*target);
+    for(TargetDependSet::const_iterator di = depends.begin();
+        di != depends.end(); ++di)
       {
-      this->FixUtilityDependsForTarget(tarIt->second);
-      }
-    }
-}
-
-//----------------------------------------------------------------------------
-void
-cmGlobalVisualStudioGenerator::FixUtilityDependsForTarget(cmTarget& target)
-{
-  // Only targets that link need to be fixed.
-  if(target.GetType() != cmTarget::STATIC_LIBRARY &&
-     target.GetType() != cmTarget::SHARED_LIBRARY &&
-     target.GetType() != cmTarget::MODULE_LIBRARY &&
-     target.GetType() != cmTarget::EXECUTABLE)
-    {
-    return;
-    }
-
-#if 0
-  // This feature makes a mess in SLN files for VS 7.1 and below.  It
-  // creates an extra target for every target that is "linked" by a
-  // static library.  Without this feature static libraries do not
-  // wait until their "link" dependencies are built to build.  This is
-  // not a problem 99.9% of the time, and projects that do have the
-  // problem can enable this work-around by using add_dependencies.
-
-  // Static libraries cannot depend directly on the targets to which
-  // they link because VS will copy those targets into the library
-  // (for VS < 8).  To work around the problem we copy the
-  // dependencies to be utility dependencies so that the work-around
-  // below is used.
-  if(target.GetType() == cmTarget::STATIC_LIBRARY)
-    {
-    cmTarget::LinkLibraryVectorType const& libs = target.GetLinkLibraries();
-    for(cmTarget::LinkLibraryVectorType::const_iterator i = libs.begin();
-        i != libs.end(); ++i)
-      {
-      if(cmTarget* depTarget = this->FindTarget(0, i->first.c_str(), false))
+      if(di->IsLink())
         {
-        target.AddUtility(depTarget->GetName());
-        }
-      }
-    }
-#endif
-
-  // Look at each utility dependency.
-  for(std::set<cmStdString>::const_iterator ui =
-        target.GetUtilities().begin();
-      ui != target.GetUtilities().end(); ++ui)
-    {
-    if(cmTarget* depTarget = this->FindTarget(0, ui->c_str()))
-      {
-      if(depTarget->GetType() == cmTarget::STATIC_LIBRARY ||
-         depTarget->GetType() == cmTarget::SHARED_LIBRARY ||
-         depTarget->GetType() == cmTarget::MODULE_LIBRARY)
-        {
-        // This utility dependency will cause an attempt to link.  If
-        // the depender does not already link the dependee we need an
-        // intermediate target.
-        if(!this->CheckTargetLinks(target, ui->c_str()))
-          {
-          this->CreateUtilityDependTarget(*depTarget);
-          }
+        this->FillLinkClosure(*di, linked);
         }
       }
     }
 }
 
 //----------------------------------------------------------------------------
-void
-cmGlobalVisualStudioGenerator::CreateUtilityDependTarget(cmTarget& target)
+cmGlobalVisualStudioGenerator::TargetSet const&
+cmGlobalVisualStudioGenerator::GetTargetLinkClosure(cmTarget* target)
 {
-  // This target is a library on which a utility dependency exists.
-  // We need to create an intermediate custom target to hook up the
-  // dependency without causing a link.
-  const char* altName = target.GetProperty("ALTERNATIVE_DEPENDENCY_NAME");
-  if(!altName)
+  TargetSetMap::iterator i = this->TargetLinkClosure.find(target);
+  if(i == this->TargetLinkClosure.end())
     {
-    // Create the intermediate utility target.
-    std::string altNameStr = target.GetName();
-    altNameStr += "_UTILITY";
-    const std::vector<std::string> no_depends;
-    cmCustomCommandLines no_commands;
-    const char* no_working_dir = 0;
-    const char* no_comment = 0;
-    target.GetMakefile()->AddUtilityCommand(altNameStr.c_str(), true,
-                                            no_working_dir, no_depends,
-                                            no_commands, false, no_comment);
-    target.SetProperty("ALTERNATIVE_DEPENDENCY_NAME", altNameStr.c_str());
+    TargetSetMap::value_type entry(target, TargetSet());
+    i = this->TargetLinkClosure.insert(entry).first;
+    this->FillLinkClosure(target, i->second);
+    }
+  return i->second;
+}
 
-    // Most targets have a GUID created in ConfigureFinalPass.  Since
-    // that has already been called, create one for this target now.
-    this->CreateGUID(altNameStr.c_str());
-
-    // The intermediate target should depend on the original target.
-    if(cmTarget* alt = this->FindTarget(0, altNameStr.c_str()))
+//----------------------------------------------------------------------------
+void cmGlobalVisualStudioGenerator::FollowLinkDepends(
+  cmTarget* target, std::set<cmTarget*>& linked)
+{
+  if(linked.insert(target).second &&
+     target->GetType() == cmTarget::STATIC_LIBRARY)
+    {
+    // Static library targets do not list their link dependencies so
+    // we must follow them transitively now.
+    TargetDependSet const& depends = this->GetTargetDirectDepends(*target);
+    for(TargetDependSet::const_iterator di = depends.begin();
+        di != depends.end(); ++di)
       {
-      alt->AddUtility(target.GetName());
+      if(di->IsLink())
+        {
+        this->FollowLinkDepends(*di, linked);
+        }
       }
     }
 }
 
 //----------------------------------------------------------------------------
-bool cmGlobalVisualStudioGenerator::CheckTargetLinks(cmTarget& target,
-                                                     const char* name)
+bool cmGlobalVisualStudioGenerator::ComputeTargetDepends()
 {
-  // Return whether the given target links to a target with the given name.
-  if(target.GetType() == cmTarget::STATIC_LIBRARY)
+  if(!this->cmGlobalGenerator::ComputeTargetDepends())
     {
-    // Static libraries never link to anything.
     return false;
     }
-  cmTarget::LinkLibraryVectorType const& libs = target.GetLinkLibraries();
-  for(cmTarget::LinkLibraryVectorType::const_iterator i = libs.begin();
-      i != libs.end(); ++i)
+  std::map<cmStdString, std::vector<cmLocalGenerator*> >::iterator it;
+  for(it = this->ProjectMap.begin(); it!= this->ProjectMap.end(); ++it)
     {
-    if(i->first == name)
+    std::vector<cmLocalGenerator*>& gen = it->second;
+    for(std::vector<cmLocalGenerator*>::iterator i = gen.begin();
+        i != gen.end(); ++i)
       {
-      return true;
+      cmTargets& targets = (*i)->GetMakefile()->GetTargets();
+      for(cmTargets::iterator ti = targets.begin();
+          ti != targets.end(); ++ti)
+        {
+        this->ComputeVSTargetDepends(ti->second);
+        }
       }
     }
-  return false;
+  return true;
 }
 
 //----------------------------------------------------------------------------
-const char*
-cmGlobalVisualStudioGenerator::GetUtilityForTarget(cmTarget& target,
-                                                   const char* name)
+void cmGlobalVisualStudioGenerator::ComputeVSTargetDepends(cmTarget& target)
 {
-  // Handle the external MS project special case.
-  if(strncmp(name, "INCLUDE_EXTERNAL_MSPROJECT", 26) == 0)
+  if(this->VSTargetDepends.find(&target) != this->VSTargetDepends.end())
     {
-    // Note from Ken:
-    // kind of weird removing the first 27 letters.  my
-    // recommendatsions: use cmCustomCommand::GetCommand() to get the
-    // project name or get rid of the target name starting with
-    // "INCLUDE_EXTERNAL_MSPROJECT_" and use another indicator/flag
-    // somewhere.  These external project names shouldn't conflict
-    // with cmake target names anyways.
-    return name+27;
+    return;
     }
+  VSDependSet& vsTargetDepend = this->VSTargetDepends[&target];
+  // VS <= 7.1 has two behaviors that affect solution dependencies.
+  //
+  // (1) Solution-level dependencies between a linkable target and a
+  // library cause that library to be linked.  We use an intermedite
+  // empty utility target to express the dependency.  (VS 8 and above
+  // provide a project file "LinkLibraryDependencies" setting to
+  // choose whether to activate this behavior.  We disable it except
+  // when linking external project files.)
+  //
+  // (2) We cannot let static libraries depend directly on targets to
+  // which they "link" because the librarian tool will copy the
+  // targets into the static library.  While the work-around for
+  // behavior (1) would also avoid this, it would create a large
+  // number of extra utility targets for little gain.  Instead, use
+  // the above work-around only for dependencies explicitly added by
+  // the add_dependencies() command.  Approximate link dependencies by
+  // leaving them out for the static library itself but following them
+  // transitively for other targets.
 
-  // Possibly depend on an intermediate utility target to avoid
-  // linking.
-  if(target.GetType() == cmTarget::STATIC_LIBRARY ||
-     target.GetType() == cmTarget::SHARED_LIBRARY ||
-     target.GetType() == cmTarget::MODULE_LIBRARY ||
-     target.GetType() == cmTarget::EXECUTABLE)
+  bool allowLinkable = (target.GetType() != cmTarget::STATIC_LIBRARY &&
+                        target.GetType() != cmTarget::SHARED_LIBRARY &&
+                        target.GetType() != cmTarget::MODULE_LIBRARY &&
+                        target.GetType() != cmTarget::EXECUTABLE);
+
+  TargetDependSet const& depends = this->GetTargetDirectDepends(target);
+
+  // Collect implicit link dependencies (target_link_libraries).
+  // Static libraries cannot depend on their link implementation
+  // due to behavior (2), but they do not really need to.
+  std::set<cmTarget*> linkDepends;
+  if(target.GetType() != cmTarget::STATIC_LIBRARY)
     {
-    // The depender is a target that links.  Lookup the dependee to
-    // see if it provides an alternative dependency name.
-    if(cmTarget* depTarget = this->FindTarget(0, name))
+    for(TargetDependSet::const_iterator di = depends.begin();
+        di != depends.end(); ++di)
       {
-      // Check for an alternative name created by FixUtilityDepends.
-      if(const char* altName =
-         depTarget->GetProperty("ALTERNATIVE_DEPENDENCY_NAME"))
+      cmTargetDepend dep = *di;
+      if(dep.IsLink())
         {
-        // The alternative name is needed only if the depender does
-        // not really link to the dependee.
-        if(!this->CheckTargetLinks(target, name))
-          {
-          return altName;
-          }
+        this->FollowLinkDepends(dep, linkDepends);
         }
       }
     }
 
-  // No special case.  Just use the original dependency name.
-  return name;
+  // Collext explicit util dependencies (add_dependencies).
+  std::set<cmTarget*> utilDepends;
+  for(TargetDependSet::const_iterator di = depends.begin();
+      di != depends.end(); ++di)
+    {
+    cmTargetDepend dep = *di;
+    if(dep.IsUtil())
+      {
+      this->FollowLinkDepends(dep, utilDepends);
+      }
+    }
+
+  // Collect all targets linked by this target so we can avoid
+  // intermediate targets below.
+  TargetSet linked;
+  if(target.GetType() != cmTarget::STATIC_LIBRARY)
+    {
+    linked = this->GetTargetLinkClosure(&target);
+    }
+
+  // Emit link dependencies.
+  for(std::set<cmTarget*>::iterator di = linkDepends.begin();
+      di != linkDepends.end(); ++di)
+    {
+    cmTarget* dep = *di;
+    vsTargetDepend.insert(dep->GetName());
+    }
+
+  // Emit util dependencies.  Possibly use intermediate targets.
+  for(std::set<cmTarget*>::iterator di = utilDepends.begin();
+      di != utilDepends.end(); ++di)
+    {
+    cmTarget* dep = *di;
+    if(allowLinkable || !dep->IsLinkable() || linked.count(dep))
+      {
+      // Direct dependency allowed.
+      vsTargetDepend.insert(dep->GetName());
+      }
+    else
+      {
+      // Direct dependency on linkable target not allowed.
+      // Use an intermediate utility target.
+      vsTargetDepend.insert(this->GetUtilityDepend(dep));
+      }
+    }
+}
+
+//----------------------------------------------------------------------------
+std::string cmGlobalVisualStudioGenerator::GetUtilityDepend(cmTarget* target)
+{
+  UtilityDependsMap::iterator i = this->UtilityDepends.find(target);
+  if(i == this->UtilityDepends.end())
+    {
+    std::string name = this->WriteUtilityDepend(target);
+    UtilityDependsMap::value_type entry(target, name);
+    i = this->UtilityDepends.insert(entry).first;
+    }
+  return i->second;
 }
 
 //----------------------------------------------------------------------------
@@ -588,8 +611,9 @@ void WriteVSMacrosFileRegistryEntry(
     {
     // Create the subkey and set the values of interest:
     HKEY hsubkey = NULL;
-    result = RegCreateKeyEx(hkey, nextAvailableSubKeyName.c_str(), 0, "", 0,
-      KEY_READ|KEY_WRITE, 0, &hsubkey, 0);
+    char lpClass[] = "";
+    result = RegCreateKeyEx(hkey, nextAvailableSubKeyName.c_str(), 0,
+                            lpClass, 0, KEY_READ|KEY_WRITE, 0, &hsubkey, 0);
     if (ERROR_SUCCESS == result)
       {
       DWORD dw = 0;
@@ -719,4 +743,43 @@ bool cmGlobalVisualStudioGenerator::TargetIsFortranOnly(cmTarget& target)
       }
     }
   return false;
+}
+
+//----------------------------------------------------------------------------
+bool
+cmGlobalVisualStudioGenerator::TargetCompare
+::operator()(cmTarget const* l, cmTarget const* r) const
+{
+  // Make sure ALL_BUILD is first so it is the default active project.
+  if(strcmp(r->GetName(), "ALL_BUILD") == 0)
+    {
+    return false;
+    }
+  if(strcmp(l->GetName(), "ALL_BUILD") == 0)
+    {
+    return true;
+    }
+  return strcmp(l->GetName(), r->GetName()) < 0;
+}
+
+//----------------------------------------------------------------------------
+cmGlobalVisualStudioGenerator::OrderedTargetDependSet
+::OrderedTargetDependSet(TargetDependSet const& targets)
+{
+  for(TargetDependSet::const_iterator ti =
+        targets.begin(); ti != targets.end(); ++ti)
+    {
+    this->insert(*ti);
+    }
+}
+
+//----------------------------------------------------------------------------
+cmGlobalVisualStudioGenerator::OrderedTargetDependSet
+::OrderedTargetDependSet(TargetSet const& targets)
+{
+  for(TargetSet::const_iterator ti = targets.begin();
+      ti != targets.end(); ++ti)
+    {
+    this->insert(*ti);
+    }
 }

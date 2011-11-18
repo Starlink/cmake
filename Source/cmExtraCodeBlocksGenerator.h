@@ -1,20 +1,15 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2004-2009 Kitware, Inc.
+  Copyright 2004 Alexander Neundorf (neundorf@kde.org)
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmExtraCodeBlocksGenerator.h,v $
-  Language:  C++
-  Date:      $Date: 2007-11-25 12:45:18 $
-  Version:   $Revision: 1.5 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  Copyright (c) 2004 Alexander Neundorf, neundorf@kde.org. All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even 
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR 
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #ifndef cmExtraCodeBlocksGenerator_h
 #define cmExtraCodeBlocksGenerator_h
 
@@ -27,22 +22,19 @@ class cmGeneratedFileStream;
 
 /** \class cmExtraCodeBlocksGenerator
  * \brief Write CodeBlocks project files for Makefile based projects
- *
- * This generator is in early alpha stage.
  */
 class cmExtraCodeBlocksGenerator : public cmExternalMakefileProjectGenerator
 {
 public:
   cmExtraCodeBlocksGenerator();
-  virtual void SetGlobalGenerator(cmGlobalGenerator* generator);
 
   virtual const char* GetName() const
                          { return cmExtraCodeBlocksGenerator::GetActualName();}
   static const char* GetActualName()                    { return "CodeBlocks";}
-  static cmExternalMakefileProjectGenerator* New() 
+  static cmExternalMakefileProjectGenerator* New()
                                      { return new cmExtraCodeBlocksGenerator; }
   /** Get the documentation entry for this generator.  */
-  virtual void GetDocumentation(cmDocumentationEntry& entry, 
+  virtual void GetDocumentation(cmDocumentationEntry& entry,
                                 const char* fullName) const;
 
   virtual void Generate();
@@ -54,7 +46,7 @@ private:
                                 const std::string& filename);
   std::string GetCBCompilerId(const cmMakefile* mf);
   int GetCBTargetType(cmTarget* target);
-  std::string BuildMakeCommand(const std::string& make, const char* makefile, 
+  std::string BuildMakeCommand(const std::string& make, const char* makefile,
                                const char* target);
   void AppendTarget(cmGeneratedFileStream& fout,
                     const char* targetName,

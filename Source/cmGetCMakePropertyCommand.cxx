@@ -1,19 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmGetCMakePropertyCommand.cxx,v $
-  Language:  C++
-  Date:      $Date: 2008-07-13 21:55:23 $
-  Version:   $Revision: 1.8.2.1 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even 
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR 
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #include "cmGetCMakePropertyCommand.h"
 
 #include "cmake.h"
@@ -27,21 +22,22 @@ bool cmGetCMakePropertyCommand
     this->SetError("called with incorrect number of arguments");
     return false;
     }
-  
+
   std::vector<std::string>::size_type cc;
   std::string variable = args[0];
   std::string output = "NOTFOUND";
 
-  if ( args[1] == "VARIABLES")
+  if ( args[1] == "VARIABLES" )
     {
     int cacheonly = 0;
     std::vector<std::string> vars = this->Makefile->GetDefinitions(cacheonly);
-    for ( cc = 0; cc < vars.size(); cc ++ )
+    if (vars.size()>0)
       {
-      if ( cc > 0 )
-        {
-        output += ";";
-        }
+      output = vars[0];
+      }
+    for ( cc = 1; cc < vars.size(); ++cc )
+      {
+      output += ";";
       output += vars[cc];
       }
     }
@@ -67,15 +63,15 @@ bool cmGetCMakePropertyCommand
     }
   else
     {
-    const char *prop = 
+    const char *prop =
       this->Makefile->GetCMakeInstance()->GetProperty(args[1].c_str());
     if (prop)
       {
       output = prop;
       }
     }
+
   this->Makefile->AddDefinition(variable.c_str(), output.c_str());
-  
+
   return true;
 }
-
