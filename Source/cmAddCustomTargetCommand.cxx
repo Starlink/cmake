@@ -1,19 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmAddCustomTargetCommand.cxx,v $
-  Language:  C++
-  Date:      $Date: 2008-10-24 15:18:45 $
-  Version:   $Revision: 1.37.2.1 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #include "cmAddCustomTargetCommand.h"
 
 // cmAddCustomTargetCommand
@@ -128,7 +123,11 @@ bool cmAddCustomTargetCommand
           currentLine.push_back(copy);
           break;
         case doing_depends:
-          depends.push_back(copy);
+          {
+          std::string dep = copy;
+          cmSystemTools::ConvertToUnixSlashes(dep);
+          depends.push_back(dep);
+          }
           break;
          case doing_comment:
            comment_buffer = copy;
@@ -170,6 +169,14 @@ bool cmAddCustomTargetCommand
     return false;
     }
   }
+
+  // Convert working directory to a full path.
+  if(!working_directory.empty())
+    {
+    const char* build_dir = this->Makefile->GetCurrentOutputDirectory();
+    working_directory =
+      cmSystemTools::CollapseFullPath(working_directory.c_str(), build_dir);
+    }
 
   // Add the utility target to the makefile.
   bool escapeOldStyle = !verbatim;

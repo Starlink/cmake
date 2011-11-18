@@ -1,19 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmMacroCommand.cxx,v $
-  Language:  C++
-  Date:      $Date: 2009-02-04 16:44:17 $
-  Version:   $Revision: 1.36.2.2 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #include "cmMacroCommand.h"
 
 #include "cmake.h"
@@ -36,6 +31,7 @@ public:
     // we must copy when we clone
     newC->Args = this->Args;
     newC->Functions = this->Functions;
+    newC->FilePath = this->FilePath;
     newC->Policies = this->Policies;
     return newC;
   }
@@ -83,6 +79,7 @@ public:
   std::vector<std::string> Args;
   std::vector<cmListFileFunction> Functions;
   cmPolicies::PolicyMap Policies;
+  std::string FilePath;
 };
 
 
@@ -126,7 +123,10 @@ bool cmMacroHelperCommand::InvokeInitialPass
   std::string argnDef;
   bool argnDefInitialized = false;
   bool argvDefInitialized = false;
-
+  if( this->Functions.size())
+    {
+    this->FilePath = this->Functions[0].FilePath;
+    }
   // Invoke all the functions that were collected in the block.
   cmListFileFunction newLFF;
   // for each function
@@ -140,10 +140,13 @@ bool cmMacroHelperCommand::InvokeInitialPass
     newLFF.Line = this->Functions[c].Line;
 
     // for each argument of the current function
-    for (std::vector<cmListFileArgument>::const_iterator k = 
+    for (std::vector<cmListFileArgument>::iterator k =
            this->Functions[c].Arguments.begin();
          k != this->Functions[c].Arguments.end(); ++k)
       {
+      // Set the FilePath on the arguments to match the function since it is
+      // not stored and the original values may be freed
+      k->FilePath = this->FilePath.c_str();
       tmps = k->Value;
       // replace formal arguments
       for (unsigned int j = 1; j < this->Args.size(); ++j)

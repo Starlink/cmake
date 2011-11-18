@@ -7,6 +7,19 @@
 #     message("CVS found: ${CVS_EXECUTABLE}")
 #   endif(CVS_FOUND)
 
+#=============================================================================
+# Copyright 2008-2009 Kitware, Inc.
+#
+# Distributed under the OSI-approved BSD License (the "License");
+# see accompanying file Copyright.txt for details.
+#
+# This software is distributed WITHOUT ANY WARRANTY; without even the
+# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the License for more information.
+#=============================================================================
+# (To distribute this file outside of CMake, substitute the full
+#  License text for the above reference.)
+
 # CVSNT
 
 get_filename_component(
@@ -52,5 +65,5 @@ mark_as_advanced(CVS_EXECUTABLE)
 # Handle the QUIETLY and REQUIRED arguments and set CVS_FOUND to TRUE if 
 # all listed variables are TRUE
 
-include(FindPackageHandleStandardArgs)
+include(${CMAKE_CURRENT_LIST_DIR}/FindPackageHandleStandardArgs.cmake)
 find_package_handle_standard_args(CVS DEFAULT_MSG CVS_EXECUTABLE)

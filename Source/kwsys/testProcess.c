@@ -1,16 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  KWSys - Kitware System Library
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   KWSys - Kitware System Library
-  Module:    $RCSfile: testProcess.c,v $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.kitware.com/Copyright.htm for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #include "kwsysPrivate.h"
 #include KWSYS_HEADER(Process.h)
 
@@ -96,7 +94,11 @@ int test4(int argc, const char* argv[])
   fprintf(stderr, "Output before crash on stderr from crash test.\n");  
   fflush(stdout);
   fflush(stderr);
+#if defined(__clang__)
+  *(int*)1 = 0; /* Clang warns about 0-ptr; undefined behavior.  */
+#else
   *(int*)0 = 0;
+#endif
   fprintf(stdout, "Output after crash on stdout from crash test.\n");
   fprintf(stderr, "Output after crash on stderr from crash test.\n");
   return 0;
@@ -268,7 +270,7 @@ int runChild2(kwsysProcess* kp,
           }
         else
           {
-          fwrite(data, 1, length, stdout);
+          fwrite(data, 1, (size_t) length, stdout);
           fflush(stdout);
           }
         }

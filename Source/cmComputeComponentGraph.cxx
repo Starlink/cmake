@@ -1,19 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmComputeComponentGraph.cxx,v $
-  Language:  C++
-  Date:      $Date: 2008-02-07 21:14:05 $
-  Version:   $Revision: 1.1 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #include "cmComputeComponentGraph.h"
 
 #include <algorithm>
@@ -76,8 +71,8 @@ void cmComputeComponentGraph::TarjanVisit(int i)
   this->TarjanStack.push(i);
 
   // Follow outgoing edges.
-  NodeList const& nl = this->InputGraph[i];
-  for(NodeList::const_iterator ni = nl.begin(); ni != nl.end(); ++ni)
+  EdgeList const& nl = this->InputGraph[i];
+  for(EdgeList::const_iterator ni = nl.begin(); ni != nl.end(); ++ni)
     {
     int j = *ni;
 
@@ -147,14 +142,17 @@ void cmComputeComponentGraph::TransferEdges()
   for(int i=0; i < n; ++i)
     {
     int i_component = this->TarjanComponents[i];
-    NodeList const& nl = this->InputGraph[i];
-    for(NodeList::const_iterator ni = nl.begin(); ni != nl.end(); ++ni)
+    EdgeList const& nl = this->InputGraph[i];
+    for(EdgeList::const_iterator ni = nl.begin(); ni != nl.end(); ++ni)
       {
       int j = *ni;
       int j_component = this->TarjanComponents[j];
       if(i_component != j_component)
         {
-        this->ComponentGraph[i_component].push_back(j_component);
+        // We do not attempt to combine duplicate edges, but instead
+        // store the inter-component edges with suitable multiplicity.
+        this->ComponentGraph[i_component].push_back(
+          cmGraphEdge(j_component, ni->IsStrong()));
         }
       }
     }

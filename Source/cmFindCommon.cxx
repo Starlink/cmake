@@ -1,19 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmFindCommon.cxx,v $
-  Language:  C++
-  Date:      $Date: 2008-10-24 15:18:46 $
-  Version:   $Revision: 1.1.2.2 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #include "cmFindCommon.h"
 
 //----------------------------------------------------------------------------
@@ -39,7 +34,11 @@ cmFindCommon::cmFindCommon()
   this->SearchFrameworkLast = false;
   this->SearchAppBundleOnly = false;
   this->SearchAppBundleLast = false;
+}
 
+//----------------------------------------------------------------------------
+void cmFindCommon::GenerateDocumentation()
+{
   // Documentation components.
   this->GenericDocumentationMacPolicy =
     "On Darwin or systems supporting OS X Frameworks, the cmake variable"
@@ -49,7 +48,7 @@ cmFindCommon::cmFindCommon()
     "   \"LAST\"   - Try to find frameworks after standard\n"
     "              libraries or headers.\n"
     "   \"ONLY\"   - Only try to find frameworks.\n"
-    "   \"NEVER\". - Never try to find frameworks.\n"
+    "   \"NEVER\" - Never try to find frameworks.\n"
     "On Darwin or systems supporting OS X Application Bundles, the cmake "
     "variable CMAKE_FIND_APPBUNDLE can be set to empty or one of the "
     "following:\n"
@@ -58,7 +57,7 @@ cmFindCommon::cmFindCommon()
     "   \"LAST\"   - Try to find application bundles after standard\n"
     "              programs.\n"
     "   \"ONLY\"   - Only try to find application bundles.\n"
-    "   \"NEVER\". - Never try to find application bundles.\n";
+    "   \"NEVER\" - Never try to find application bundles.\n";
   this->GenericDocumentationRootPath =
     "The CMake variable CMAKE_FIND_ROOT_PATH specifies one or more "
     "directories to be prepended to all other search directories. "
@@ -246,6 +245,63 @@ void cmFindCommon::RerootPaths(std::vector<std::string>& paths)
 }
 
 //----------------------------------------------------------------------------
+void cmFindCommon::FilterPaths(std::vector<std::string>& paths,
+                               const std::set<std::string>& ignore)
+{
+  // Now filter out anything that's in the ignore set.
+  std::vector<std::string> unfiltered;
+  unfiltered.swap(paths);
+
+  for(std::vector<std::string>::iterator pi = unfiltered.begin();
+      pi != unfiltered.end(); ++pi)
+    {
+    if (ignore.count(*pi) == 0)
+      {
+      paths.push_back(*pi);
+      }
+    }
+}
+
+
+//----------------------------------------------------------------------------
+void cmFindCommon::GetIgnoredPaths(std::vector<std::string>& ignore)
+{
+  // null-terminated list of paths.
+  static const char *paths[] =
+    { "CMAKE_SYSTEM_IGNORE_PATH", "CMAKE_IGNORE_PATH", 0 };
+
+  // Construct the list of path roots with no trailing slashes.
+  for(const char **pathName = paths; *pathName; ++pathName)
+    {
+    // Get the list of paths to ignore from the variable.
+    const char* ignorePath = this->Makefile->GetDefinition(*pathName);
+    if((ignorePath == 0) || (strlen(ignorePath) == 0))
+      {
+      continue;
+      }
+
+    cmSystemTools::ExpandListArgument(ignorePath, ignore);
+    }
+
+  for(std::vector<std::string>::iterator i = ignore.begin();
+      i != ignore.end(); ++i)
+    {
+    cmSystemTools::ConvertToUnixSlashes(*i);
+    }
+}
+
+
+//----------------------------------------------------------------------------
+void cmFindCommon::GetIgnoredPaths(std::set<std::string>& ignore)
+{
+  std::vector<std::string> ignoreVec;
+  GetIgnoredPaths(ignoreVec);
+  ignore.insert(ignoreVec.begin(), ignoreVec.end());
+}
+
+
+
+//----------------------------------------------------------------------------
 bool cmFindCommon::CheckCommonArgument(std::string const& arg)
 {
   if(arg == "NO_DEFAULT_PATH")
@@ -329,14 +385,10 @@ void cmFindCommon::AddUserPath(std::string const& p,
   // it.
   cmSystemTools::KeyWOW64 view = cmSystemTools::KeyWOW64_32;
   cmSystemTools::KeyWOW64 other_view = cmSystemTools::KeyWOW64_64;
-  if(const char* psize =
-     this->Makefile->GetDefinition("CMAKE_SIZEOF_VOID_P"))
+  if(this->Makefile->PlatformIs64Bit())
     {
-    if(atoi(psize) == 8)
-      {
-      view = cmSystemTools::KeyWOW64_64;
-      other_view = cmSystemTools::KeyWOW64_32;
-      }
+    view = cmSystemTools::KeyWOW64_64;
+    other_view = cmSystemTools::KeyWOW64_32;
     }
 
   // Expand using the view of the target application.
@@ -430,5 +482,19 @@ void cmFindCommon::AddTrailingSlashes(std::vector<std::string>& paths)
       {
       p += "/";
       }
+    }
+}
+
+//----------------------------------------------------------------------------
+void cmFindCommon::SetMakefile(cmMakefile* makefile)
+{
+  cmCommand::SetMakefile(makefile);
+
+  // If we are building for Apple (OSX or also iphone), make sure
+  // that frameworks and bundles are searched first.
+  if(this->Makefile->IsOn("APPLE"))
+    {
+    this->SearchFrameworkFirst = true;
+    this->SearchAppBundleFirst = true;
     }
 }

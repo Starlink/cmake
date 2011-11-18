@@ -1,19 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmake.h,v $
-  Language:  C++
-  Date:      $Date: 2009-01-13 18:03:54 $
-  Version:   $Revision: 1.109.2.7 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even 
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR 
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 // This class represents a cmake invocation. It is the top level class when
 // running cmake. Most cmake based GUIS should primarily create an instance
 // of this class and communicate with it.
@@ -26,14 +21,14 @@
 //    command line arguments.
 // 3) Load the cache by calling LoadCache (duh)
 // 4) if you are using command line arguments with -D or -C flags then
-//    call SetCacheArgs (or if for some other reason you want to modify the 
+//    call SetCacheArgs (or if for some other reason you want to modify the
 //    cache, do it now.
 // 5) Finally call Configure
 // 6) Let the user change values and go back to step 5
 // 7) call Generate
 //
 // If your GUI allows the user to change the start & home directories then
-// you must at a minimum redo steps 2 through 7. 
+// you must at a minimum redo steps 2 through 7.
 //
 
 
@@ -55,6 +50,8 @@ class cmExternalMakefileProjectGenerator;
 class cmDocumentationSection;
 class cmPolicies;
 class cmListFileBacktrace;
+class cmTarget;
+class cmGeneratedFileStream;
 
 class cmake
 {
@@ -78,14 +75,14 @@ class cmake
   static const char *GetCMakeFilesDirectory() {return "/CMakeFiles";};
   static const char *GetCMakeFilesDirectoryPostSlash() {
     return "CMakeFiles/";};
-  
+
   //@{
   /**
    * Set/Get the home directory (or output directory) in the project. The
    * home directory is the top directory of the project. It is where
    * cmake was run. Remember that CMake processes
    * CMakeLists files by recursing up the tree starting at the StartDirectory
-   * and going up until it reaches the HomeDirectory.  
+   * and going up until it reaches the HomeDirectory.
    */
   void SetHomeDirectory(const char* dir);
   const char* GetHomeDirectory() const
@@ -105,9 +102,9 @@ class cmake
    * is the directory of the CMakeLists.txt file that started the current
    * round of processing. Remember that CMake processes CMakeLists files by
    * recursing up the tree starting at the StartDirectory and going up until
-   * it reaches the HomeDirectory.  
+   * it reaches the HomeDirectory.
    */
-  void SetStartDirectory(const char* dir) 
+  void SetStartDirectory(const char* dir)
     {
       this->cmStartDirectory = dir;
       cmSystemTools::ConvertToUnixSlashes(this->cmStartDirectory);
@@ -126,12 +123,6 @@ class cmake
       return this->StartOutputDirectory.c_str();
     }
   //@}
-
-  /**
-   * Dump documentation to a file. If 0 is returned, the
-   * operation failed.
-   */
-  int DumpDocumentationToFile(std::ostream&);
 
   /**
    * Handle a command line invocation of cmake.
@@ -169,7 +160,7 @@ class cmake
   ///! Return the global generator assigned to this instance of cmake
   cmGlobalGenerator* GetGlobalGenerator()     { return this->GlobalGenerator; }
   ///! Return the global generator assigned to this instance of cmake, const
-  const cmGlobalGenerator* GetGlobalGenerator() const 
+  const cmGlobalGenerator* GetGlobalGenerator() const
                                               { return this->GlobalGenerator; }
 
   ///! Return the global generator assigned to this instance of cmake
@@ -180,25 +171,25 @@ class cmake
 
   ///! get the cmCachemManager used by this invocation of cmake
   cmCacheManager *GetCacheManager() { return this->CacheManager; }
-  
+
   ///! set the cmake command this instance of cmake should use
   void SetCMakeCommand(const char* cmd) { this->CMakeCommand = cmd; }
-  
+
   /**
    * Given a variable name, return its value (as a string).
    */
   const char* GetCacheDefinition(const char*) const;
   ///! Add an entry into the cache
-  void AddCacheEntry(const char* key, const char* value, 
-                     const char* helpString, 
+  void AddCacheEntry(const char* key, const char* value,
+                     const char* helpString,
                      int type);
-  /** 
+  /**
    * Execute commands during the build process. Supports options such
    * as echo, remove file etc.
    */
   static int ExecuteCMakeCommand(std::vector<std::string>&);
 
-  /** 
+  /**
    * Get the system information and write it to the file specified
    */
   int GetSystemInformation(std::vector<std::string>&);
@@ -221,16 +212,17 @@ class cmake
 
   /** Check if a command exists. */
   bool CommandExists(const char* name) const;
-    
+
   ///! Parse command line arguments
-  void SetArgs(const std::vector<std::string>&);
+  void SetArgs(const std::vector<std::string>&,
+               bool directoriesSetBefore = false);
 
   ///! Is this cmake running as a result of a TRY_COMPILE command
   bool GetIsInTryCompile() { return this->InTryCompile; }
-  
+
   ///! Is this cmake running as a result of a TRY_COMPILE command
   void SetIsInTryCompile(bool i) { this->InTryCompile = i; }
-  
+
   ///! Parse command line arguments that might set cache values
   bool SetCacheArgs(const std::vector<std::string>&);
 
@@ -238,9 +230,9 @@ class cmake
     (const char*msg, float progress, void *);
   /**
    *  Set the function used by GUI's to receive progress updates
-   *  Function gets passed: message as a const char*, a progress 
+   *  Function gets passed: message as a const char*, a progress
    *  amount ranging from 0 to 1.0 and client data. The progress
-   *  number provided may be negative in cases where a message is 
+   *  number provided may be negative in cases where a message is
    *  to be displayed without any progress percentage.
    */
   void SetProgressCallback(ProgressCallbackType f, void* clientData=0);
@@ -255,14 +247,14 @@ class cmake
   cmVariableWatch* GetVariableWatch() { return this->VariableWatch; }
 
   /** Get the documentation entries for the supported commands.
-   *  If withCurrentCommands is true, the documentation for the 
+   *  If withCurrentCommands is true, the documentation for the
    *  recommended set of commands is included.
    *  If withCompatCommands is true, the documentation for discouraged
    *  (compatibility) commands is included.
    *  You probably don't want to set both to false.
    */
-  void GetCommandDocumentation(std::vector<cmDocumentationEntry>& entries, 
-                               bool withCurrentCommands = true, 
+  void GetCommandDocumentation(std::vector<cmDocumentationEntry>& entries,
+                               bool withCurrentCommands = true,
                                bool withCompatCommands = true) const;
   void GetPropertiesDocumentation(std::map<std::string,
                                   cmDocumentationSection *>&);
@@ -289,7 +281,7 @@ class cmake
    */
   void SetScriptMode(bool mode) { this->ScriptMode = mode; }
   bool GetScriptMode() { return this->ScriptMode; }
-  
+
   ///! Debug the try compile stuff by not delelting the files
   bool GetDebugTryCompile(){return this->DebugTryCompile;}
   void DebugTryCompileOn(){this->DebugTryCompile = true;}
@@ -317,11 +309,22 @@ class cmake
   // Do we want trace output during the cmake run.
   bool GetTrace() { return this->Trace;}
   void SetTrace(bool b) {  this->Trace = b;}
+  bool GetWarnUninitialized() { return this->WarnUninitialized;}
+  void SetWarnUninitialized(bool b) {  this->WarnUninitialized = b;}
+  bool GetWarnUnused() { return this->WarnUnused;}
+  void SetWarnUnused(bool b) {  this->WarnUnused = b;}
+  bool GetWarnUnusedCli() { return this->WarnUnusedCli;}
+  void SetWarnUnusedCli(bool b) {  this->WarnUnusedCli = b;}
+  bool GetCheckSystemVars() { return this->CheckSystemVars;}
+  void SetCheckSystemVars(bool b) {  this->CheckSystemVars = b;}
+
+  void MarkCliAsUsed(const std::string& variable);
+
   // Define a property
   void DefineProperty(const char *name, cmProperty::ScopeType scope,
                       const char *ShortDescription,
                       const char *FullDescription,
-                      bool chain = false, 
+                      bool chain = false,
                       const char *variableGroup = 0);
 
   // get property definition
@@ -349,23 +352,33 @@ class cmake
     }
   void SetSuppressDevWarnings(bool v)
     {
-      this->SuppressDevWarnings = v; 
+      this->SuppressDevWarnings = v;
       this->DoSuppressDevWarnings = true;
     }
 
   /** Display a message to the user.  */
   void IssueMessage(cmake::MessageType t, std::string const& text,
                     cmListFileBacktrace const& backtrace);
+  //  * run the --build option
+  int Build(const std::string& dir,
+            const std::string& target,
+            const std::string& config,
+            const std::vector<std::string>& nativeOptions,
+            bool clean);
+
+  void UnwatchUnusedCli(const char* var);
+  void WatchUnusedCli(const char* var);
 protected:
+  void RunCheckForUnusedVariables();
   void InitializeProperties();
   int HandleDeleteCacheVariables(const char* var);
   cmPropertyMap Properties;
   std::set<std::pair<cmStdString,cmProperty::ScopeType> > AccessedProperties;
 
-  std::map<cmProperty::ScopeType, cmPropertyDefinitionMap> 
+  std::map<cmProperty::ScopeType, cmPropertyDefinitionMap>
   PropertyDefinitions;
 
-  typedef 
+  typedef
      cmExternalMakefileProjectGenerator* (*CreateExtraGeneratorFunctionType)();
   typedef std::map<cmStdString,
                 CreateExtraGeneratorFunctionType> RegisteredExtraGeneratorsMap;
@@ -379,28 +392,26 @@ protected:
   void AddDefaultCommands();
   void AddDefaultGenerators();
   void AddDefaultExtraGenerators();
-  void AddExtraGenerator(const char* name, 
+  void AddExtraGenerator(const char* name,
                          CreateExtraGeneratorFunctionType newFunction);
 
-  cmPolicies *Policies;                       
+  cmPolicies *Policies;
   cmGlobalGenerator *GlobalGenerator;
   cmCacheManager *CacheManager;
-  std::string cmHomeDirectory; 
+  std::string cmHomeDirectory;
   std::string HomeOutputDirectory;
-  std::string cmStartDirectory; 
+  std::string cmStartDirectory;
   std::string StartOutputDirectory;
   bool SuppressDevWarnings;
   bool DoSuppressDevWarnings;
 
-  ///! return true if the same cmake was used to make the cache.
-  bool CacheVersionMatches();
   ///! read in a cmake list file to initialize the cache
-  void ReadListFile(const char *path);
+  void ReadListFile(const std::vector<std::string>& args, const char *path);
 
   ///! Check if CMAKE_CACHEFILE_DIR is set. If it is not, delete the log file.
   ///  If it is set, truncate it to 50kb
   void TruncateOutputLog(const char* fname);
-  
+
   /**
    * Method called to check build system integrity at build time.
    * Returns 1 if CMake should rerun and 0 otherwise.
@@ -415,28 +426,34 @@ protected:
 
   void GenerateGraphViz(const char* fileName) const;
 
+  static int SymlinkLibrary(std::vector<std::string>& args);
+  static int SymlinkExecutable(std::vector<std::string>& args);
+  static bool SymlinkInternal(std::string const& file,
+                              std::string const& link);
   static int ExecuteEchoColor(std::vector<std::string>& args);
   static int ExecuteLinkScript(std::vector<std::string>& args);
   static int VisualStudioLink(std::vector<std::string>& args, int type);
   static int VisualStudioLinkIncremental(std::vector<std::string>& args,
-                                         int type, 
+                                         int type,
                                          bool verbose);
   static int VisualStudioLinkNonIncremental(std::vector<std::string>& args,
                                             int type,
                                             bool hasManifest,
                                             bool verbose);
-  static int ParseVisualStudioLinkCommand(std::vector<std::string>& args, 
-                                          std::vector<cmStdString>& command, 
+  static int ParseVisualStudioLinkCommand(std::vector<std::string>& args,
+                                          std::vector<cmStdString>& command,
                                           std::string& targetName);
   static bool RunCommand(const char* comment,
                          std::vector<cmStdString>& command,
                          bool verbose,
                          int* retCodeOut = 0);
   cmVariableWatch* VariableWatch;
-  
+
   ///! Find the full path to one of the cmake programs like ctest, cpack, etc.
   std::string FindCMakeProgram(const char* name) const;
-private: 
+
+  bool RejectUnsupportedPaths(const char* desc, std::string const& path);
+private:
   cmake(const cmake&);  // Not implemented.
   void operator=(const cmake&);  // Not implemented.
   ProgressCallbackType ProgressCallback;
@@ -446,6 +463,11 @@ private:
   bool ScriptMode;
   bool DebugOutput;
   bool Trace;
+  bool WarnUninitialized;
+  bool WarnUnused;
+  bool WarnUnusedCli;
+  bool CheckSystemVars;
+  std::map<cmStdString, bool> UsedCliVariables;
   std::string CMakeEditCommand;
   std::string CMakeCommand;
   std::string CXXEnvironment;
@@ -461,7 +483,7 @@ private:
   cmFileTimeComparison* FileComparison;
   std::string GraphVizFile;
   std::vector<std::string> DebugConfigs;
-  
+
   void UpdateConversionPathTable();
 };
 

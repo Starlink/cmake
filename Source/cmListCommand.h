@@ -1,19 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmListCommand.h,v $
-  Language:  C++
-  Date:      $Date: 2008-03-12 21:02:10 $
-  Version:   $Revision: 1.15 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #ifndef cmListCommand_h
 #define cmListCommand_h
 
@@ -66,8 +61,8 @@ public:
     {
     return
       "  list(LENGTH <list> <output variable>)\n"
-      "  list(GET <list> <element index> [<element index> ...] "
-      "<output variable>)\n"
+      "  list(GET <list> <element index> [<element index> ...]\n"
+      "       <output variable>)\n"
       "  list(APPEND <list> <element> [<element> ...])\n"
       "  list(FIND <list> <value> <output variable>)\n"
       "  list(INSERT <list> <element_index> <element> [<element> ...])\n"
@@ -88,6 +83,14 @@ public:
       "REMOVE_DUPLICATES will remove duplicated items in the list.\n"
       "REVERSE reverses the contents of the list in-place.\n"
       "SORT sorts the list in-place alphabetically.\n"
+      "The list subcommands APPEND, INSERT, REMOVE_AT, REMOVE_ITEM, "
+      "REMOVE_DUPLICATES, REVERSE and SORT may create new values for "
+      "the list within the current CMake variable scope. Similar to "
+      "the SET command, the LIST command creates new variable values "
+      "in the current scope, even if the list itself is actually "
+      "defined in a parent scope. To propagate the results of these "
+      "operations upwards, use SET with PARENT_SCOPE, SET with CACHE "
+      "INTERNAL, or some other means of value propagation.\n"
       "NOTES: A list in cmake is a ; separated group of strings. "
       "To create a list the set command can be used. For example, "
       "set(var a b c d e)  creates a list with a;b;c;d;e, and "

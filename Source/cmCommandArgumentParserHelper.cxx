@@ -1,19 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmCommandArgumentParserHelper.cxx,v $
-  Language:  C++
-  Date:      $Date: 2009-03-27 15:55:57 $
-  Version:   $Revision: 1.20.4.2 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even 
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR 
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #include "cmCommandArgumentParserHelper.h"
 
 #include "cmSystemTools.h"
@@ -25,6 +20,8 @@ int cmCommandArgument_yyparse( yyscan_t yyscanner );
 //
 cmCommandArgumentParserHelper::cmCommandArgumentParserHelper()
 {
+  this->WarnUninitialized = false;
+  this->CheckSystemVars = false;
   this->FileLine = -1;
   this->FileName = 0;
   this->RemoveEmpty = true;
@@ -70,7 +67,11 @@ char* cmCommandArgumentParserHelper::ExpandSpecialVariable(const char* key,
   if ( !key )
     {
     return this->ExpandVariable(var);
-    } 
+    }
+  if(!var)
+    {
+    return this->EmptyVariable;
+    }
   if ( strcmp(key, "ENV") == 0 )
     {
     char *ptr = getenv(var);
@@ -120,10 +121,32 @@ char* cmCommandArgumentParserHelper::ExpandVariable(const char* var)
     cmOStringStream ostr;
     ostr << this->FileLine;
     return this->AddString(ostr.str().c_str());
-    } 
+    }
   const char* value = this->Makefile->GetDefinition(var);
   if(!value && !this->RemoveEmpty)
     {
+    // check to see if we need to print a warning
+    // if strict mode is on and the variable has
+    // not been "cleared"/initialized with a set(foo ) call
+    if(this->WarnUninitialized && !this->Makefile->VariableInitialized(var))
+      {
+      if (this->CheckSystemVars ||
+          cmSystemTools::IsSubDirectory(this->FileName,
+                                        this->Makefile->GetHomeDirectory()) ||
+          cmSystemTools::IsSubDirectory(this->FileName,
+                                     this->Makefile->GetHomeOutputDirectory()))
+        {
+        cmOStringStream msg;
+        cmListFileBacktrace bt;
+        cmListFileContext lfc;
+        lfc.FilePath = this->FileName;
+        lfc.Line = this->FileLine;
+        bt.push_back(lfc);
+        msg << "uninitialized variable \'" << var << "\'";
+        this->Makefile->GetCMakeInstance()->IssueMessage(cmake::AUTHOR_WARNING,
+                                                        msg.str().c_str(), bt);
+        }
+      }
     return 0;
     }
   if (this->EscapeQuotes && value)
@@ -320,6 +343,8 @@ void cmCommandArgumentParserHelper::Error(const char* str)
 void cmCommandArgumentParserHelper::SetMakefile(const cmMakefile* mf)
 {
   this->Makefile = mf;
+  this->WarnUninitialized = mf->GetCMakeInstance()->GetWarnUninitialized();
+  this->CheckSystemVars = mf->GetCMakeInstance()->GetCheckSystemVars();
 }
 
 void cmCommandArgumentParserHelper::SetResult(const char* value)

@@ -1,28 +1,29 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmFindBase.cxx,v $
-  Language:  C++
-  Date:      $Date: 2008-10-24 15:18:46 $
-  Version:   $Revision: 1.35.2.5 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even 
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR 
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #include "cmFindBase.h"
   
 cmFindBase::cmFindBase()
 {
-  cmSystemTools::ReplaceString(this->GenericDocumentationPathsOrder,
-                               "FIND_ARGS_XXX", "<VAR> NAMES name");
   this->AlreadyInCache = false;
   this->AlreadyInCacheWithoutMetaInfo = false;
-  this->GenericDocumentation = 
+}
+
+//----------------------------------------------------------------------------
+void cmFindBase::GenerateDocumentation()
+{
+  this->cmFindCommon::GenerateDocumentation();
+  cmSystemTools::ReplaceString(this->GenericDocumentationPathsOrder,
+                               "FIND_ARGS_XXX", "<VAR> NAMES name");
+  this->GenericDocumentation =
     "   FIND_XXX(<VAR> name1 [path1 path2 ...])\n"
     "This is the short-hand signature for the command that "
     "is sufficient in many cases.  It is the same "
@@ -71,12 +72,14 @@ cmFindBase::cmFindBase()
     "1. Search paths specified in cmake-specific cache variables.  "
     "These are intended to be used on the command line with a -DVAR=value.  "
     "This can be skipped if NO_CMAKE_PATH is passed.\n"
+    "XXX_EXTRA_PREFIX_ENTRY"
     "   <prefix>/XXX_SUBDIR for each <prefix> in CMAKE_PREFIX_PATH\n"
     "   CMAKE_XXX_PATH\n"
     "   CMAKE_XXX_MAC_PATH\n"
     "2. Search paths specified in cmake-specific environment variables.  "
     "These are intended to be set in the user's shell configuration.  "
     "This can be skipped if NO_CMAKE_ENVIRONMENT_PATH is passed.\n"
+    "XXX_EXTRA_PREFIX_ENTRY"
     "   <prefix>/XXX_SUBDIR for each <prefix> in CMAKE_PREFIX_PATH\n"
     "   CMAKE_XXX_PATH\n"
     "   CMAKE_XXX_MAC_PATH\n"
@@ -91,6 +94,7 @@ cmFindBase::cmFindBase()
     "5. Search cmake variables defined in the Platform files "
     "for the current system.  This can be skipped if NO_CMAKE_SYSTEM_PATH "
     "is passed.\n"
+    "XXX_EXTRA_PREFIX_ENTRY"
     "   <prefix>/XXX_SUBDIR for each <prefix> in CMAKE_SYSTEM_PREFIX_PATH\n"
     "   CMAKE_SYSTEM_XXX_PATH\n"
     "   CMAKE_SYSTEM_XXX_MAC_PATH\n"
@@ -102,7 +106,18 @@ cmFindBase::cmFindBase()
   this->GenericDocumentation += this->GenericDocumentationRootPath;
   this->GenericDocumentation += this->GenericDocumentationPathsOrder;
 }
-  
+
+//----------------------------------------------------------------------------
+const char* cmFindBase::GetFullDocumentation()
+{
+  if(this->GenericDocumentation.empty())
+    {
+    this->GenerateDocumentation();
+    }
+  return this->GenericDocumentation.c_str();
+}
+
+//----------------------------------------------------------------------------
 bool cmFindBase::ParseArguments(std::vector<std::string> const& argsIn)
 {
   if(argsIn.size() < 2 )
@@ -151,6 +166,11 @@ bool cmFindBase::ParseArguments(std::vector<std::string> const& argsIn)
           }
         }
       }
+    }
+  if(args.size() < 2 )
+    {
+    this->SetError("called with incorrect number of arguments");
+    return false;
     }
   this->VariableName = args[0];
   if(this->CheckForVariableInCache())
@@ -274,6 +294,11 @@ bool cmFindBase::ParseArguments(std::vector<std::string> const& argsIn)
     }
   this->ExpandPaths();
 
+  // Filter out ignored paths from the prefix list
+  std::set<std::string> ignored;
+  this->GetIgnoredPaths(ignored);
+  this->FilterPaths(this->SearchPaths, ignored);
+
   // Handle search root stuff.
   this->RerootPaths(this->SearchPaths);
 
@@ -323,6 +348,15 @@ void cmFindBase::AddPrefixPaths(std::vector<std::string> const& in_paths,
     if(!subdir.empty() && !dir.empty() && dir[dir.size()-1] != '/')
       {
       dir += "/";
+      }
+    if(subdir == "lib")
+      {
+      const char* arch =
+        this->Makefile->GetDefinition("CMAKE_LIBRARY_ARCHITECTURE");
+      if(arch && *arch)
+        {
+        this->AddPathInternal(dir+"lib/"+arch, pathType);
+        }
       }
     std::string add = dir + subdir;
     if(add != "/")

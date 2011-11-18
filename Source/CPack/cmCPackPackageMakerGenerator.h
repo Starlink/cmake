@@ -1,19 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc.
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmCPackPackageMakerGenerator.h,v $
-  Language:  C++
-  Date:      $Date: 2008-07-30 18:54:50 $
-  Version:   $Revision: 1.12.2.3 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc. All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even 
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR 
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 
 #ifndef cmCPackPackageMakerGenerator_h
 #define cmCPackPackageMakerGenerator_h
@@ -47,8 +42,7 @@ protected:
                         const char* script,
                         const char* name);
   virtual int InitializeInternal();
-  int CompressFiles(const char* outFileName, const char* toplevel,
-    const std::vector<std::string>& files);
+  int PackageFiles();
   virtual const char* GetOutputExtension() { return ".dmg"; }
   virtual const char* GetOutputPostfix() { return "darwin"; }
 

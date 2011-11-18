@@ -1,8 +1,10 @@
-# - Check if the function exists.
-# CHECK_FUNCTION_EXISTS(FUNCTION VARIABLE)
-# - macro which checks if the function exists
-#  FUNCTION - the name of the function
-#  VARIABLE - variable to store the result
+# - Check if a C function can be linked
+# CHECK_FUNCTION_EXISTS(<function> <variable>)
+#
+# Check that the <function> is provided by libraries on the system and
+# store the result in a <variable>.  This does not verify that any
+# system header file declares the function, only that it can be found
+# at link time (considure using CheckSymbolExists).
 #
 # The following variables may be set before calling this macro to
 # modify the way the check is run:
@@ -11,6 +13,19 @@
 #  CMAKE_REQUIRED_DEFINITIONS = list of macros to define (-DFOO=bar)
 #  CMAKE_REQUIRED_INCLUDES = list of include directories
 #  CMAKE_REQUIRED_LIBRARIES = list of libraries to link
+
+#=============================================================================
+# Copyright 2002-2011 Kitware, Inc.
+#
+# Distributed under the OSI-approved BSD License (the "License");
+# see accompanying file Copyright.txt for details.
+#
+# This software is distributed WITHOUT ANY WARRANTY; without even the
+# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the License for more information.
+#=============================================================================
+# (To distribute this file outside of CMake, substitute the full
+#  License text for the above reference.)
 
 MACRO(CHECK_FUNCTION_EXISTS FUNCTION VARIABLE)
   IF("${VARIABLE}" MATCHES "^${VARIABLE}$")

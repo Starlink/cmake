@@ -1,3 +1,17 @@
+
+#=============================================================================
+# Copyright 2005-2009 Kitware, Inc.
+#
+# Distributed under the OSI-approved BSD License (the "License");
+# see accompanying file Copyright.txt for details.
+#
+# This software is distributed WITHOUT ANY WARRANTY; without even the
+# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the License for more information.
+#=============================================================================
+# (To distribute this file outside of CMake, substitute the full
+#  License text for the above reference.)
+
 IF(NOT RUN_FROM_CTEST_OR_DART)
   MESSAGE(FATAL_ERROR "Do not incldue CTestTargets.cmake directly")
 ENDIF(NOT RUN_FROM_CTEST_OR_DART)
@@ -50,6 +64,8 @@ IF(NOT _CTEST_TARGETS_ADDED)
     ADD_CUSTOM_TARGET(${mode}
       ${CMAKE_CTEST_COMMAND} ${__conf_types} -D ${mode}
       )
+    SET_PROPERTY(TARGET ${mode} PROPERTY RULE_LAUNCH_CUSTOM "")
+    SET_PROPERTY(TARGET ${mode} PROPERTY FOLDER "CTestDashboardTargets")
   ENDFOREACH(mode)
 
   # For Makefile generators add more granular targets.
@@ -63,7 +79,17 @@ IF(NOT _CTEST_TARGETS_ADDED)
         ADD_CUSTOM_TARGET(${mode}${testtype}
           ${CMAKE_CTEST_COMMAND} ${__conf_types} -D ${mode}${testtype}
           )
+        SET_PROPERTY(TARGET ${mode}${testtype} PROPERTY RULE_LAUNCH_CUSTOM "")
+        SET_PROPERTY(TARGET ${mode}${testtype} PROPERTY FOLDER "CTestDashboardTargets")
       ENDFOREACH(testtype)
     ENDFOREACH(mode)
   ENDIF("${CMAKE_GENERATOR}" MATCHES Make)
+
+  # If requested, add an alias that is the equivalent of the built-in "test"
+  # or "RUN_TESTS" target:
+  IF(CTEST_TEST_TARGET_ALIAS)
+    ADD_CUSTOM_TARGET(${CTEST_TEST_TARGET_ALIAS}
+      ${CMAKE_CTEST_COMMAND} ${__conf_types}
+      )
+  ENDIF()
 ENDIF(NOT _CTEST_TARGETS_ADDED)

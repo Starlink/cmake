@@ -41,7 +41,7 @@
 #undef lines
 #undef columns
 
-MODULE_ID("$Id: frm_driver.c,v 1.15 2002-10-23 20:43:34 king Exp $")
+MODULE_ID("$Id$")
 
 /* These declarations are missing from curses.h on some platforms.  */
 extern int winnstr(WINDOW *, char *, int);
@@ -357,8 +357,12 @@ static void Buffer_To_Window(const FIELD  * field, WINDOW * win)
 
   assert(win && field);
 
+#if defined(__LSB_VERSION__)
+  getmaxyx(win, height, width);
+#else
   width  = getmaxx(win);
   height = getmaxy(win);
+#endif
 
   for(row=0, pBuffer=field->buf; 
       row < height; 
@@ -396,7 +400,11 @@ static void Window_To_Buffer(WINDOW * win, FIELD  * field)
 
   pad = field->pad;
   p = field->buf;
+#if defined(__LSB_VERSION__)
+  { int width; getmaxyx(win, height, width); }
+#else
   height = getmaxy(win);
+#endif
 
   for(row=0; (row < height) && (row < field->drows); row++ )
     {
@@ -871,7 +879,17 @@ static int Display_Or_Erase_Field(FIELD * field, bool bEraseFlag)
       if (field->opts & O_VISIBLE)
         Set_Field_Window_Attributes(field,win);
       else
+        {
+#if defined(__LSB_VERSION__)
+        /* getattrs() would be handy, but it is not part of LSB 4.0 */
+        attr_t fwinAttrs;
+        short  fwinPair;
+        wattr_get(fwin, &fwinAttrs, &fwinPair, 0);
+        wattr_set(win, fwinAttrs, fwinPair, 0);
+#else
         wattrset(win,getattrs(fwin));
+#endif
+        }
       werase(win);
     }
 
@@ -1068,7 +1086,7 @@ _nc_Synchronize_Options(FIELD *field, Field_Options newopts)
 
       if (form->status & _POSTED)
         {
-          if ((form->curpage == field->page))
+          if (form->curpage == field->page)
             {
               if (changed_opts & O_VISIBLE)
                 {

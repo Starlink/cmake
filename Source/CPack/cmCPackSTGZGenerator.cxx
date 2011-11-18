@@ -1,19 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmCPackSTGZGenerator.cxx,v $
-  Language:  C++
-  Date:      $Date: 2006-05-12 18:44:24 $
-  Version:   $Revision: 1.15 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 
 #include "cmCPackSTGZGenerator.h"
 
@@ -57,14 +52,13 @@ int cmCPackSTGZGenerator::InitializeInternal()
 }
 
 //----------------------------------------------------------------------
-int cmCPackSTGZGenerator::CompressFiles(const char* outFileName,
-  const char* toplevel, const std::vector<std::string>& files)
+int cmCPackSTGZGenerator::PackageFiles()
 {
-  if ( !this->Superclass::CompressFiles(outFileName, toplevel, files) )
+  if ( !this->Superclass::PackageFiles() )
     {
     return 0;
     }
-  return cmSystemTools::SetPermissions(outFileName,
+  return cmSystemTools::SetPermissions(packageFileNames[0].c_str(),
 #if defined( _MSC_VER ) || defined( __MINGW32__ )
     S_IREAD | S_IWRITE | S_IEXEC
 #elif defined( __BORLANDC__ )

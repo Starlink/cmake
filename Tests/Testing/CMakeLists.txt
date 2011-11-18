@@ -1,7 +1,7 @@
 #
 # Testing
 #
-cmake_minimum_required (VERSION 2.6)
+cmake_minimum_required (VERSION 2.7)
 PROJECT (Testing)
 
 #
@@ -46,9 +46,14 @@ ENABLE_TESTING()
 # Add test
 #
 ADD_EXECUTABLE(testing testing.cxx)
-ADD_TEST(testing ${Testing_BINARY_DIR}/bin/testing)
+ADD_TEST(testing.1 ${Testing_BINARY_DIR}/bin/testing)
 
 #
 # skip level test
 #
 ADD_SUBDIRECTORY(Sub/Sub2)
+
+# Per-config target name and generator expressions.
+ADD_SUBDIRECTORY(${CMAKE_CURRENT_SOURCE_DIR}/../PerConfig PerConfig)
+ADD_TEST(NAME testing.perconfig COMMAND perconfig)
+ADD_TEST(NAME testing.driver COMMAND ${PerConfig_COMMAND})

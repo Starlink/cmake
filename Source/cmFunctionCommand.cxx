@@ -1,19 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmFunctionCommand.cxx,v $
-  Language:  C++
-  Date:      $Date: 2009-02-04 16:44:17 $
-  Version:   $Revision: 1.6.2.2 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #include "cmFunctionCommand.h"
 
 #include "cmake.h"
@@ -118,6 +113,7 @@ bool cmFunctionHelperCommand::InvokeInitialPass
   cmOStringStream strStream;
   strStream << expandedArgs.size();
   this->Makefile->AddDefinition("ARGC",strStream.str().c_str());
+  this->Makefile->MarkVariableAsUsed("ARGC");
 
   // set the values for ARGV0 ARGV1 ...
   for (unsigned int t = 0; t < expandedArgs.size(); ++t)
@@ -126,6 +122,7 @@ bool cmFunctionHelperCommand::InvokeInitialPass
     tmpStream << "ARGV" << t;
     this->Makefile->AddDefinition(tmpStream.str().c_str(), 
                                   expandedArgs[t].c_str());
+    this->Makefile->MarkVariableAsUsed(tmpStream.str().c_str());
     }
   
   // define the formal arguments
@@ -158,7 +155,9 @@ bool cmFunctionHelperCommand::InvokeInitialPass
     cnt ++;
     }
   this->Makefile->AddDefinition("ARGV", argvDef.c_str());
+  this->Makefile->MarkVariableAsUsed("ARGV");
   this->Makefile->AddDefinition("ARGN", argnDef.c_str());
+  this->Makefile->MarkVariableAsUsed("ARGN");
 
   // Invoke all the functions that were collected in the block.
   // for each function

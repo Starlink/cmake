@@ -1,19 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc.
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmCPackRPMGenerator.h,v $
-  Language:  C++
-  Date:      $Date: 2007-11-05 21:55:45 $
-  Version:   $Revision: 1.5 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc. All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even 
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR 
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 
 #ifndef cmCPackRPMGenerator_h
 #define cmCPackRPMGenerator_h
@@ -42,9 +37,26 @@ public:
 
 protected:
   virtual int InitializeInternal();
-  virtual int CompressFiles(const char* outFileName, const char* toplevel,
-    const std::vector<std::string>& files);
+  virtual int PackageFiles();
+  /**
+   * This method factors out the work done in component packaging case.
+   */
+  int PackageOnePack(std::string initialToplevel, std::string packageName);
+  /**
+   * The method used to package files when component
+   * install is used. This will create one
+   * archive for each component group.
+   */
+  int PackageComponents(bool ignoreGroup);
+  /**
+   * Special case of component install where all
+   * components will be put in a single installer.
+   */
+  int PackageComponentsAllInOne();
   virtual const char* GetOutputExtension() { return ".rpm"; }
+  virtual bool SupportsComponentInstallation() const;
+  virtual std::string GetComponentInstallDirNameSuffix(
+      const std::string& componentName);
 
 };
 

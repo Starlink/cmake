@@ -1,4 +1,17 @@
 
+#=============================================================================
+# Copyright 2004-2011 Kitware, Inc.
+#
+# Distributed under the OSI-approved BSD License (the "License");
+# see accompanying file Copyright.txt for details.
+#
+# This software is distributed WITHOUT ANY WARRANTY; without even the
+# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the License for more information.
+#=============================================================================
+# (To distribute this file outside of CMake, substitute the full
+#  License text for the above reference.)
+
 # This file sets the basic flags for the C language in CMake.
 # It also loads the available platform file for the system-compiler
 # if it exists.
@@ -12,6 +25,14 @@ IF(UNIX)
 ELSE(UNIX)
   SET(CMAKE_C_OUTPUT_EXTENSION .obj)
 ENDIF(UNIX)
+
+SET(_INCLUDED_FILE 0)
+
+# Load compiler-specific information.
+IF(CMAKE_C_COMPILER_ID)
+  INCLUDE(Compiler/${CMAKE_C_COMPILER_ID}-C OPTIONAL)
+ENDIF(CMAKE_C_COMPILER_ID)
+
 SET(CMAKE_BASE_NAME)
 GET_FILENAME_COMPONENT(CMAKE_BASE_NAME ${CMAKE_C_COMPILER} NAME_WE)
 IF(CMAKE_COMPILER_IS_GNUCC)
@@ -39,13 +60,12 @@ IF (NOT _INCLUDED_FILE)
   INCLUDE(Platform/${CMAKE_SYSTEM_NAME}-${CMAKE_BASE_NAME} 
     OPTIONAL RESULT_VARIABLE _INCLUDED_FILE)
 ENDIF (NOT _INCLUDED_FILE)
-# some systems include the compiler information in the system file
-# and if this is the enable_language command then it may not have been
-# included at this point, or needs to be included again so that the
-# language_INIT variables are set correctly
+# We specify the compiler information in the system file for some
+# platforms, but this language may not have been enabled when the file
+# was first included.  Include it again to get the language info.
+# Remove this when all compiler info is removed from system files.
 IF (NOT _INCLUDED_FILE)
-  INCLUDE(Platform/${CMAKE_SYSTEM_NAME} 
-    OPTIONAL RESULT_VARIABLE _INCLUDED_FILE)
+  INCLUDE(Platform/${CMAKE_SYSTEM_NAME} OPTIONAL)
 ENDIF (NOT _INCLUDED_FILE)
 
 
@@ -56,12 +76,16 @@ ENDIF (NOT _INCLUDED_FILE)
 # be made to those values.
 
 IF(CMAKE_USER_MAKE_RULES_OVERRIDE)
-   INCLUDE(${CMAKE_USER_MAKE_RULES_OVERRIDE})
-ENDIF(CMAKE_USER_MAKE_RULES_OVERRIDE)
+  # Save the full path of the file so try_compile can use it.
+  INCLUDE(${CMAKE_USER_MAKE_RULES_OVERRIDE} RESULT_VARIABLE _override)
+  SET(CMAKE_USER_MAKE_RULES_OVERRIDE "${_override}")
+ENDIF()
 
 IF(CMAKE_USER_MAKE_RULES_OVERRIDE_C)
-   INCLUDE(${CMAKE_USER_MAKE_RULES_OVERRIDE_C})
-ENDIF(CMAKE_USER_MAKE_RULES_OVERRIDE_C)
+  # Save the full path of the file so try_compile can use it.
+  INCLUDE(${CMAKE_USER_MAKE_RULES_OVERRIDE_C} RESULT_VARIABLE _override)
+  SET(CMAKE_USER_MAKE_RULES_OVERRIDE_C "${_override}")
+ENDIF()
 
 
 # for most systems a module is the same as a shared library
@@ -144,9 +168,15 @@ ENDIF(NOT CMAKE_C_CREATE_SHARED_MODULE)
 
 # Create a static archive incrementally for large object file counts.
 # If CMAKE_C_CREATE_STATIC_LIBRARY is set it will override these.
-SET(CMAKE_C_ARCHIVE_CREATE "<CMAKE_AR> cr <TARGET> <LINK_FLAGS> <OBJECTS>")
-SET(CMAKE_C_ARCHIVE_APPEND "<CMAKE_AR> r  <TARGET> <LINK_FLAGS> <OBJECTS>")
-SET(CMAKE_C_ARCHIVE_FINISH "<CMAKE_RANLIB> <TARGET>")
+IF(NOT DEFINED CMAKE_C_ARCHIVE_CREATE)
+  SET(CMAKE_C_ARCHIVE_CREATE "<CMAKE_AR> cr <TARGET> <LINK_FLAGS> <OBJECTS>")
+ENDIF()
+IF(NOT DEFINED CMAKE_C_ARCHIVE_APPEND)
+  SET(CMAKE_C_ARCHIVE_APPEND "<CMAKE_AR> r  <TARGET> <LINK_FLAGS> <OBJECTS>")
+ENDIF()
+IF(NOT DEFINED CMAKE_C_ARCHIVE_FINISH)
+  SET(CMAKE_C_ARCHIVE_FINISH "<CMAKE_RANLIB> <TARGET>")
+ENDIF()
 
 # compile a C file into an object file
 IF(NOT CMAKE_C_COMPILE_OBJECT)

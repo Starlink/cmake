@@ -1,4 +1,17 @@
 
+#=============================================================================
+# Copyright 2002-2009 Kitware, Inc.
+#
+# Distributed under the OSI-approved BSD License (the "License");
+# see accompanying file Copyright.txt for details.
+#
+# This software is distributed WITHOUT ANY WARRANTY; without even the
+# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the License for more information.
+#=============================================================================
+# (To distribute this file outside of CMake, substitute the full
+#  License text for the above reference.)
+
 # This module is used by the Makefile generator to determin the following variables:
 # CMAKE_SYSTEM_NAME - on unix this is uname -s, for windows it is Windows
 # CMAKE_SYSTEM_VERSION - on unix this is uname -r, for windows it is empty
@@ -12,6 +25,7 @@
 # HP-UX                         HP-UX  
 # IRIX                          IRIX  
 # Linux                         Linux  
+# GNU/kFreeBSD                  GNU/kFreeBSD
 # NetBSD                        NetBSD  
 # OpenBSD                       OpenBSD  
 # OFS/1 (Digital Unix)          OSF1  
@@ -33,17 +47,20 @@ IF(CMAKE_HOST_UNIX)
   IF(CMAKE_UNAME)
     EXEC_PROGRAM(uname ARGS -s OUTPUT_VARIABLE CMAKE_HOST_SYSTEM_NAME)
     EXEC_PROGRAM(uname ARGS -r OUTPUT_VARIABLE CMAKE_HOST_SYSTEM_VERSION)
-    IF(CMAKE_HOST_SYSTEM_NAME MATCHES "Linux")
+    IF(CMAKE_HOST_SYSTEM_NAME MATCHES "Linux|CYGWIN.*")
       EXEC_PROGRAM(uname ARGS -m OUTPUT_VARIABLE CMAKE_HOST_SYSTEM_PROCESSOR
         RETURN_VALUE val)
-    ELSE(CMAKE_HOST_SYSTEM_NAME MATCHES "Linux")
+    ELSEIF(CMAKE_HOST_SYSTEM_NAME MATCHES "OpenBSD")
+      EXEC_PROGRAM(arch ARGS -s OUTPUT_VARIABLE CMAKE_HOST_SYSTEM_PROCESSOR
+        RETURN_VALUE val)
+    ELSE()
       EXEC_PROGRAM(uname ARGS -p OUTPUT_VARIABLE CMAKE_HOST_SYSTEM_PROCESSOR
         RETURN_VALUE val)
       IF("${val}" GREATER 0)
         EXEC_PROGRAM(uname ARGS -m OUTPUT_VARIABLE CMAKE_HOST_SYSTEM_PROCESSOR
           RETURN_VALUE val)
       ENDIF("${val}" GREATER 0)
-    ENDIF(CMAKE_HOST_SYSTEM_NAME MATCHES "Linux")
+    ENDIF()
     # check the return of the last uname -m or -p 
     IF("${val}" GREATER 0)
         SET(CMAKE_HOST_SYSTEM_PROCESSOR "unknown")
@@ -107,6 +124,11 @@ MACRO(ADJUST_CMAKE_SYSTEM_VARIABLES _PREFIX)
   IF(${_PREFIX}_NAME MATCHES BSD.OS)
     SET(${_PREFIX}_NAME BSDOS)
   ENDIF(${_PREFIX}_NAME MATCHES BSD.OS)
+
+  # fix for GNU/kFreeBSD, remove the GNU/
+  IF(${_PREFIX}_NAME MATCHES kFreeBSD)
+    SET(${_PREFIX}_NAME kFreeBSD)
+  ENDIF(${_PREFIX}_NAME MATCHES kFreeBSD)
 
   # fix for CYGWIN which has windows version in it 
   IF(${_PREFIX}_NAME MATCHES CYGWIN)

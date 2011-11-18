@@ -1,19 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmBootstrapCommands.cxx,v $
-  Language:  C++
-  Date:      $Date: 2009-02-04 16:44:16 $
-  Version:   $Revision: 1.27.2.2 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even 
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR 
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 // This file is used to compile all the commands
 // that CMake knows about at compile time.
 // This is sort of a boot strapping approach since you would
@@ -37,6 +32,7 @@
 #include "cmCreateTestSourceList.cxx"
 #include "cmDefinePropertyCommand.cxx"
 #include "cmElseCommand.cxx"
+#include "cmEnableLanguageCommand.cxx"
 #include "cmEnableTestingCommand.cxx"
 #include "cmEndForEachCommand.cxx"
 #include "cmEndFunctionCommand.cxx"
@@ -82,6 +78,7 @@
 #include "cmReturnCommand.cxx"
 #include "cmSeparateArgumentsCommand.cxx"
 #include "cmSetCommand.cxx"
+#include "cmSetDirectoryPropertiesCommand.cxx"
 #include "cmSetPropertyCommand.cxx"
 #include "cmSetSourceFilesPropertiesCommand.cxx"
 #include "cmSetTargetPropertiesCommand.cxx"
@@ -113,6 +110,7 @@ void GetBootstrapCommands(std::list<cmCommand*>& commands)
   commands.push_back(new cmCreateTestSourceList);
   commands.push_back(new cmDefinePropertyCommand);
   commands.push_back(new cmElseCommand);
+  commands.push_back(new cmEnableLanguageCommand);
   commands.push_back(new cmEnableTestingCommand);  
   commands.push_back(new cmEndForEachCommand);
   commands.push_back(new cmEndFunctionCommand);
@@ -153,6 +151,7 @@ void GetBootstrapCommands(std::list<cmCommand*>& commands)
   commands.push_back(new cmReturnCommand);
   commands.push_back(new cmSeparateArgumentsCommand);
   commands.push_back(new cmSetCommand);
+  commands.push_back(new cmSetDirectoryPropertiesCommand);
   commands.push_back(new cmSetPropertyCommand);
   commands.push_back(new cmSetSourceFilesPropertiesCommand);
   commands.push_back(new cmSetTargetPropertiesCommand);

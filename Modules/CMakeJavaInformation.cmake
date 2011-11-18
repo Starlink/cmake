@@ -1,3 +1,17 @@
+
+#=============================================================================
+# Copyright 2004-2011 Kitware, Inc.
+#
+# Distributed under the OSI-approved BSD License (the "License");
+# see accompanying file Copyright.txt for details.
+#
+# This software is distributed WITHOUT ANY WARRANTY; without even the
+# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the License for more information.
+#=============================================================================
+# (To distribute this file outside of CMake, substitute the full
+#  License text for the above reference.)
+
 # This should be included before the _INIT variables are
 # used to initialize the cache.  Since the rule variables 
 # have if blocks on them, users can still define them here.
@@ -5,12 +19,16 @@
 # be made to those values.
 
 IF(CMAKE_USER_MAKE_RULES_OVERRIDE)
-   INCLUDE(${CMAKE_USER_MAKE_RULES_OVERRIDE})
-ENDIF(CMAKE_USER_MAKE_RULES_OVERRIDE)
+  # Save the full path of the file so try_compile can use it.
+  INCLUDE(${CMAKE_USER_MAKE_RULES_OVERRIDE} RESULT_VARIABLE _override)
+  SET(CMAKE_USER_MAKE_RULES_OVERRIDE "${_override}")
+ENDIF()
 
-IF(CMAKE_USER_MAKE_RULES_OVERRIDE_CXX)
-   INCLUDE(${CMAKE_USER_MAKE_RULES_OVERRIDE_CXX})
-ENDIF(CMAKE_USER_MAKE_RULES_OVERRIDE_CXX)
+IF(CMAKE_USER_MAKE_RULES_OVERRIDE_Java)
+  # Save the full path of the file so try_compile can use it.
+   INCLUDE(${CMAKE_USER_MAKE_RULES_OVERRIDE_Java} RESULT_VARIABLE _override)
+   SET(CMAKE_USER_MAKE_RULES_OVERRIDE_Java "${_override}")
+ENDIF()
 
 # this is a place holder if java needed flags for javac they would go here.
 IF(NOT CMAKE_Java_CREATE_STATIC_LIBRARY)

@@ -1,19 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmFindPathCommand.h,v $
-  Language:  C++
-  Date:      $Date: 2008-06-13 12:55:17 $
-  Version:   $Revision: 1.18.2.1 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even 
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR 
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #ifndef cmFindPathCommand_h
 #define cmFindPathCommand_h
 
@@ -64,10 +59,10 @@ public:
     return "Find the directory containing a file.";
     }
 
-  virtual const char* GetFullDocumentation();
   cmTypeMacro(cmFindPathCommand, cmFindBase);
   bool IncludeFileInPath;
-  bool ExtraDocAdded;
+protected:
+  virtual void GenerateDocumentation();
 private:
   std::string FindHeaderInFramework(std::string const& file,
                                     std::string const& dir);

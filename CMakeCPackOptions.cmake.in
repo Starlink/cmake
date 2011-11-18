@@ -3,8 +3,10 @@
 # in this file.  
 
 if(CPACK_GENERATOR MATCHES "NSIS")
+  SET(CPACK_NSIS_INSTALL_ROOT "@CPACK_NSIS_INSTALL_ROOT@")
+
   # set the install/unistall icon used for the installer itself
-  # There is a bug in NSI that does not handle full unix paths properly. 
+  # There is a bug in NSI that does not handle full unix paths properly.
   SET(CPACK_NSIS_MUI_ICON "@CMake_SOURCE_DIR@/Utilities/Release\\CMakeLogo.ico")
   SET(CPACK_NSIS_MUI_UNIICON "@CMake_SOURCE_DIR@/Utilities/Release\\CMakeLogo.ico")
   # set the package header icon for MUI
@@ -18,21 +20,20 @@ if(CPACK_GENERATOR MATCHES "NSIS")
     "doc/cmake-@CMake_VERSION_MAJOR@.@CMake_VERSION_MINOR@/ctest.html" "CTest Help"
     "doc/cmake-@CMake_VERSION_MAJOR@.@CMake_VERSION_MINOR@/cmake-modules.html" "CMake Modules Help"
     "doc/cmake-@CMake_VERSION_MAJOR@.@CMake_VERSION_MINOR@/cmake-commands.html" "CMake Commands Help"
-    "doc/cmake-@CMake_VERSION_MAJOR@.@CMake_VERSION_MINOR@/CMakeSetup.html" "CMakeSetup Help"
     "doc/cmake-@CMake_VERSION_MAJOR@.@CMake_VERSION_MINOR@/cpack.html" "CPack Help"
     "http://www.cmake.org" "CMake Web Site"
     )
-  # tell cpack the executables you want in the start menu as links
-  SET(CPACK_PACKAGE_EXECUTABLES "CMakeSetup" "CMakeSetup(deprecated)" )
-  # tell cpack to create a desktop link to CMakeSetup
-  SET(CPACK_CREATE_DESKTOP_LINKS "CMakeSetup")
-  SET(CPACK_NSIS_INSTALLED_ICON_NAME "bin\\CMakeSetup.exe")
-  SET(CPACK_NSIS_DISPLAY_NAME "CMake @CMake_VERSION_MAJOR@.@CMake_VERSION_MINOR@ a cross-platform, open-source build system")
-  SET(CPACK_NSIS_HELP_LINK "http:\\\\www.cmake.org")
-  SET(CPACK_NSIS_URL_INFO_ABOUT "http:\\\\www.kitware.com")
+  # Use the icon from cmake-gui for add-remove programs
+  SET(CPACK_NSIS_INSTALLED_ICON_NAME "bin\\cmake-gui.exe")
+
+  SET(CPACK_NSIS_PACKAGE_NAME "@CPACK_NSIS_PACKAGE_NAME@")
+  SET(CPACK_NSIS_DISPLAY_NAME "@CPACK_NSIS_PACKAGE_NAME@, a cross-platform, open-source build system")
+  SET(CPACK_NSIS_HELP_LINK "http://www.cmake.org")
+  SET(CPACK_NSIS_URL_INFO_ABOUT "http://www.kitware.com")
   SET(CPACK_NSIS_CONTACT @CPACK_PACKAGE_CONTACT@)
   SET(CPACK_NSIS_MODIFY_PATH ON)
 endif(CPACK_GENERATOR MATCHES "NSIS")
+
 # include the cpack options for qt dialog if they exisit
 # they might not if qt was not enabled for the build
 INCLUDE("@QT_DIALOG_CPACK_OPTIONS_FILE@" OPTIONAL)

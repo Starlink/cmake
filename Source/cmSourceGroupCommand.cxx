@@ -1,51 +1,15 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmSourceGroupCommand.cxx,v $
-  Language:  C++
-  Date:      $Date: 2008-01-23 15:27:59 $
-  Version:   $Revision: 1.20 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even 
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR 
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #include "cmSourceGroupCommand.h"
-
-inline std::vector<std::string> tokenize(const std::string& str,
-                                         const std::string& sep)
-{
-  std::vector<std::string> tokens;
-  std::string::size_type tokend = 0;
-
-  do
-    {
-    std::string::size_type tokstart=str.find_first_not_of(sep, tokend);
-    if (tokstart==std::string::npos) 
-      {
-      break;    // no more tokens
-      }
-    tokend=str.find_first_of(sep,tokstart);
-    if (tokend==std::string::npos)
-      {
-      tokens.push_back(str.substr(tokstart));
-      }
-    else
-      {
-      tokens.push_back(str.substr(tokstart,tokend-tokstart));
-      }
-    } while (tokend!=std::string::npos);
-
-  if (tokens.empty())
-    {
-    tokens.push_back("");
-    }
-  return tokens;
-}
 
 // cmSourceGroupCommand
 bool cmSourceGroupCommand
@@ -63,7 +27,8 @@ bool cmSourceGroupCommand
     delimiter = this->Makefile->GetDefinition("SOURCE_GROUP_DELIMITER");
     }
 
-  std::vector<std::string> folders = tokenize(args[0], delimiter);
+  std::vector<std::string> folders =
+    cmSystemTools::tokenize(args[0], delimiter);
  
   cmSourceGroup* sg = 0;
   sg = this->Makefile->GetSourceGroup(folders);

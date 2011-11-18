@@ -1,19 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmOutputRequiredFilesCommand.h,v $
-  Language:  C++
-  Date:      $Date: 2008-01-23 15:27:59 $
-  Version:   $Revision: 1.12 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even 
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR 
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #ifndef cmOutputRequiredFilesCommand_h
 #define cmOutputRequiredFilesCommand_h
 
@@ -52,8 +47,7 @@ public:
    */
   virtual const char* GetTerseDocumentation() 
     {
-    return 
-      "Output a list of required source files for a specified source file.";
+    return "Deprecated.  Approximate C preprocessor dependency scanning.";
     }
   
   /**
@@ -62,12 +56,22 @@ public:
   virtual const char* GetFullDocumentation()
     {
     return
+      "This command exists only because ancient CMake versions provided it.  "
+      "CMake handles preprocessor dependency scanning automatically using a "
+      "more advanced scanner.\n"
       "  output_required_files(srcfile outputfile)\n"
       "Outputs a list of all the source files that are required by the "
       "specified srcfile. This list is written into outputfile. This is "
       "similar to writing out the dependencies for srcfile except that it "
       "jumps from .h files into .cxx, .c and .cpp files if possible.";
     }
+
+  /** This command is kept for compatibility with older CMake versions. */
+  virtual bool IsDiscouraged()
+    {
+    return true;
+    }
+
   
   cmTypeMacro(cmOutputRequiredFilesCommand, cmCommand);
   void ListDependencies(cmDependInformation const *info,

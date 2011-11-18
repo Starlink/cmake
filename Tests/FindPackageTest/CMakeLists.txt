@@ -1,6 +1,15 @@
 cmake_minimum_required (VERSION 2.6)
 PROJECT(FindPackageTest)
 
+LIST(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR})
+
+# Look for a package which uses FindPackageHandleStandardArgs.cmake with the
+# new (as of cmake 2.8.3) syntax. This works only if CMP0017 is set to NEW,
+# because otherwise FindPackageHandleStandardArgs.cmake from the current
+# directory is included (via CMAKE_MODULE_PATH).
+CMAKE_POLICY(SET CMP0017 NEW)
+FIND_PACKAGE(ZLIB QUIET)
+
 # Look for a package that has a find module and may be found.
 FIND_PACKAGE(OpenGL QUIET)
 
@@ -23,11 +32,42 @@ IF(NOT FOO_DIR)
   CMAKE_PREFIX_PATH = ${CMAKE_PREFIX_PATH}")
 ENDIF(NOT FOO_DIR)
 
-LIST(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR})
 FIND_PACKAGE(VersionTestA 1)
 FIND_PACKAGE(VersionTestB 1.2)
 FIND_PACKAGE(VersionTestC 1.2.3)
 FIND_PACKAGE(VersionTestD 1.2.3.4)
+
+#-----------------------------------------------------------------------------
+# Test system package registry if possible.
+SET(CMakeTestSystemPackage "")
+IF(WIN32 AND NOT CYGWIN)
+  # Try writing a value to the system package registry.
+  SET(_data "${FindPackageTest_SOURCE_DIR}/SystemPackage")
+  SET(_key "HKLM\\Software\\Kitware\\CMake\\Packages\\CMakeTestSystemPackage")
+  SET(_file "${FindPackageTest_BINARY_DIR}/CMakeTestSystemPackage.data")
+  FILE(WRITE ${_file} "${_data}\n")
+  EXECUTE_PROCESS(
+    COMMAND ${CMAKE_COMMAND} -E md5sum ${_file}
+    OUTPUT_VARIABLE _output ERROR_VARIABLE _error RESULT_VARIABLE _failed
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+  STRING(REGEX REPLACE " .*" "" _value "${_output}")
+  IF(NOT _failed AND _value)
+    EXECUTE_PROCESS(
+      COMMAND reg add "${_key}" /v "${_value}" /t REG_SZ /d "${_data}" /f
+      OUTPUT_VARIABLE _output ERROR_VARIABLE _output RESULT_VARIABLE _failed
+      )
+  ENDIF()
+  # If the above worked, add the rest of the test and a rule to
+  # cleanup the value.
+  IF(NOT _failed)
+    MESSAGE(STATUS "HKLM is writable: enabling CMakeTestSystemPackage")
+    SET(CMakeTestSystemPackage_CLEANUP reg delete "${_key}" /v "${_value}" /f)
+    SET(CMakeTestSystemPackage CMakeTestSystemPackage)
+  ELSE()
+    MESSAGE(STATUS "HKLM is readonly: disabling CMakeTestSystemPackage")
+  ENDIF()
+ENDIF()
 
 #-----------------------------------------------------------------------------
 
@@ -37,8 +77,12 @@ FIND_PACKAGE(VersionTestD 1.2.3.4)
 SET(PACKAGES
   foo Foo Bar TFramework Tframework TApp Tapp Special
   VersionedA VersionedB VersionedC VersionedD VersionedE
+  WrongA WrongB WrongC WrongD
   wibbleA wibbleB
   RecursiveA RecursiveB RecursiveC
+  ArchA ArchB ArchC ArchD
+  EnvA EnvB
+  ${CMakeTestSystemPackage}
   )
 FOREACH(p ${PACKAGES})
   SET(${p}_DIR "" CACHE FILEPATH "Wipe out find results for testing." FORCE)
@@ -51,6 +95,10 @@ SET(CMAKE_FIND_APPBUNDLE FIRST)
 
 # Set the wrong answer for a find to make sure it re-finds.
 set(VersionedA_DIR ${CMAKE_CURRENT_SOURCE_DIR}/lib/cmake/zot-4.0)
+
+# Test that CMAKE_IGNORE_PATH can ignore the purposely bad package
+# files in the lib/cmake/zot-3.1 directory.
+set(CMAKE_IGNORE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/lib/cmake/zot-3.1)
 
 # Look for packages with new-style signatures.
 FIND_PACKAGE(foo NO_MODULE)
@@ -67,15 +115,55 @@ FIND_PACKAGE(VersionedC 4.0 EXACT NAMES zot)
 FIND_PACKAGE(VersionedD 1.1 EXACT NAMES Baz)
 FIND_PACKAGE(VersionedE 1.2 EXACT NAMES Baz)
 
+# Test wrong initial path when result is present.
+SET(WrongA_DIR "${VersionedD_DIR}")
+FIND_PACKAGE(WrongA 1.2 EXACT NAMES Baz)
+
+# Test wrong initial cache entry of UNINITIALIZED type when result is present.
+SET(WrongB_DIR "${VersionedD_DIR}" CACHE UNINITIALIZED "Wrong Value" FORCE)
+GET_PROPERTY(type CACHE WrongB_DIR PROPERTY TYPE)
+FIND_PACKAGE(WrongB 1.2 EXACT NAMES Baz)
+
+# Test wrong initial path when result is missing.
+SET(WrongC_DIR "${VersionedD_DIR}")
+FIND_PACKAGE(WrongC 1.3 EXACT QUIET NAMES Baz)
+
+# Test wrong initial cache entry of UNINITIALIZED type when result is missing.
+SET(WrongD_DIR "${VersionedD_DIR}" CACHE UNINITIALIZED "Wrong Value" FORCE)
+GET_PROPERTY(type CACHE WrongD_DIR PROPERTY TYPE)
+FIND_PACKAGE(WrongD 1.3 EXACT QUIET NAMES Baz)
+
 # HINTS should override the system but PATHS should not
 LIST(INSERT CMAKE_SYSTEM_PREFIX_PATH 0 "${CMAKE_CURRENT_SOURCE_DIR}/A")
 FIND_PACKAGE(wibbleA NAMES wibble PATHS B)
 FIND_PACKAGE(wibbleB NAMES wibble HINTS B)
 
 # Look for package with recursive find-modules.
-FIND_PACKAGE(RecursiveA)
+FIND_PACKAGE(RecursiveA COMPONENTS A)
 FIND_PACKAGE(RecursiveB 2)
 FIND_PACKAGE(RecursiveC 3.1 EXACT)
+
+# Test architecture-specific search directories.
+SET(CMAKE_LIBRARY_ARCHITECTURE arch)
+FIND_PACKAGE(ArchA NAMES Bar)
+FIND_PACKAGE(ArchB NAMES Foo CONFIGS FooConfig.cmake)
+FIND_PACKAGE(ArchC 3.1 EXACT NAMES zot)
+FIND_PACKAGE(ArchD 4.0 EXACT NAMES zot)
+UNSET(CMAKE_LIBRARY_ARCHITECTURE)
+
+# Test <Package>_DIR environment variable.
+# We erase the main prefix path to ensure the env var is used.
+SET(CMAKE_PREFIX_PATH)
+SET(ENV{EnvA_DIR} "${CMAKE_CURRENT_SOURCE_DIR}/lib/zot-3.1")
+FIND_PACKAGE(EnvA 3.1 EXACT QUIET NAMES zot) # Should Work
+FIND_PACKAGE(EnvB 3.1 EXACT QUIET NAMES zot) # Should Fail
+
+# Test system package registry if available.
+IF(CMakeTestSystemPackage)
+  FIND_PACKAGE(CMakeTestSystemPackage)
+  EXECUTE_PROCESS(COMMAND ${CMakeTestSystemPackage_CLEANUP}
+    OUTPUT_VARIABLE _output ERROR_VARIABLE _error)
+ENDIF()
 
 # Expected locations at which packages should be found.
 SET(foo_EXPECTED "lib/foo-1.2/foo-config.cmake")
@@ -95,15 +183,33 @@ SET(VersionedB_EXPECTED "lib/zot-3.1/zot-config.cmake")
 SET(VersionedC_EXPECTED "lib/cmake/zot-4.0/zot-config.cmake")
 SET(VersionedD_EXPECTED "Baz 1.1/BazConfig.cmake")
 SET(VersionedE_EXPECTED "Baz 1.2/CMake/BazConfig.cmake")
+SET(WrongA_EXPECTED "${VersionedE_EXPECTED}")
+SET(WrongB_EXPECTED "${VersionedE_EXPECTED}")
+SET(WrongC_MISSING "WrongC_DIR-NOTFOUND")
+SET(WrongD_MISSING "WrongD_DIR-NOTFOUND")
 SET(wibbleA_EXPECTED "A/wibble-config.cmake")
 SET(wibbleB_EXPECTED "B/wibble-config.cmake")
 SET(RecursiveA_EXPECTED "lib/RecursiveA/recursivea-config.cmake")
 SET(RecursiveB_EXPECTED "lib/zot-2.0/zot-config.cmake")
 SET(RecursiveC_EXPECTED "lib/zot-3.1/zot-config.cmake")
+SET(ArchA_EXPECTED "lib/arch/Bar/BarConfig.cmake")
+SET(ArchB_EXPECTED "lib/arch/foo-1.2/CMake/FooConfig.cmake")
+SET(ArchC_EXPECTED "lib/arch/zot-3.1/zot-config.cmake")
+SET(ArchD_EXPECTED "lib/arch/cmake/zot-4.0/zot-config.cmake")
+SET(EnvA_EXPECTED "lib/zot-3.1/zot-config.cmake")
+SET(EnvB_MISSING "EnvB_DIR-NOTFOUND")
+SET(CMakeTestSystemPackage_EXPECTED "SystemPackage/CMakeTestSystemPackageConfig.cmake")
 
 # Check the results.
 FOREACH(p ${PACKAGES})
-  IF(${p}_FOUND)
+  IF(DEFINED ${p}_MISSING)
+    # Check and report failure.
+    IF(NOT "${${p}_DIR}" STREQUAL "${${p}_MISSING}")
+      MESSAGE(SEND_ERROR
+        "Package ${p} should have been [${${p}_MISSING}] but "
+        "was [${${p}_DIR}]")
+    ENDIF()
+  ELSEIF(${p}_FOUND)
     # Convert to relative path for comparison to expected location.
     FILE(RELATIVE_PATH REL_${p}_CONFIG "${CMAKE_CURRENT_SOURCE_DIR}"
       "${${p}_CONFIG}")
@@ -119,9 +225,9 @@ FOREACH(p ${PACKAGES})
         "Package ${p} should have been [${${p}_EXPECTED}] but "
         "was [${REL_${p}_CONFIG}]")
     ENDIF(NOT "${REL_${p}_CONFIG}" STREQUAL "${${p}_EXPECTED}")
-  ELSE(${p}_FOUND)
+  ELSE()
     MESSAGE(SEND_ERROR "Package ${p} not found!")
-  ENDIF(${p}_FOUND)
+  ENDIF()
 ENDFOREACH(p)
 
 # Check that version information was extracted.
@@ -180,3 +286,17 @@ ENDIF()
 IF(NOT "1.2" VERSION_EQUAL "1.2.0.0")
   MESSAGE(SEND_ERROR "1.2 VERSION_EQUAL 1.2.0.0 is not true!")
 ENDIF()
+
+#-----------------------------------------------------------------------------
+# Test export(PACKAGE) with find_package.
+MESSAGE(STATUS "Preparing export(PACKAGE) test project")
+TRY_COMPILE(EXPORTER_COMPILED
+  ${FindPackageTest_BINARY_DIR}/Exporter
+  ${FindPackageTest_SOURCE_DIR}/Exporter
+  CMakeTestExportPackage dummy
+  OUTPUT_VARIABLE output)
+MESSAGE(STATUS "Searching for export(PACKAGE) test project")
+SET(CMakeTestExportPackage_DIR "" CACHE FILEPATH
+  "Wipe out find results for testing." FORCE)
+STRING(REGEX REPLACE "-.*$" "" version ${CMAKE_VERSION})
+FIND_PACKAGE(CMakeTestExportPackage 1.${version} EXACT REQUIRED)

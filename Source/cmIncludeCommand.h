@@ -1,26 +1,21 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmIncludeCommand.h,v $
-  Language:  C++
-  Date:      $Date: 2009-02-04 16:44:17 $
-  Version:   $Revision: 1.17.2.1 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even 
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR 
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #ifndef cmIncludeCommand_h
 #define cmIncludeCommand_h
 
 #include "cmCommand.h"
 
 /** \class cmIncludeCommand
- * \brief 
+ * \brief
  *
  *  cmIncludeCommand defines a list of distant
  *  files that can be "included" in the current list file.
@@ -33,7 +28,7 @@ public:
   /**
    * This is a virtual constructor for the command.
    */
-  virtual cmCommand* Clone() 
+  virtual cmCommand* Clone()
     {
     return new cmIncludeCommand;
     }
@@ -54,15 +49,15 @@ public:
    * The name of the command as specified in CMakeList.txt.
    */
   virtual const char* GetName() {return "include";}
-  
+
   /**
    * Succinct documentation.
    */
-  virtual const char* GetTerseDocumentation() 
+  virtual const char* GetTerseDocumentation()
     {
     return "Read CMake listfile code from the given file.";
     }
-  
+
   /**
    * More documentation.
    */
@@ -78,13 +73,17 @@ public:
       "the variable will be set to the full filename which "
       "has been included or NOTFOUND if it failed.\n"
       "If a module is specified instead of a file, the file with name "
-      "<modulename>.cmake is searched in the CMAKE_MODULE_PATH."
+      "<modulename>.cmake is searched first in CMAKE_MODULE_PATH, then in the "
+      "CMake module directory. There is one exception to this: if the file "
+      "which calls include() is located itself in the CMake module directory, "
+      "then first the CMake module directory is searched and "
+      "CMAKE_MODULE_PATH afterwards. See also policy CMP0017."
       "\n"
       "See the cmake_policy() command documentation for discussion of the "
       "NO_POLICY_SCOPE option."
       ;
     }
-  
+
   cmTypeMacro(cmIncludeCommand, cmCommand);
 };
 

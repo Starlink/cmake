@@ -1,19 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc.
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmCPackNSISGenerator.h,v $
-  Language:  C++
-  Date:      $Date: 2008-10-24 15:18:55 $
-  Version:   $Revision: 1.11.2.3 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc. All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 
 #ifndef cmCPackNSISGenerator_h
 #define cmCPackNSISGenerator_h
@@ -42,8 +37,7 @@ protected:
   virtual int InitializeInternal();
   void CreateMenuLinks( cmOStringStream& str,
                         cmOStringStream& deleteStr);
-  int CompressFiles(const char* outFileName, const char* toplevel,
-    const std::vector<std::string>& files);
+  int PackageFiles();
   virtual const char* GetOutputExtension() { return ".exe"; }
   virtual const char* GetOutputPostfix() { return "win32"; }
 

@@ -25,6 +25,19 @@
 #
 # Created by Eric Wing.
 
+#=============================================================================
+# Copyright 2007-2009 Kitware, Inc.
+#
+# Distributed under the OSI-approved BSD License (the "License");
+# see accompanying file Copyright.txt for details.
+#
+# This software is distributed WITHOUT ANY WARRANTY; without even the
+# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the License for more information.
+#=============================================================================
+# (To distribute this file outside of CMake, substitute the full
+#  License text for the above reference.)
+
 # Header files are presumed to be included like
 # #include <osg/PositionAttitudeTransform>
 # #include <osgIntrospection/Reflection>
@@ -33,6 +46,6 @@ include(Findosg_functions)
 OSG_FIND_PATH   (OSGINTROSPECTION osgIntrospection/Reflection)
 OSG_FIND_LIBRARY(OSGINTROSPECTION osgIntrospection)
 
-include(FindPackageHandleStandardArgs)
+include(${CMAKE_CURRENT_LIST_DIR}/FindPackageHandleStandardArgs.cmake)
 FIND_PACKAGE_HANDLE_STANDARD_ARGS(osgIntrospection DEFAULT_MSG
     OSGINTROSPECTION_LIBRARY OSGINTROSPECTION_INCLUDE_DIR)

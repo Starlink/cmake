@@ -8,7 +8,19 @@
 #  COIN3D_INCLUDE_DIRS  - where the Inventor include directory can be found
 #  COIN3D_LIBRARIES     - Link to this to use Coin3D
 #
- 
+
+#=============================================================================
+# Copyright 2008-2009 Kitware, Inc.
+#
+# Distributed under the OSI-approved BSD License (the "License");
+# see accompanying file Copyright.txt for details.
+#
+# This software is distributed WITHOUT ANY WARRANTY; without even the
+# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the License for more information.
+#=============================================================================
+# (To distribute this file outside of CMake, substitute the full
+#  License text for the above reference.)
 
 IF (WIN32)
   IF (CYGWIN)
@@ -64,7 +76,7 @@ ENDIF (WIN32)
 
 # handle the QUIETLY and REQUIRED arguments and set COIN3D_FOUND to TRUE if 
 # all listed variables are TRUE
-INCLUDE(FindPackageHandleStandardArgs)
+INCLUDE(${CMAKE_CURRENT_LIST_DIR}/FindPackageHandleStandardArgs.cmake)
 FIND_PACKAGE_HANDLE_STANDARD_ARGS(Coin3D DEFAULT_MSG COIN3D_LIBRARIES COIN3D_INCLUDE_DIRS)
 
 MARK_AS_ADVANCED(COIN3D_INCLUDE_DIRS COIN3D_LIBRARIES )

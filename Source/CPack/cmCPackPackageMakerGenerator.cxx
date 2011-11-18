@@ -1,19 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmCPackPackageMakerGenerator.cxx,v $
-  Language:  C++
-  Date:      $Date: 2008-10-24 15:18:55 $
-  Version:   $Revision: 1.23.2.4 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #include "cmCPackPackageMakerGenerator.h"
 
 #include "cmake.h"
@@ -64,12 +59,10 @@ int cmCPackPackageMakerGenerator::CopyInstallScript(const char* resdir,
 }
 
 //----------------------------------------------------------------------
-int cmCPackPackageMakerGenerator::CompressFiles(const char* outFileName,
-  const char* toplevel,
-  const std::vector<std::string>& files)
+int cmCPackPackageMakerGenerator::PackageFiles()
 {
-  (void) files; // TODO: Fix api to not need files.
-  (void) toplevel; // TODO: Use toplevel
+  // TODO: Use toplevel
+  //       It is used! Is this an obsolete comment?
 
   std::string resDir; // Where this package's resources will go.
   std::string packageDirFileName
@@ -323,11 +316,22 @@ int cmCPackPackageMakerGenerator::CompressFiles(const char* outFileName,
   cmOStringStream dmgCmd;
   dmgCmd << "\"" << this->GetOption("CPACK_INSTALLER_PROGRAM_DISK_IMAGE")
     << "\" create -ov -format UDZO -srcfolder \"" << packageDirFileName
-    << "\" \"" << outFileName << "\"";
+    << "\" \"" << packageFileNames[0] << "\"";
   std::string output;
   int retVal = 1;
-  bool res = cmSystemTools::RunSingleCommand(dmgCmd.str().c_str(), &output,
-    &retVal, 0, this->GeneratorVerbose, 0);
+  int numTries = 4;
+  bool res = false;
+  while(numTries > 0)
+    {
+    res = cmSystemTools::RunSingleCommand(dmgCmd.str().c_str(), &output,
+                                          &retVal, 0, this->GeneratorVerbose, 
+                                          0);
+    if(res && retVal)
+      {
+      numTries = -1;
+      }
+    numTries--;
+    }
   if ( !res || retVal )
     {
     cmGeneratedFileStream ofs(tmpFile.c_str());

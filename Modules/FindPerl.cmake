@@ -4,6 +4,19 @@
 #  PERL_EXECUTABLE - the full path to perl
 #  PERL_FOUND      - If false, don't attempt to use perl.
 
+#=============================================================================
+# Copyright 2001-2009 Kitware, Inc.
+#
+# Distributed under the OSI-approved BSD License (the "License");
+# see accompanying file Copyright.txt for details.
+#
+# This software is distributed WITHOUT ANY WARRANTY; without even the
+# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the License for more information.
+#=============================================================================
+# (To distribute this file outside of CMake, substitute the full
+#  License text for the above reference.)
+
 INCLUDE(FindCygwin)
 
 SET(PERL_POSSIBLE_BIN_PATHS
@@ -31,7 +44,7 @@ SET(PERL ${PERL_EXECUTABLE})
 
 # handle the QUIETLY and REQUIRED arguments and set PERL_FOUND to TRUE if 
 # all listed variables are TRUE
-INCLUDE(FindPackageHandleStandardArgs)
+INCLUDE(${CMAKE_CURRENT_LIST_DIR}/FindPackageHandleStandardArgs.cmake)
 FIND_PACKAGE_HANDLE_STANDARD_ARGS(Perl DEFAULT_MSG PERL_EXECUTABLE)
 
 MARK_AS_ADVANCED(PERL_EXECUTABLE)

@@ -1,19 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmPolicies.h,v $
-  Language:  C++
-  Date:      $Date: 2009-02-04 16:44:17 $
-  Version:   $Revision: 1.10.2.8 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #ifndef cmPolicies_h
 #define cmPolicies_h
 
@@ -52,6 +47,12 @@ public:
     CMP0009, // GLOB_RECURSE should not follow symlinks by default
     CMP0010, // Bad variable reference syntax is an error
     CMP0011, // Strong policy scope for include and find_package
+    CMP0012, // Recognize numbers and boolean constants in if()
+    CMP0013, // Duplicate binary directories not allowed
+    CMP0014, // Input directories must have CMakeLists.txt
+    CMP0015, // link_directories() treats paths relative to source dir
+    CMP0016, // target_link_libraries() fails if only argument is not a target
+    CMP0017, // Prefer files in CMAKE_ROOT when including from CMAKE_ROOT
 
     // Always the last entry.  Useful mostly to avoid adding a comma
     // the last policy when adding a new one.
@@ -61,10 +62,10 @@ public:
   ///! convert a string policy ID into a number
   bool GetPolicyID(const char *id, /* out */ cmPolicies::PolicyID &pid);
   std::string GetPolicyIDString(cmPolicies::PolicyID pid);
-  
+
   ///! Get the default status for a policy
   cmPolicies::PolicyStatus GetPolicyStatus(cmPolicies::PolicyID id);
-  
+
   ///! Define a Policy for CMake
   void DefinePolicy(cmPolicies::PolicyID id,
                     const char *stringID,
@@ -73,6 +74,7 @@ public:
                     unsigned int majorVersionIntroduced,
                     unsigned int minorVersionIntroduced,
                     unsigned int patchVersionIntroduced,
+                    unsigned int tweakVersionIntroduced,
                     cmPolicies::PolicyStatus status);
 
   ///! Set a policy level for this listfile
@@ -80,7 +82,7 @@ public:
 
   ///! return a warning string for a given policy
   std::string GetPolicyWarning(cmPolicies::PolicyID id);
-  
+
   ///! return an error string for when a required policy is unspecified
   std::string GetRequiredPolicyError(cmPolicies::PolicyID id);
 
@@ -101,6 +103,10 @@ public:
   void DiagnoseAncientPolicies(std::vector<PolicyID> const& ancient,
                                unsigned int majorVer, unsigned int minorVer,
                                unsigned int patchVer, cmMakefile* mf);
+
+  bool GetPolicyDefault(cmMakefile* mf, std::string const& policy,
+                        cmPolicies::PolicyStatus* defaultStatus);
+
 };
 
 #endif

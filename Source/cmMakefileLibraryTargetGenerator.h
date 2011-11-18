@@ -1,19 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmMakefileLibraryTargetGenerator.h,v $
-  Language:  C++
-  Date:      $Date: 2008-09-03 13:43:18 $
-  Version:   $Revision: 1.6.2.3 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #ifndef cmMakefileLibraryTargetGenerator_h
 #define cmMakefileLibraryTargetGenerator_h
 
@@ -38,6 +33,7 @@ protected:
   // MacOSX Framework support methods
   void WriteFrameworkRules(bool relink);
   void CreateFramework(std::string const& targetName);
+  void CreateCFBundle(std::string& targetName, std::string& outpath);
 
   // Store the computd framework version for OS X Frameworks.
   std::string FrameworkVersion;

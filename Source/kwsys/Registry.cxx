@@ -1,16 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  KWSys - Kitware System Library
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   KWSys - Kitware System Library
-  Module:    $RCSfile: Registry.cxx,v $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.kitware.com/Copyright.htm for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #include "kwsysPrivate.h"
 #include KWSYS_HEADER(Registry.hxx)
 
@@ -403,8 +401,9 @@ bool RegistryHelper::Open(const char *toplevel, const char *subkey,
       }
     else
       {
+      char lpClass[] = "";
       res = ( RegCreateKeyEx(scope, str.str().c_str(),
-          0, "", REG_OPTION_NON_VOLATILE, KEY_READ|KEY_WRITE,
+          0, lpClass, REG_OPTION_NON_VOLATILE, KEY_READ|KEY_WRITE,
           NULL, &this->HKey, &dwDummy) == ERROR_SUCCESS );
       }
     if ( res != 0 )

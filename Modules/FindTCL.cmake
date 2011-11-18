@@ -31,6 +31,19 @@
 #      this point it is safer you ask directly where the *source* tree is
 #      and dig from there.
 
+#=============================================================================
+# Copyright 2001-2009 Kitware, Inc.
+#
+# Distributed under the OSI-approved BSD License (the "License");
+# see accompanying file Copyright.txt for details.
+#
+# This software is distributed WITHOUT ANY WARRANTY; without even the
+# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the License for more information.
+#=============================================================================
+# (To distribute this file outside of CMake, substitute the full
+#  License text for the above reference.)
+
 INCLUDE(CMakeFindFrameworks)
 INCLUDE(FindTclsh)
 INCLUDE(FindWish)
@@ -91,7 +104,7 @@ ENDIF(WIN32)
 FIND_LIBRARY(TCL_LIBRARY
   NAMES 
   tcl   
-  tcl${TK_LIBRARY_VERSION} tcl${TCL_TCLSH_VERSION} tcl${TK_WISH_VERSION}
+  tcl${TCL_LIBRARY_VERSION} tcl${TCL_TCLSH_VERSION} tcl${TK_WISH_VERSION}
   tcl86 tcl8.6 
   tcl85 tcl8.5 
   tcl84 tcl8.4 
@@ -104,7 +117,7 @@ FIND_LIBRARY(TCL_LIBRARY
 FIND_LIBRARY(TK_LIBRARY 
   NAMES 
   tk
-  tk${TCL_LIBRARY_VERSION} tk${TCL_TCLSH_VERSION} tk${TK_WISH_VERSION}
+  tk${TK_LIBRARY_VERSION} tk${TCL_TCLSH_VERSION} tk${TK_WISH_VERSION}
   tk86 tk8.6
   tk85 tk8.5 
   tk84 tk8.4 
@@ -184,7 +197,7 @@ FIND_PATH(TK_INCLUDE_PATH
 
 # handle the QUIETLY and REQUIRED arguments and set TCL_FOUND to TRUE if 
 # all listed variables are TRUE
-INCLUDE(FindPackageHandleStandardArgs)
+INCLUDE(${CMAKE_CURRENT_LIST_DIR}/FindPackageHandleStandardArgs.cmake)
 
 FIND_PACKAGE_HANDLE_STANDARD_ARGS(TCL DEFAULT_MSG TCL_LIBRARY TCL_INCLUDE_PATH)
 SET(TCLTK_FIND_REQUIRED ${TCL_FIND_REQUIRED})

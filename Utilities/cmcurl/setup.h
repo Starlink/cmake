@@ -20,7 +20,7 @@
  * This software is distributed on an "AS IS" basis, WITHOUT WARRANTY OF ANY
  * KIND, either express or implied.
  *
- * $Id: setup.h,v 1.2 2007-03-15 19:22:13 andy Exp $
+ * $Id$
  ***************************************************************************/
 
 #ifdef HTTP_ONLY
@@ -40,6 +40,10 @@
 #if !defined(WIN32) && defined(_WIN32)
 /* VS2005 on x64 fix */
 #define WIN32
+#endif
+
+#if defined(__clang__)
+# pragma clang diagnostic ignored "-Wcast-align"
 #endif
 
 /*
@@ -151,7 +155,7 @@ typedef unsigned char bool;
 #define SIZEOF_CURL_OFF_T 4
 #endif
 
-/* We set up our internal prefered (CURL_)FORMAT_OFF_T here */
+/* We set up our internal preferred (CURL_)FORMAT_OFF_T here */
 #if SIZEOF_CURL_OFF_T > 4
 #define FORMAT_OFF_T "lld"
 #else
@@ -263,6 +267,10 @@ typedef unsigned char bool;
 #endif
 
 #else /* MSDOS */
+
+#ifdef __VMS
+#define IOCTL_3_ARGS 1
+#endif
 
 #ifdef __BEOS__
 #define sclose(x) closesocket(x)

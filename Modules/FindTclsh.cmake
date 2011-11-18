@@ -7,9 +7,22 @@
 # In cygwin, look for the cygwin version first.  Don't look for it later to
 # avoid finding the cygwin version on a Win32 build.
 
-IF(WIN32 AND UNIX)
+#=============================================================================
+# Copyright 2001-2009 Kitware, Inc.
+#
+# Distributed under the OSI-approved BSD License (the "License");
+# see accompanying file Copyright.txt for details.
+#
+# This software is distributed WITHOUT ANY WARRANTY; without even the
+# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the License for more information.
+#=============================================================================
+# (To distribute this file outside of CMake, substitute the full
+#  License text for the above reference.)
+
+IF(CYGWIN)
   FIND_PROGRAM(TCL_TCLSH NAMES cygtclsh83 cygtclsh80)
-ENDIF(WIN32 AND UNIX)
+ENDIF(CYGWIN)
 
 GET_FILENAME_COMPONENT(TK_WISH_PATH "${TK_WISH}" PATH)
 GET_FILENAME_COMPONENT(TK_WISH_PATH_PARENT "${TK_WISH_PATH}" PATH)
@@ -71,7 +84,7 @@ FIND_PROGRAM(TCL_TCLSH
 
 # handle the QUIETLY and REQUIRED arguments and set TIFF_FOUND to TRUE if 
 # all listed variables are TRUE
-INCLUDE(FindPackageHandleStandardArgs)
+INCLUDE(${CMAKE_CURRENT_LIST_DIR}/FindPackageHandleStandardArgs.cmake)
 FIND_PACKAGE_HANDLE_STANDARD_ARGS(Tclsh DEFAULT_MSG TCL_TCLSH)
 
 MARK_AS_ADVANCED(TCL_TCLSH)

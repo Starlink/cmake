@@ -1,19 +1,14 @@
-/*=========================================================================
+/*============================================================================
+  CMake - Cross Platform Makefile Generator
+  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
 
-  Program:   CMake - Cross-Platform Makefile Generator
-  Module:    $RCSfile: cmGlobalVisualStudio8Win64Generator.cxx,v $
-  Language:  C++
-  Date:      $Date: 2007-10-22 16:48:39 $
-  Version:   $Revision: 1.5 $
+  Distributed under the OSI-approved BSD License (the "License");
+  see accompanying file Copyright.txt for details.
 
-  Copyright (c) 2002 Kitware, Inc., Insight Consortium.  All rights reserved.
-  See Copyright.txt or http://www.cmake.org/HTML/Copyright.html for details.
-
-     This software is distributed WITHOUT ANY WARRANTY; without even 
-     the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR 
-     PURPOSE.  See the above copyright notices for more information.
-
-=========================================================================*/
+  This software is distributed WITHOUT ANY WARRANTY; without even the
+  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+  See the License for more information.
+============================================================================*/
 #include "windows.h" // this must be first to define GetCurrentDirectory
 #include "cmGlobalVisualStudio8Win64Generator.h"
 #include "cmLocalVisualStudio7Generator.h"
@@ -24,7 +19,7 @@
 
 cmGlobalVisualStudio8Win64Generator::cmGlobalVisualStudio8Win64Generator()
 {
-  this->PlatformName = "x64";
+  this->ArchitectureId = "x64";
 }
 
 ///! Create a local generator appropriate to this Global Generator
@@ -32,7 +27,7 @@ cmLocalGenerator *cmGlobalVisualStudio8Win64Generator::CreateLocalGenerator()
 {
   cmLocalVisualStudio7Generator *lg = new cmLocalVisualStudio7Generator;
   lg->SetVersion8();
-  lg->SetPlatformName(this->PlatformName.c_str());
+  lg->SetPlatformName(this->GetPlatformName());
   lg->SetExtraFlagTable(this->GetExtraFlagTableVS8());
   lg->SetGlobalGenerator(this);
   return lg;
@@ -47,10 +42,10 @@ void cmGlobalVisualStudio8Win64Generator
   entry.Full = "";
 }
 
+//----------------------------------------------------------------------------
 void cmGlobalVisualStudio8Win64Generator
-::EnableLanguage(std::vector<std::string>const &  lang, 
-                 cmMakefile *mf, bool optional)
+::AddPlatformDefinitions(cmMakefile* mf)
 {
+  this->cmGlobalVisualStudio8Generator::AddPlatformDefinitions(mf);
   mf->AddDefinition("CMAKE_FORCE_WIN64", "TRUE");
-  cmGlobalVisualStudio8Generator::EnableLanguage(lang, mf, optional);
 }
