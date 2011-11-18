@@ -66,3 +66,17 @@ Utilities/cmtar/listhash/libtar_list.c
 Utilities/cmxmlrpc/xmlrpc_amconfig.h
 Utilities/cmxmlrpc/xmlrpc_config.h
 Utilities/cmzlib/zlibDllConfig.h
+Source/cmVersionConfig.h
+Source/kwsys/cmsysTestProcess
+Source/kwsys/cmsysTestSharedForward
+Source/kwsys/cmsysTestsC
+Source/kwsys/cmsysTestsCxx
+Source/kwsys/testSharedForward.c
+Tests/CMakeLib/CMakeLibTests
+Tests/CMakeLib/CMakeLibTests.cxx
+Tests/CMakeLib/runcompilecommands
+Tests/CMakeLib/testXMLParser.h
+Utilities/cmcurl/LIBCURL
+Utilities/cmlibarchive/config.h
+cmake.tmp/
+
