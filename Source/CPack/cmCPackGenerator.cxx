@@ -33,7 +33,7 @@
 //----------------------------------------------------------------------
 cmCPackGenerator::cmCPackGenerator()
 {
-  this->GeneratorVerbose = false;
+  this->GeneratorVerbose = cmSystemTools::OUTPUT_NONE;
   this->MakefileMap = 0;
   this->Logger = 0;
   this->componentPackageMethod = ONE_PACKAGE_PER_GROUP;
@@ -691,6 +691,11 @@ int cmCPackGenerator::InstallProjectViaInstallCMakeProjects(
           //  one install directory for each component.
           tempInstallDirectory +=
             GetComponentInstallDirNameSuffix(installComponent);
+          if (this->IsOn("CPACK_COMPONENT_INCLUDE_TOPLEVEL_DIRECTORY"))
+            {
+            tempInstallDirectory += "/";
+            tempInstallDirectory += this->GetOption("CPACK_PACKAGE_FILE_NAME");
+            }
           }
 
         if (!setDestDir)
@@ -1000,6 +1005,7 @@ int cmCPackGenerator::DoPackage()
   std::string findExpr = tempDirectory;
   findExpr += "/*";
   gl.RecurseOn();
+  gl.SetRecurseThroughSymlinks(false);
   if ( !gl.FindFiles(findExpr) )
     {
     cmCPackLogger(cmCPackLog::LOG_ERROR,
@@ -1428,6 +1434,12 @@ std::string cmCPackGenerator::GetComponentPackageFileName(
 bool cmCPackGenerator::SupportsComponentInstallation() const
 {
   return false;
+}
+
+//----------------------------------------------------------------------
+bool cmCPackGenerator::WantsComponentInstallation() const
+{
+  return (!IsOn("CPACK_MONOLITHIC_INSTALL") & SupportsComponentInstallation());
 }
 
 //----------------------------------------------------------------------

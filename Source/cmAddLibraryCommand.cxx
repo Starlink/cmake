@@ -31,13 +31,14 @@ bool cmAddLibraryCommand
     }
   bool excludeFromAll = false;
   bool importTarget = false;
-  
+  bool importGlobal = false;
+
   std::vector<std::string>::const_iterator s = args.begin();
 
   std::string libName = *s;
 
   ++s;
-  
+
   // If the second argument is "SHARED" or "STATIC", then it controls
   // the type of library.  Otherwise, it is treated as a source or
   // source list name. There may be two keyword arguments, check for them
@@ -63,6 +64,12 @@ bool cmAddLibraryCommand
       type = cmTarget::MODULE_LIBRARY;
       haveSpecifiedType = true;
       }
+    else if(libType == "OBJECT")
+      {
+      ++s;
+      type = cmTarget::OBJECT_LIBRARY;
+      haveSpecifiedType = true;
+      }
     else if(libType == "UNKNOWN")
       {
       ++s;
@@ -79,17 +86,22 @@ bool cmAddLibraryCommand
       ++s;
       importTarget = true;
       }
+    else if(importTarget && *s == "GLOBAL")
+      {
+      ++s;
+      importGlobal = true;
+      }
     else
       {
       break;
       }
     }
 
-  /* ideally we should check whether for the linker language of the target 
+  /* ideally we should check whether for the linker language of the target
     CMAKE_${LANG}_CREATE_SHARED_LIBRARY is defined and if not default to
-    STATIC. But at this point we know only the name of the target, but not 
+    STATIC. But at this point we know only the name of the target, but not
     yet its linker language. */
-  if ((type != cmTarget::STATIC_LIBRARY) && 
+  if ((type != cmTarget::STATIC_LIBRARY) &&
        (this->Makefile->GetCMakeInstance()->GetPropertyAsBool(
                                       "TARGET_SUPPORTS_SHARED_LIBS") == false))
     {
@@ -103,16 +115,24 @@ bool cmAddLibraryCommand
     type = cmTarget::STATIC_LIBRARY;
     }
 
-  // The IMPORTED signature requires a type to be specified explicitly.
-  if(importTarget && !haveSpecifiedType)
-    {
-    this->SetError("called with IMPORTED argument but no library type.");
-    return false;
-    }
-
   // Handle imported target creation.
   if(importTarget)
     {
+    // The IMPORTED signature requires a type to be specified explicitly.
+    if (!haveSpecifiedType)
+      {
+      this->SetError("called with IMPORTED argument but no library type.");
+      return false;
+      }
+    if(type == cmTarget::OBJECT_LIBRARY)
+      {
+      this->Makefile->IssueMessage(
+        cmake::FATAL_ERROR,
+        "The OBJECT library type may not be used for IMPORTED libraries."
+        );
+      return true;
+      }
+
     // Make sure the target does not already exist.
     if(this->Makefile->FindTargetToUse(libName.c_str()))
       {
@@ -124,7 +144,7 @@ bool cmAddLibraryCommand
       }
 
     // Create the imported target.
-    this->Makefile->AddImportedTarget(libName.c_str(), type);
+    this->Makefile->AddImportedTarget(libName.c_str(), type, importGlobal);
     return true;
     }
 
@@ -158,15 +178,14 @@ bool cmAddLibraryCommand
     }
 
   std::vector<std::string> srclists;
-  while (s != args.end()) 
+  while (s != args.end())
     {
-    srclists.push_back(*s);  
+    srclists.push_back(*s);
     ++s;
     }
 
-  this->Makefile->AddLibrary(libName.c_str(), type, srclists,
-                             excludeFromAll);
-  
+  this->Makefile->AddLibrary(libName.c_str(), type, srclists, excludeFromAll);
+
   return true;
 }
 

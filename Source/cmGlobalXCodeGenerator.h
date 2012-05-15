@@ -74,11 +74,8 @@ public:
                                         std::string& dir);
 
   ///! What is the configurations directory variable called?
-  virtual const char* GetCMakeCFGInitDirectory();
+  virtual const char* GetCMakeCFGIntDir() const;
 
-  void GetTargetObjectFileDirectories(cmTarget* target,
-                                      std::vector<std::string>& 
-                                      dirs);
   void SetCurrentLocalGenerator(cmLocalGenerator*);
 
   /** Return true if the generated build tree may contain multiple builds.
@@ -123,6 +120,8 @@ private:
                                 );
   
   cmXCodeObject* FindXCodeTarget(cmTarget*);
+  std::string GetOrCreateId(const char* name, const char* id);
+
   // create cmXCodeObject from these functions so that memory can be managed
   // correctly.  All objects created are stored in this->XCodeObjects.
   cmXCodeObject* CreateObject(cmXCodeObject::PBXType ptype);
@@ -154,6 +153,12 @@ private:
                           std::vector<cmLocalGenerator*>& generators);
   void WriteXCodePBXProj(std::ostream& fout, cmLocalGenerator* root,
                          std::vector<cmLocalGenerator*>& generators);
+  cmXCodeObject* CreateXCodeFileReferenceFromPath(const std::string &fullpath,
+                                                  cmTarget& cmtarget,
+                                                  const std::string &lang);
+  cmXCodeObject* CreateXCodeSourceFileFromPath(const std::string &fullpath,
+                                               cmTarget& cmtarget,
+                                               const std::string &lang);
   cmXCodeObject* CreateXCodeFileReference(cmSourceFile* sf,
                                           cmTarget& cmtarget);
   cmXCodeObject* CreateXCodeSourceFile(cmLocalGenerator* gen, 
@@ -192,14 +197,23 @@ private:
   void AppendFlag(std::string& flags, std::string const& flag);
 
 protected:
-  virtual const char* GetInstallTargetName()      { return "install"; }
-  virtual const char* GetPackageTargetName()      { return "package"; }
+  virtual const char* GetInstallTargetName() const { return "install"; }
+  virtual const char* GetPackageTargetName() const { return "package"; }
 
   unsigned int XcodeVersion;
   std::string VersionString;
+  std::set<cmStdString> XCodeObjectIDs;
   std::vector<cmXCodeObject*> XCodeObjects;
   cmXCodeObject* RootObject;
 private:
+  void ComputeTargetObjects(cmGeneratorTarget* gt) const;
+
+  std::string GetObjectsNormalDirectory(
+    const std::string &projName,
+    const std::string &configName,
+    const cmTarget *t) const;
+
+  void addObject(cmXCodeObject *obj);
   std::string PostBuildMakeTarget(std::string const& tName,
                                   std::string const& configName);
   cmXCodeObject* MainGroupChildren;

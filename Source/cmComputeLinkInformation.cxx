@@ -161,7 +161,9 @@ listed on the command line.
   - On Windows, DLLs are not directly linked, and the import libraries
     have no transitive dependencies.
 
-  - On Mac, we need to actually list the transitive dependencies.
+  - On Mac OS X 10.5 and above transitive dependencies are not needed.
+
+  - On Mac OS X 10.4 and below we need to actually list the dependencies.
     Otherwise when using -isysroot for universal binaries it cannot
     find the dependent libraries.  Listing them on the command line
     tells the linker where to find them, but unfortunately also links
@@ -245,6 +247,10 @@ cmComputeLinkInformation
   this->LocalGenerator = this->Makefile->GetLocalGenerator();
   this->GlobalGenerator = this->LocalGenerator->GetGlobalGenerator();
   this->CMakeInstance = this->GlobalGenerator->GetCMakeInstance();
+
+  // Check whether to recognize OpenBSD-style library versioned names.
+  this->OpenBSD = this->Makefile->GetCMakeInstance()
+    ->GetPropertyAsBool("FIND_LIBRARY_USE_OPENBSD_VERSIONING");
 
   // The configuration being linked.
   this->Config = config;
@@ -971,7 +977,15 @@ cmComputeLinkInformation
     }
 
   // Finish the list.
-  libext += ")$";
+  libext += ")";
+
+  // Add an optional OpenBSD version component.
+  if(this->OpenBSD)
+    {
+    libext += "(\\.[0-9]+\\.[0-9]+)?";
+    }
+
+  libext += "$";
   return libext;
 }
 
@@ -1318,8 +1332,9 @@ void cmComputeLinkInformation::AddFrameworkItem(std::string const& item)
   this->AddFrameworkPath(this->SplitFramework.match(1));
 
   // Add the item using the -framework option.
-  std::string fw = "-framework ";
-  fw += this->SplitFramework.match(2);
+  this->Items.push_back(Item("-framework", false));
+  std::string fw = this->SplitFramework.match(2);
+  fw = this->LocalGenerator->EscapeForShell(fw.c_str());
   this->Items.push_back(Item(fw, false));
 }
 
@@ -1603,6 +1618,18 @@ void cmComputeLinkInformation::LoadImplicitLinkInfo()
     cmSystemTools::ExpandListArgument(implicitLinks, implicitDirVec);
     }
 
+  // Append library architecture to all implicit platform directories
+  // and add them to the set
+  if(const char* libraryArch =
+     this->Makefile->GetDefinition("CMAKE_LIBRARY_ARCHITECTURE"))
+    {
+    for (std::vector<std::string>::const_iterator i = implicitDirVec.begin();
+         i != implicitDirVec.end(); ++i)
+      {
+      this->ImplicitLinkDirs.insert(*i + "/" + libraryArch);
+      }
+    }
+
   // Get language-specific implicit directories.
   std::string implicitDirVar = "CMAKE_";
   implicitDirVar += this->LinkLanguage;
@@ -1745,6 +1772,7 @@ void cmComputeLinkInformation::GetRPath(std::vector<std::string>& runtimeDirs,
      !linking_for_install);
   bool use_link_rpath =
     outputRuntime && linking_for_install &&
+    !this->Makefile->IsOn("CMAKE_SKIP_INSTALL_RPATH") &&
     this->Target->GetPropertyAsBool("INSTALL_RPATH_USE_LINK_PATH");
 
   // Construct the RPATH.

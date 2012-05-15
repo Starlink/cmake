@@ -57,7 +57,7 @@ static const char* cmCTestErrorMatches[] = {
   "^ild:([ \\t])*\\(undefined symbol\\)",
   "([^ :]+) : (error|fatal error|catastrophic error)",
   "([^:]+): (Error:|error|undefined reference|multiply defined)",
-  "([^:]+)\\(([^\\)]+)\\) : (error|fatal error|catastrophic error)",
+  "([^:]+)\\(([^\\)]+)\\) ?: (error|fatal error|catastrophic error)",
   "^fatal error C[0-9]+:",
   ": syntax error ",
   "^collect2: ld returned 1 exit status",
@@ -94,6 +94,7 @@ static const char* cmCTestErrorMatches[] = {
   ": Invalid argument",
   "^The project cannot be built\\.",
   "^\\[ERROR\\]",
+  "^Command .* failed with exit code",
   0
 };
 

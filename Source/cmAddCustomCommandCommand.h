@@ -44,12 +44,12 @@ public:
   /**
    * The name of the command as specified in CMakeList.txt.
    */
-  virtual const char* GetName() {return "add_custom_command";}
+  virtual const char* GetName() const {return "add_custom_command";}
   
   /**
    * Succinct documentation.
    */
-  virtual const char* GetTerseDocumentation() 
+  virtual const char* GetTerseDocumentation() const
     {
     return "Add a custom build rule to the generated build system.";
     }
@@ -57,7 +57,7 @@ public:
   /**
    * More documentation.
    */
-  virtual const char* GetFullDocumentation()
+  virtual const char* GetFullDocumentation() const
     {
     return
       "There are two main signatures for add_custom_command "
@@ -75,6 +75,10 @@ public:
       "A target created in the same directory (CMakeLists.txt file) that "
       "specifies any output of the custom command as a source file is given "
       "a rule to generate the file using the command at build time.  "
+      "Do not list the output in more than one independent target that may "
+      "build in parallel or the two instances of the rule may conflict "
+      "(instead use add_custom_target to drive the command and make the "
+      "other targets depend on that one).  "
       "If an output name is a relative path it will be interpreted "
       "relative to the build tree directory corresponding to the current "
       "source directory. "

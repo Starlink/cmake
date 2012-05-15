@@ -15,9 +15,9 @@
 #include "cmCommand.h"
 
 /** \class cmCMakeMinimumRequired
- * \brief Build a CMAKE variable
+ * \brief cmake_minimum_required command
  *
- * cmCMakeMinimumRequired sets a variable to a value with expansion.  
+ * cmCMakeMinimumRequired implements the cmake_minimum_required CMake command
  */
 class cmCMakeMinimumRequired : public cmCommand
 {
@@ -40,17 +40,17 @@ public:
   /**
    * This determines if the command is invoked when in script mode.
    */
-  virtual bool IsScriptable() { return true; }
+  virtual bool IsScriptable() const { return true; }
 
   /**
    * The name of the command as specified in CMakeList.txt.
    */
-  virtual const char* GetName() {return "cmake_minimum_required";}
+  virtual const char* GetName() const {return "cmake_minimum_required";}
   
   /**
    * Succinct documentation.
    */
-  virtual const char* GetTerseDocumentation() 
+  virtual const char* GetTerseDocumentation() const
     {
     return "Set the minimum required version of cmake for a project.";
     }
@@ -58,7 +58,7 @@ public:
   /**
    * More documentation.
    */
-  virtual const char* GetFullDocumentation()
+  virtual const char* GetFullDocumentation() const
     {
     return
       "  cmake_minimum_required(VERSION major[.minor[.patch[.tweak]]]\n"

@@ -35,7 +35,7 @@ class cmLocalVisualStudio7Generator : public cmLocalVisualStudioGenerator
 {
 public:
   ///! Set cache only and recurse to false by default.
-  cmLocalVisualStudio7Generator();
+  cmLocalVisualStudio7Generator(VSVersion v);
 
   virtual ~cmLocalVisualStudio7Generator();
 
@@ -53,28 +53,20 @@ public:
    */
   void SetBuildType(BuildType,const char *name);
 
-  void SetVersion71() {this->Version = 71;}
-  void SetVersion8() {this->Version = 8;}
-  void SetVersion9() {this->Version = 9;}
   void SetPlatformName(const char* n) { this->PlatformName = n;}
-  virtual void ConfigureFinalPass();
-  void GetTargetObjectFileDirectories(cmTarget* target,
-                                      std::vector<std::string>& 
-                                      dirs); 
 
   void SetExtraFlagTable(cmVS7FlagTable const* table)
     { this->ExtraFlagTable = table; }
   virtual std::string GetTargetDirectory(cmTarget const&) const;
   cmSourceFile* CreateVCProjBuildRule();
   void WriteStampFiles();
-  // Compute the maximum length full path to the intermediate
-  // files directory for any configuration.  This is used to construct
-  // object file names that do not produce paths that are too long.
-  void ComputeMaxDirectoryLength(std::string& maxdir,
-                                 cmTarget& target);
+  virtual std::string ComputeLongestObjectDirectory(cmTarget&) const;
 
   virtual void ReadAndStoreExternalGUID(const char* name,
                                         const char* path);
+  virtual void AddCMakeListsRules();
+protected:
+  void CreateSingleVCProj(const char *lname, cmTarget &tgt);
 private:
   typedef cmVisualStudioGeneratorOptions Options;
   typedef cmLocalVisualStudio7GeneratorFCInfo FCInfo;
@@ -84,8 +76,7 @@ private:
   void WriteProjectFiles();
   void WriteVCProjHeader(std::ostream& fout, const char *libName,
                          cmTarget &tgt, std::vector<cmSourceGroup> &sgs);
-  void WriteVCProjFooter(std::ostream& fout);
-  void CreateSingleVCProj(const char *lname, cmTarget &tgt);
+  void WriteVCProjFooter(std::ostream& fout, cmTarget &target);
   void WriteVCProjFile(std::ostream& fout, const char *libName, 
                        cmTarget &tgt);
   void WriteConfigurations(std::ostream& fout,
@@ -130,7 +121,6 @@ private:
 
   cmVS7FlagTable const* ExtraFlagTable;
   std::string ModuleDefinitionFile;
-  int Version;
   bool FortranProject;
   std::string PlatformName; // Win32 or x64 
   cmLocalVisualStudio7GeneratorInternals* Internal;

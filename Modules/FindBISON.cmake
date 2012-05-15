@@ -67,8 +67,18 @@ IF(BISON_EXECUTABLE)
   IF(NOT ${BISON_version_result} EQUAL 0)
     MESSAGE(SEND_ERROR "Command \"${BISON_EXECUTABLE} --version\" failed with output:\n${BISON_version_error}")
   ELSE()
-    STRING(REGEX REPLACE "^bison \\(GNU Bison\\) ([^\n]+)\n.*" "\\1"
-      BISON_VERSION "${BISON_version_output}")
+    # Bison++
+    IF("${BISON_version_output}" MATCHES "^bison\\+\\+")
+      STRING(REGEX REPLACE "^bison\\+\\+ Version ([^,]+).*" "\\1"
+        BISON_VERSION "${BISON_version_output}")
+    # GNU Bison
+    ELSEIF("${BISON_version_output}" MATCHES "^bison[^+]")
+      STRING(REGEX REPLACE "^bison \\(GNU Bison\\) ([^\n]+)\n.*" "\\1"
+        BISON_VERSION "${BISON_version_output}")
+    ELSEIF("${BISON_version_output}" MATCHES "^GNU Bison ")
+      STRING(REGEX REPLACE "^GNU Bison (version )?([^\n]+).*" "\\2"
+        BISON_VERSION "${BISON_version_output}")
+    ENDIF()
   ENDIF()
 
   # internal macro

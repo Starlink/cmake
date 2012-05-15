@@ -214,6 +214,12 @@ ENDMACRO(CMAKE_SET_TARGET_FOLDER)
 #-----------------------------------------------------------------------
 MACRO (CMAKE_BUILD_UTILITIES)
   #---------------------------------------------------------------------
+  # Create the KWIML library for CMake.
+  SET(KWIML cmIML)
+  SET(KWIML_HEADER_ROOT ${CMake_BINARY_DIR}/Utilities)
+  ADD_SUBDIRECTORY(Utilities/KWIML)
+
+  #---------------------------------------------------------------------
   # Create the kwsys library for CMake.
   SET(KWSYS_NAMESPACE cmsys)
   SET(KWSYS_USE_SystemTools 1)
@@ -231,11 +237,13 @@ MACRO (CMAKE_BUILD_UTILITIES)
   CMAKE_SET_TARGET_FOLDER(${KWSYS_NAMESPACE}_c "${kwsys_folder}")
   CMAKE_SET_TARGET_FOLDER(${KWSYS_NAMESPACE}EncodeExecutable "${kwsys_folder}")
   CMAKE_SET_TARGET_FOLDER(${KWSYS_NAMESPACE}ProcessFwd9x "${kwsys_folder}")
-  CMAKE_SET_TARGET_FOLDER(${KWSYS_NAMESPACE}TestDynload "${kwsys_folder}")
-  CMAKE_SET_TARGET_FOLDER(${KWSYS_NAMESPACE}TestProcess "${kwsys_folder}")
-  CMAKE_SET_TARGET_FOLDER(${KWSYS_NAMESPACE}TestsC "${kwsys_folder}")
-  CMAKE_SET_TARGET_FOLDER(${KWSYS_NAMESPACE}TestsCxx "${kwsys_folder}")
-  CMAKE_SET_TARGET_FOLDER(${KWSYS_NAMESPACE}TestSharedForward "${kwsys_folder}")
+  if(BUILD_TESTING)
+    CMAKE_SET_TARGET_FOLDER(${KWSYS_NAMESPACE}TestDynload "${kwsys_folder}")
+    CMAKE_SET_TARGET_FOLDER(${KWSYS_NAMESPACE}TestProcess "${kwsys_folder}")
+    CMAKE_SET_TARGET_FOLDER(${KWSYS_NAMESPACE}TestsC "${kwsys_folder}")
+    CMAKE_SET_TARGET_FOLDER(${KWSYS_NAMESPACE}TestsCxx "${kwsys_folder}")
+    CMAKE_SET_TARGET_FOLDER(${KWSYS_NAMESPACE}TestSharedForward "${kwsys_folder}")
+  endif()
 
   #---------------------------------------------------------------------
   # Setup third-party libraries.
@@ -262,7 +270,7 @@ MACRO (CMAKE_BUILD_UTILITIES)
     SET(CMAKE_ZLIB_INCLUDES ${ZLIB_INCLUDE_DIR})
     SET(CMAKE_ZLIB_LIBRARIES ${ZLIB_LIBRARIES})
   ELSE(CMAKE_USE_SYSTEM_ZLIB)
-    SET(CMAKE_ZLIB_INCLUDES)
+    SET(CMAKE_ZLIB_INCLUDES ${CMake_SOURCE_DIR}/Utilities)
     SET(CMAKE_ZLIB_LIBRARIES cmzlib)
     ADD_SUBDIRECTORY(Utilities/cmzlib)
     CMAKE_SET_TARGET_FOLDER(cmzlib "Utilities/3rdParty")
@@ -328,13 +336,14 @@ MACRO (CMAKE_BUILD_UTILITIES)
     SET(CMAKE_TAR_INCLUDES ${LibArchive_INCLUDE_DIRS})
     SET(CMAKE_TAR_LIBRARIES ${LibArchive_LIBRARIES})
   ELSE(CMAKE_USE_SYSTEM_LIBARCHIVE)
-    SET(HAVE_LIBZ 1)
-    SET(HAVE_ZLIB_H 1)
     SET(ZLIB_INCLUDE_DIR ${CMAKE_ZLIB_INCLUDES})
-    SET(ZLIB_LIBRARIES ${CMAKE_ZLIB_LIBRARIES})
     SET(ZLIB_LIBRARY ${CMAKE_ZLIB_LIBRARIES})
-    SET(BUILD_ARCHIVE_WITHIN_CMAKE TRUE)
     ADD_DEFINITIONS(-DLIBARCHIVE_STATIC)
+    SET(ENABLE_NETTLE OFF CACHE INTERNAL "Enable use of Nettle")
+    SET(ENABLE_OPENSSL ${CMAKE_USE_OPENSSL} CACHE INTERNAL "Enable use of OpenSSL")
+    SET(ENABLE_XATTR OFF CACHE INTERNAL "Enable extended attribute support")
+    SET(ENABLE_ACL OFF CACHE INTERNAL "Enable ACL support")
+    SET(ENABLE_ICONV OFF CACHE INTERNAL "Enable iconv support")
     ADD_SUBDIRECTORY(Utilities/cmlibarchive)
     CMAKE_SET_TARGET_FOLDER(cmlibarchive "Utilities/3rdParty")
     SET(CMAKE_TAR_LIBRARIES cmlibarchive ${BZIP2_LIBRARIES})
@@ -416,9 +425,9 @@ ENDIF()
 # The CMake version number.
 SET(CMake_VERSION_MAJOR 2)
 SET(CMake_VERSION_MINOR 8)
-SET(CMake_VERSION_PATCH 5)
+SET(CMake_VERSION_PATCH 8)
 SET(CMake_VERSION_TWEAK 0)
-#SET(CMake_VERSION_RC 3)
+#SET(CMake_VERSION_RC 2)
 
 # Releases define a tweak level.
 IF(DEFINED CMake_VERSION_TWEAK)
@@ -598,7 +607,9 @@ ADD_SUBDIRECTORY(Source)
 ADD_SUBDIRECTORY(Utilities)
 ADD_SUBDIRECTORY(Tests)
 
-CMAKE_SET_TARGET_FOLDER(CMakeLibTests "Tests")
+if(BUILD_TESTING)
+  CMAKE_SET_TARGET_FOLDER(CMakeLibTests "Tests")
+endif()
 CMAKE_SET_TARGET_FOLDER(cmw9xcom "Utilities/Win9xCompat")
 CMAKE_SET_TARGET_FOLDER(documentation "Documentation")
 
@@ -620,7 +631,6 @@ INSTALL(
   PATTERN "*.sh*" PERMISSIONS OWNER_READ OWNER_EXECUTE OWNER_WRITE
                               GROUP_READ GROUP_EXECUTE
                               WORLD_READ WORLD_EXECUTE
-  PATTERN "CVS" EXCLUDE
   )
 
 #-----------------------------------------------------------------------

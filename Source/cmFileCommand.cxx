@@ -12,7 +12,9 @@
 #include "cmFileCommand.h"
 #include "cmake.h"
 #include "cmHexFileConverter.h"
+#include "cmInstallType.h"
 #include "cmFileTimeComparison.h"
+#include "cmCryptoHash.h"
 
 #if defined(CMAKE_BUILD_WITH_CMAKE)
 #include "cm_curl.h"
@@ -22,6 +24,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 
+#include <cmsys/auto_ptr.hxx>
 #include <cmsys/Directory.hxx>
 #include <cmsys/Glob.hxx>
 #include <cmsys/RegularExpression.hxx>
@@ -82,6 +85,15 @@ bool cmFileCommand
   else if ( subCommand == "READ" )
     {
     return this->HandleReadCommand(args);
+    }
+  else if ( subCommand == "MD5" ||
+            subCommand == "SHA1" ||
+            subCommand == "SHA224" ||
+            subCommand == "SHA256" ||
+            subCommand == "SHA384" ||
+            subCommand == "SHA512" )
+    {
+    return this->HandleHashCommand(args);
     }
   else if ( subCommand == "STRINGS" )
     {
@@ -336,6 +348,41 @@ bool cmFileCommand::HandleReadCommand(std::vector<std::string> const& args)
     }
   this->Makefile->AddDefinition(variable.c_str(), output.c_str());
   return true;
+}
+
+//----------------------------------------------------------------------------
+bool cmFileCommand::HandleHashCommand(std::vector<std::string> const& args)
+{
+#if defined(CMAKE_BUILD_WITH_CMAKE)
+  if(args.size() != 3)
+    {
+    cmOStringStream e;
+    e << args[0] << " requires a file name and output variable";
+    this->SetError(e.str().c_str());
+    return false;
+    }
+
+  cmsys::auto_ptr<cmCryptoHash> hash(cmCryptoHash::New(args[0].c_str()));
+  if(hash.get())
+    {
+    std::string out = hash->HashFile(args[1].c_str());
+    if(!out.empty())
+      {
+      this->Makefile->AddDefinition(args[2].c_str(), out.c_str());
+      return true;
+      }
+    cmOStringStream e;
+    e << args[0] << " failed to read file \"" << args[1] << "\": "
+      << cmSystemTools::GetLastSystemError();
+    this->SetError(e.str().c_str());
+    }
+  return false;
+#else
+  cmOStringStream e;
+  e << args[0] << " not available during bootstrap";
+  this->SetError(e.str().c_str());
+  return false;
+#endif
 }
 
 //----------------------------------------------------------------------------
@@ -1644,7 +1691,7 @@ struct cmFileInstaller: public cmFileCopier
 {
   cmFileInstaller(cmFileCommand* command):
     cmFileCopier(command, "INSTALL"),
-    InstallType(cmTarget::INSTALL_FILES),
+    InstallType(cmInstallType_FILES),
     Optional(false),
     DestDirLength(0)
     {
@@ -1665,7 +1712,7 @@ struct cmFileInstaller: public cmFileCopier
     }
 
 protected:
-  cmTarget::TargetType InstallType;
+  cmInstallType InstallType;
   bool Optional;
   int DestDirLength;
   std::string Rename;
@@ -1699,7 +1746,7 @@ protected:
   virtual bool Install(const char* fromFile, const char* toFile)
     {
     // Support installing from empty source to make a directory.
-    if(this->InstallType == cmTarget::INSTALL_DIRECTORY && !*fromFile)
+    if(this->InstallType == cmInstallType_DIRECTORY && !*fromFile)
       {
       return this->InstallDirectory(fromFile, toFile, MatchProperties());
       }
@@ -1721,14 +1768,14 @@ protected:
     // Add execute permissions based on the target type.
     switch(this->InstallType)
       {
-      case cmTarget::SHARED_LIBRARY:
-      case cmTarget::MODULE_LIBRARY:
+      case cmInstallType_SHARED_LIBRARY:
+      case cmInstallType_MODULE_LIBRARY:
         if(this->Makefile->IsOn("CMAKE_INSTALL_SO_NO_EXE"))
           {
           break;
           }
-      case cmTarget::EXECUTABLE:
-      case cmTarget::INSTALL_PROGRAMS:
+      case cmInstallType_EXECUTABLE:
+      case cmInstallType_PROGRAMS:
         this->FilePermissions |= mode_owner_execute;
         this->FilePermissions |= mode_group_execute;
         this->FilePermissions |= mode_world_execute;
@@ -1750,8 +1797,8 @@ bool cmFileInstaller::Parse(std::vector<std::string> const& args)
 
   if(!this->Rename.empty())
     {
-    if(this->InstallType != cmTarget::INSTALL_FILES &&
-       this->InstallType != cmTarget::INSTALL_PROGRAMS)
+    if(this->InstallType != cmInstallType_FILES &&
+       this->InstallType != cmInstallType_PROGRAMS)
       {
       this->FileCommand->SetError("INSTALL option RENAME may be used "
                                   "only with FILES or PROGRAMS.");
@@ -1890,31 +1937,31 @@ bool cmFileInstaller
 {
   if ( stype == "EXECUTABLE" )
     {
-    this->InstallType = cmTarget::EXECUTABLE;
+    this->InstallType = cmInstallType_EXECUTABLE;
     }
   else if ( stype == "FILE" )
     {
-    this->InstallType = cmTarget::INSTALL_FILES;
+    this->InstallType = cmInstallType_FILES;
     }
   else if ( stype == "PROGRAM" )
     {
-    this->InstallType = cmTarget::INSTALL_PROGRAMS;
+    this->InstallType = cmInstallType_PROGRAMS;
     }
   else if ( stype == "STATIC_LIBRARY" )
     {
-    this->InstallType = cmTarget::STATIC_LIBRARY;
+    this->InstallType = cmInstallType_STATIC_LIBRARY;
     }
   else if ( stype == "SHARED_LIBRARY" )
     {
-    this->InstallType = cmTarget::SHARED_LIBRARY;
+    this->InstallType = cmInstallType_SHARED_LIBRARY;
     }
   else if ( stype == "MODULE" )
     {
-    this->InstallType = cmTarget::MODULE_LIBRARY;
+    this->InstallType = cmInstallType_MODULE_LIBRARY;
     }
   else if ( stype == "DIRECTORY" )
     {
-    this->InstallType = cmTarget::INSTALL_DIRECTORY;
+    this->InstallType = cmInstallType_DIRECTORY;
     }
   else
     {
@@ -2753,6 +2800,10 @@ cmFileCommand::HandleDownloadCommand(std::vector<std::string> const& args)
   ::CURLcode res = ::curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
   check_curl_result(res, "DOWNLOAD cannot set url: ");
 
+  // enable HTTP ERROR parsing
+  res = ::curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1);
+  check_curl_result(res, "DOWNLOAD cannot set http failure option: ");
+
   res = ::curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
                            cmWriteToFileCallback);
   check_curl_result(res, "DOWNLOAD cannot set write function: ");
@@ -2982,6 +3033,7 @@ cmFileCommand::HandleUploadCommand(std::vector<std::string> const& args)
     std::string errStr = "UPLOAD cannot stat file '";
     errStr += filename + "'.";
     this->SetError(errStr.c_str());
+    fclose(fin);
     return false;
     }
 
@@ -2991,6 +3043,7 @@ cmFileCommand::HandleUploadCommand(std::vector<std::string> const& args)
   if(!curl)
     {
     this->SetError("UPLOAD error initializing curl.");
+    fclose(fin);
     return false;
     }
 

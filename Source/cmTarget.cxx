@@ -17,6 +17,7 @@
 #include "cmGlobalGenerator.h"
 #include "cmComputeLinkInformation.h"
 #include "cmDocumentCompileDefinitions.h"
+#include "cmDocumentLocationUndefined.h"
 #include "cmListFileCache.h"
 #include "cmGeneratorExpression.h"
 #include <cmsys/RegularExpression.hxx>
@@ -25,12 +26,31 @@
 #include <queue>
 #include <stdlib.h> // required for atof
 #include <assert.h>
-const char* cmTarget::TargetTypeNames[] = {
-  "EXECUTABLE", "STATIC_LIBRARY",
-  "SHARED_LIBRARY", "MODULE_LIBRARY", "UTILITY", "GLOBAL_TARGET",
-  "INSTALL_FILES", "INSTALL_PROGRAMS", "INSTALL_DIRECTORY",
-  "UNKNOWN_LIBRARY"
-};
+
+const char* cmTarget::GetTargetTypeName(TargetType targetType)
+{
+  switch( targetType )
+    {
+      case cmTarget::STATIC_LIBRARY:
+        return "STATIC_LIBRARY";
+      case cmTarget::MODULE_LIBRARY:
+        return "MODULE_LIBRARY";
+      case cmTarget::SHARED_LIBRARY:
+        return "SHARED_LIBRARY";
+      case cmTarget::OBJECT_LIBRARY:
+        return "OBJECT_LIBRARY";
+      case cmTarget::EXECUTABLE:
+        return "EXECUTABLE";
+      case cmTarget::UTILITY:
+        return "UTILITY";
+      case cmTarget::GLOBAL_TARGET:
+        return "GLOBAL_TARGET";
+      case cmTarget::UNKNOWN_LIBRARY:
+        return "UNKNOWN_LIBRARY";
+    }
+  assert(0 && "Unexpected target type");
+  return 0;
+}
 
 //----------------------------------------------------------------------------
 struct cmTarget::OutputInfo
@@ -108,12 +128,50 @@ cmTarget::cmTarget()
   this->LinkLibrariesAnalyzed = false;
   this->HaveInstallRule = false;
   this->DLLPlatform = false;
+  this->IsApple = false;
   this->IsImportedTarget = false;
 }
 
 //----------------------------------------------------------------------------
 void cmTarget::DefineProperties(cmake *cm)
 {
+  cm->DefineProperty
+    ("AUTOMOC", cmProperty::TARGET,
+     "Should the target be processed with automoc (for Qt projects).",
+     "AUTOMOC is a boolean specifying whether CMake will handle "
+     "the Qt moc preprocessor automatically, i.e. without having to use "
+     "the QT4_WRAP_CPP() macro. Currently Qt4 is supported. "
+     "When this property is set to TRUE, CMake will scan the source files "
+     "at build time and invoke moc accordingly. "
+     "If an #include statement like #include \"moc_foo.cpp\" is found, "
+     "the Q_OBJECT class declaration is expected in the header, and moc is "
+     "run on the header file. "
+     "If an #include statement like #include \"foo.moc\" is found, "
+     "then a Q_OBJECT is expected in the current source file and moc "
+     "is run on the file itself. "
+     "Additionally, all header files are parsed for Q_OBJECT macros, "
+     "and if found, moc is also executed on those files. The resulting "
+     "moc files, which are not included as shown above in any of the source "
+     "files are included in a generated <targetname>_automoc.cpp file, "
+     "which is compiled as part of the target."
+     "This property is initialized by the value of the variable "
+     "CMAKE_AUTOMOC if it is set when a target is created.\n"
+     "Additional command line options for moc can be set via the "
+     "AUTOMOC_MOC_OPTIONS property.\n"
+     "By setting the CMAKE_AUTOMOC_RELAXED_MODE variable to TRUE the rules "
+     "for searching the files which will be processed by moc can be relaxed. "
+     "See the documentation for this variable for more details.");
+
+  cm->DefineProperty
+    ("AUTOMOC_MOC_OPTIONS", cmProperty::TARGET,
+    "Additional options for moc when using automoc (see the AUTOMOC property)",
+     "This property is only used if the AUTOMOC property is set to TRUE for "
+     "this target. In this case, it holds additional command line options "
+     "which will be used when moc is executed during the build, i.e. it is "
+     "equivalent to the optional OPTIONS argument of the qt4_wrap_cpp() "
+     "macro.\n"
+     "By default it is empty.");
+
   cm->DefineProperty
     ("BUILD_WITH_INSTALL_RPATH", cmProperty::TARGET,
      "Should build tree targets have install tree rpaths.",
@@ -261,7 +319,8 @@ void cmTarget::DefineProperties(cmake *cm)
   cm->DefineProperty
     ("IMPORTED_CONFIGURATIONS", cmProperty::TARGET,
      "Configurations provided for an IMPORTED target.",
-     "Lists configuration names available for an IMPORTED target.  "
+     "Set this to the list of configuration names available for an "
+     "IMPORTED target.  "
      "The names correspond to configurations defined in the project from "
      "which the target is imported.  "
      "If the importing project uses a different set of configurations "
@@ -272,14 +331,12 @@ void cmTarget::DefineProperties(cmake *cm)
   cm->DefineProperty
     ("IMPORTED_IMPLIB", cmProperty::TARGET,
      "Full path to the import library for an IMPORTED target.",
-     "Specifies the location of the \".lib\" part of a windows DLL.  "
+     "Set this to the location of the \".lib\" part of a windows DLL.  "
      "Ignored for non-imported targets.");
 
   cm->DefineProperty
     ("IMPORTED_IMPLIB_<CONFIG>", cmProperty::TARGET,
-     "Per-configuration version of IMPORTED_IMPLIB property.",
-     "This property is used when loading settings for the <CONFIG> "
-     "configuration of an imported target.  "
+     "<CONFIG>-specific version of IMPORTED_IMPLIB property.",
      "Configuration names correspond to those provided by the project "
      "from which the target is imported.");
 
@@ -289,8 +346,10 @@ void cmTarget::DefineProperties(cmake *cm)
      "Shared libraries may be linked to other shared libraries as part "
      "of their implementation.  On some platforms the linker searches "
      "for the dependent libraries of shared libraries they are including "
-     "in the link.  This property lists "
-     "the dependent shared libraries of an imported library.  The list "
+     "in the link.  "
+     "Set this property to the list of dependent shared libraries of an "
+     "imported library.  "
+     "The list "
      "should be disjoint from the list of interface libraries in the "
      "IMPORTED_LINK_INTERFACE_LIBRARIES property.  On platforms requiring "
      "dependent shared libraries to be found at link time CMake uses this "
@@ -299,9 +358,7 @@ void cmTarget::DefineProperties(cmake *cm)
 
   cm->DefineProperty
     ("IMPORTED_LINK_DEPENDENT_LIBRARIES_<CONFIG>", cmProperty::TARGET,
-     "Per-configuration version of IMPORTED_LINK_DEPENDENT_LIBRARIES.",
-     "This property is used when loading settings for the <CONFIG> "
-     "configuration of an imported target.  "
+     "<CONFIG>-specific version of IMPORTED_LINK_DEPENDENT_LIBRARIES.",
      "Configuration names correspond to those provided by the project "
      "from which the target is imported.  "
      "If set, this property completely overrides the generic property "
@@ -310,8 +367,8 @@ void cmTarget::DefineProperties(cmake *cm)
   cm->DefineProperty
     ("IMPORTED_LINK_INTERFACE_LIBRARIES", cmProperty::TARGET,
      "Transitive link interface of an IMPORTED target.",
-     "Lists libraries whose interface is included when an IMPORTED library "
-     "target is linked to another target.  "
+     "Set this to the list of libraries whose interface is included when "
+     "an IMPORTED library target is linked to another target.  "
      "The libraries will be included on the link line for the target.  "
      "Unlike the LINK_INTERFACE_LIBRARIES property, this property applies "
      "to all imported target types, including STATIC libraries.  "
@@ -319,9 +376,7 @@ void cmTarget::DefineProperties(cmake *cm)
 
   cm->DefineProperty
     ("IMPORTED_LINK_INTERFACE_LIBRARIES_<CONFIG>", cmProperty::TARGET,
-     "Per-configuration version of IMPORTED_LINK_INTERFACE_LIBRARIES.",
-     "This property is used when loading settings for the <CONFIG> "
-     "configuration of an imported target.  "
+     "<CONFIG>-specific version of IMPORTED_LINK_INTERFACE_LIBRARIES.",
      "Configuration names correspond to those provided by the project "
      "from which the target is imported.  "
      "If set, this property completely overrides the generic property "
@@ -330,8 +385,8 @@ void cmTarget::DefineProperties(cmake *cm)
   cm->DefineProperty
     ("IMPORTED_LINK_INTERFACE_LANGUAGES", cmProperty::TARGET,
      "Languages compiled into an IMPORTED static library.",
-     "Lists languages of soure files compiled to produce a STATIC IMPORTED "
-     "library (such as \"C\" or \"CXX\").  "
+     "Set this to the list of languages of source files compiled to "
+     "produce a STATIC IMPORTED library (such as \"C\" or \"CXX\").  "
      "CMake accounts for these languages when computing how to link a "
      "target to the imported library.  "
      "For example, when a C executable links to an imported C++ static "
@@ -343,9 +398,7 @@ void cmTarget::DefineProperties(cmake *cm)
 
   cm->DefineProperty
     ("IMPORTED_LINK_INTERFACE_LANGUAGES_<CONFIG>", cmProperty::TARGET,
-     "Per-configuration version of IMPORTED_LINK_INTERFACE_LANGUAGES.",
-     "This property is used when loading settings for the <CONFIG> "
-     "configuration of an imported target.  "
+     "<CONFIG>-specific version of IMPORTED_LINK_INTERFACE_LANGUAGES.",
      "Configuration names correspond to those provided by the project "
      "from which the target is imported.  "
      "If set, this property completely overrides the generic property "
@@ -357,16 +410,14 @@ void cmTarget::DefineProperties(cmake *cm)
      "This is LINK_INTERFACE_MULTIPLICITY for IMPORTED targets.");
   cm->DefineProperty
     ("IMPORTED_LINK_INTERFACE_MULTIPLICITY_<CONFIG>", cmProperty::TARGET,
-     "Per-configuration repetition count for cycles of IMPORTED archives.",
-     "This is the configuration-specific version of "
-     "IMPORTED_LINK_INTERFACE_MULTIPLICITY.  "
+     "<CONFIG>-specific version of IMPORTED_LINK_INTERFACE_MULTIPLICITY.",
      "If set, this property completely overrides the generic property "
      "for the named configuration.");
 
   cm->DefineProperty
     ("IMPORTED_LOCATION", cmProperty::TARGET,
      "Full path to the main file on disk for an IMPORTED target.",
-     "Specifies the location of an IMPORTED target file on disk.  "
+     "Set this to the location of an IMPORTED target file on disk.  "
      "For executables this is the location of the executable file.  "
      "For bundles on OS X this is the location of the executable file "
      "inside Contents/MacOS under the application bundle folder.  "
@@ -378,28 +429,29 @@ void cmTarget::DefineProperties(cmake *cm)
      "symlink just inside the framework folder.  "
      "For DLLs this is the location of the \".dll\" part of the library.  "
      "For UNKNOWN libraries this is the location of the file to be linked.  "
-     "Ignored for non-imported targets.");
+     "Ignored for non-imported targets."
+     "\n"
+     "Projects may skip IMPORTED_LOCATION if the configuration-specific "
+     "property IMPORTED_LOCATION_<CONFIG> is set.  "
+     "To get the location of an imported target read one of the "
+     "LOCATION or LOCATION_<CONFIG> properties.");
 
   cm->DefineProperty
     ("IMPORTED_LOCATION_<CONFIG>", cmProperty::TARGET,
-     "Per-configuration version of IMPORTED_LOCATION property.",
-     "This property is used when loading settings for the <CONFIG> "
-     "configuration of an imported target.  "
+     "<CONFIG>-specific version of IMPORTED_LOCATION property.",
      "Configuration names correspond to those provided by the project "
      "from which the target is imported.");
 
   cm->DefineProperty
     ("IMPORTED_SONAME", cmProperty::TARGET,
      "The \"soname\" of an IMPORTED target of shared library type.",
-     "Specifies the \"soname\" embedded in an imported shared library.  "
+     "Set this to the \"soname\" embedded in an imported shared library.  "
      "This is meaningful only on platforms supporting the feature.  "
      "Ignored for non-imported targets.");
 
   cm->DefineProperty
     ("IMPORTED_SONAME_<CONFIG>", cmProperty::TARGET,
-     "Per-configuration version of IMPORTED_SONAME property.",
-     "This property is used when loading settings for the <CONFIG> "
-     "configuration of an imported target.  "
+     "<CONFIG>-specific version of IMPORTED_SONAME property.",
      "Configuration names correspond to those provided by the project "
      "from which the target is imported.");
 
@@ -415,9 +467,7 @@ void cmTarget::DefineProperties(cmake *cm)
 
   cm->DefineProperty
     ("IMPORTED_NO_SONAME_<CONFIG>", cmProperty::TARGET,
-     "Per-configuration version of IMPORTED_NO_SONAME property.",
-     "This property is used when loading settings for the <CONFIG> "
-     "configuration of an imported target.  "
+     "<CONFIG>-specific version of IMPORTED_NO_SONAME property.",
      "Configuration names correspond to those provided by the project "
      "from which the target is imported.");
 
@@ -430,6 +480,26 @@ void cmTarget::DefineProperties(cmake *cm)
      "The same concept applies to the default build of other generators. "
      "Installing a target with EXCLUDE_FROM_ALL set to true has "
      "undefined behavior.");
+
+  cm->DefineProperty
+    ("INCLUDE_DIRECTORIES", cmProperty::TARGET,
+     "List of preprocessor include file search directories.",
+     "This property specifies the list of directories given "
+     "so far to the include_directories command. "
+     "This property exists on directories and targets. "
+     "In addition to accepting values from the include_directories "
+     "command, values may be set directly on any directory or any "
+     "target using the set_property command. "
+     "A target gets its initial value for this property from the value "
+     "of the directory property. "
+     "A directory gets its initial value from its parent directory if "
+     "it has one. "
+     "Both directory and target property values are adjusted by calls "
+     "to the include_directories command."
+     "\n"
+     "The target property values are used by the generators to set "
+     "the include paths for the compiler. "
+     "See also the include_directories command.");
 
   cm->DefineProperty
     ("INSTALL_NAME_DIR", cmProperty::TARGET,
@@ -526,15 +596,6 @@ void cmTarget::DefineProperties(cmake *cm)
      "value is the default.  "
      "See documentation of CMAKE_<LANG>_LINKER_PREFERENCE variables.");
 
-#define CM_LOCATION_UNDEFINED_BEHAVIOR \
-  "\n" \
-  "Do not set properties that affect the location of the target after " \
-  "reading this property.  These include properties whose names match " \
-  "\"(RUNTIME|LIBRARY|ARCHIVE)_OUTPUT_(NAME|DIRECTORY)(_<CONFIG>)?\" " \
-  "or \"(IMPLIB_)?(PREFIX|SUFFIX)\".  " \
-  "Failure to follow this rule is not diagnosed and leaves the location " \
-  "of the target undefined."
-
   cm->DefineProperty
     ("LOCATION", cmProperty::TARGET,
      "Read-only location of a target on disk.",
@@ -554,7 +615,7 @@ void cmTarget::DefineProperties(cmake *cm)
      "In CMake 2.8.4 and above add_custom_command recognizes generator "
      "expressions to refer to target locations anywhere in the command.  "
      "Therefore this property is not needed for creating custom commands."
-     CM_LOCATION_UNDEFINED_BEHAVIOR);
+     CM_LOCATION_UNDEFINED_BEHAVIOR("reading this property"));
 
   cm->DefineProperty
     ("LOCATION_<CONFIG>", cmProperty::TARGET,
@@ -568,7 +629,7 @@ void cmTarget::DefineProperties(cmake *cm)
      "arbitrary available configuration.  "
      "Use the MAP_IMPORTED_CONFIG_<CONFIG> property to map imported "
      "configurations explicitly."
-     CM_LOCATION_UNDEFINED_BEHAVIOR);
+     CM_LOCATION_UNDEFINED_BEHAVIOR("reading this property"));
 
   cm->DefineProperty
     ("LINK_DEPENDS", cmProperty::TARGET,
@@ -597,6 +658,9 @@ void cmTarget::DefineProperties(cmake *cm)
      "If the list is empty then no transitive link dependencies will be "
      "incorporated when this target is linked into another target even if "
      "the default set is non-empty.  "
+     "This property is initialized by the value of the variable "
+     "CMAKE_LINK_INTERFACE_LIBRARIES if it is set when a target is "
+     "created.  "
      "This property is ignored for STATIC libraries.");
 
   cm->DefineProperty
@@ -629,8 +693,8 @@ void cmTarget::DefineProperties(cmake *cm)
   cm->DefineProperty
     ("MAP_IMPORTED_CONFIG_<CONFIG>", cmProperty::TARGET,
      "Map from project configuration to IMPORTED target's configuration.",
-     "List configurations of an imported target that may be used for "
-     "the current project's <CONFIG> configuration.  "
+     "Set this to the list of configurations of an imported target that "
+     "may be used for the current project's <CONFIG> configuration.  "
      "Targets imported from another project may not provide the same set "
      "of configuration names available in the current project.  "
      "Setting this property tells CMake what imported configurations are "
@@ -783,9 +847,10 @@ void cmTarget::DefineProperties(cmake *cm)
 
   cm->DefineProperty
     ("SUFFIX", cmProperty::TARGET,
-     "What comes after the library name.",
+     "What comes after the target name.",
      "A target property that can be set to override the suffix "
-     "(such as \".so\") on a library name.");
+     "(such as \".so\" or \".exe\") on the name of a library, module or "
+     "executable.");
 
   cm->DefineProperty
     ("TYPE", cmProperty::TARGET,
@@ -819,7 +884,9 @@ void cmTarget::DefineProperties(cmake *cm)
      "of of just main()."
      "This makes it a GUI executable instead of a console application.  "
      "See the CMAKE_MFC_FLAG variable documentation to configure use "
-     "of MFC for WinMain executables.");
+     "of MFC for WinMain executables.  "
+     "This property is initialized by the value of the variable "
+     "CMAKE_WIN32_EXECUTABLE if it is set when a target is created.");
 
   cm->DefineProperty
     ("MACOSX_BUNDLE", cmProperty::TARGET,
@@ -829,7 +896,9 @@ void cmTarget::DefineProperties(cmake *cm)
      "This makes it a GUI executable that can be launched from "
      "the Finder.  "
      "See the MACOSX_BUNDLE_INFO_PLIST target property for information "
-     "about creation of the Info.plist file for the application bundle.");
+     "about creation of the Info.plist file for the application bundle.  "
+     "This property is initialized by the value of the variable "
+     "CMAKE_MACOSX_BUNDLE if it is set when a target is created.");
 
   cm->DefineProperty
     ("MACOSX_BUNDLE_INFO_PLIST", cmProperty::TARGET,
@@ -897,6 +966,17 @@ void cmTarget::DefineProperties(cmake *cm)
       );
 
   cm->DefineProperty
+    ("Fortran_FORMAT", cmProperty::TARGET,
+     "Set to FIXED or FREE to indicate the Fortran source layout.",
+     "This property tells CMake whether the Fortran source files "
+     "in a target use fixed-format or free-format.  "
+     "CMake will pass the corresponding format flag to the compiler.  "
+     "Use the source-specific Fortran_FORMAT property to change the "
+     "format of a specific source file.  "
+     "If the variable CMAKE_Fortran_FORMAT is set when a target "
+     "is created its value is used to initialize this property.");
+
+  cm->DefineProperty
     ("Fortran_MODULE_DIRECTORY", cmProperty::TARGET,
      "Specify output directory for Fortran modules provided by the target.",
      "If the target contains Fortran source files that provide modules "
@@ -905,7 +985,29 @@ void cmTarget::DefineProperties(cmake *cm)
      "When this property is not set the modules will be placed in the "
      "build directory corresponding to the target's source directory.  "
      "If the variable CMAKE_Fortran_MODULE_DIRECTORY is set when a target "
-     "is created its value is used to initialize this property.");
+     "is created its value is used to initialize this property."
+     "\n"
+     "Note that some compilers will automatically search the module output "
+     "directory for modules USEd during compilation but others will not.  "
+     "If your sources USE modules their location must be specified by "
+     "INCLUDE_DIRECTORIES regardless of this property.");
+
+  cm->DefineProperty
+    ("GNUtoMS", cmProperty::TARGET,
+     "Convert GNU import library (.dll.a) to MS format (.lib).",
+     "When linking a shared library or executable that exports symbols "
+     "using GNU tools on Windows (MinGW/MSYS) with Visual Studio installed "
+     "convert the import library (.dll.a) from GNU to MS format (.lib).  "
+     "Both import libraries will be installed by install(TARGETS) and "
+     "exported by install(EXPORT) and export() to be linked by applications "
+     "with either GNU- or MS-compatible tools."
+     "\n"
+     "If the variable CMAKE_GNUtoMS is set when a target "
+     "is created its value is used to initialize this property.  "
+     "The variable must be set prior to the first command that enables "
+     "a language such as project() or enable_language().  "
+     "CMake provides the variable as an option to the user automatically "
+     "when configuring on Windows with GNU tools.");
 
   cm->DefineProperty
     ("XCODE_ATTRIBUTE_<an-attribute>", cmProperty::TARGET,
@@ -952,7 +1054,7 @@ void cmTarget::DefineProperties(cmake *cm)
      "provider property.");
   cm->DefineProperty
     ("VS_SCC_LOCALPATH", cmProperty::TARGET,
-     "Visual Studio Source Code Control Provider.",
+     "Visual Studio Source Code Control Local Path.",
      "Can be set to change the visual studio source code control "
      "local path property.");
   cm->DefineProperty
@@ -960,17 +1062,52 @@ void cmTarget::DefineProperties(cmake *cm)
      "Visual Studio Source Code Control Project.",
      "Can be set to change the visual studio source code control "
      "project name property.");
-
-#if 0
   cm->DefineProperty
-    ("OBJECT_FILES", cmProperty::TARGET,
-     "Used to get the resulting list of object files that make up a "
-     "target.",
-     "This can be used to put object files from one library "
-     "into another library. It is a read only property.  It "
-     "converts the source list for the target into a list of full "
-     "paths to object names that will be produced by the target.");
-#endif
+    ("VS_SCC_AUXPATH", cmProperty::TARGET,
+     "Visual Studio Source Code Control Aux Path.",
+     "Can be set to change the visual studio source code control "
+     "auxpath property.");
+  cm->DefineProperty
+    ("VS_GLOBAL_PROJECT_TYPES", cmProperty::TARGET,
+     "Visual Studio project type(s).",
+     "Can be set to one or more UUIDs recognized by Visual Studio "
+     "to indicate the type of project. This value is copied "
+     "verbatim into the generated project file. Example for a "
+     "managed C++ unit testing project:\n"
+     " {3AC096D0-A1C2-E12C-1390-A8335801FDAB};"
+     "{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}\n"
+     "UUIDs are semicolon-delimited.");
+  cm->DefineProperty
+    ("VS_GLOBAL_KEYWORD", cmProperty::TARGET,
+     "Visual Studio project keyword.",
+     "Sets the \"keyword\" attribute for a generated Visual Studio "
+     "project. Defaults to \"Win32Proj\". You may wish to override "
+     "this value with \"ManagedCProj\", for example, in a Visual "
+     "Studio managed C++ unit test project.");
+  cm->DefineProperty
+    ("VS_DOTNET_REFERENCES", cmProperty::TARGET,
+     "Visual Studio managed project .NET references",
+     "Adds one or more semicolon-delimited .NET references to a "
+     "generated Visual Studio project. For example, \"System;"
+     "System.Windows.Forms\".");
+  cm->DefineProperty
+    ("VS_WINRT_EXTENSIONS", cmProperty::TARGET,
+     "Visual Studio project C++/CX language extensions for Windows Runtime",
+     "Can be set to enable C++/CX language extensions.");
+  cm->DefineProperty
+    ("VS_WINRT_REFERENCES", cmProperty::TARGET,
+     "Visual Studio project Windows Runtime Metadata references",
+     "Adds one or more semicolon-delimited WinRT references to a "
+     "generated Visual Studio project. For example, \"Windows;"
+     "Windows.UI.Core\".");
+  cm->DefineProperty
+    ("VS_GLOBAL_<variable>", cmProperty::TARGET,
+     "Visual Studio project-specific global variable.",
+     "Tell the Visual Studio generator to set the global variable "
+     "'<variable>' to a given value in the generated Visual Studio "
+     "project. Ignored on other generators. Qt integration works "
+     "better if VS_GLOBAL_QtVersion is set to the version "
+     "FindQt4.cmake found. For example, \"4.7.3\"");
 
 #define CM_TARGET_FILE_TYPES_DOC                                            \
      "There are three kinds of target files that may be built: "            \
@@ -1062,16 +1199,6 @@ void cmTarget::DefineProperties(cmake *cm)
 void cmTarget::SetType(TargetType type, const char* name)
 {
   this->Name = name;
-  if(type == cmTarget::INSTALL_FILES ||
-     type == cmTarget::INSTALL_PROGRAMS ||
-     type == cmTarget::INSTALL_DIRECTORY)
-    {
-    this->Makefile->
-      IssueMessage(cmake::INTERNAL_ERROR,
-                   "SetType called on cmTarget for INSTALL_FILES, "
-                   "INSTALL_PROGRAMS, or INSTALL_DIRECTORY ");
-    return;
-    }
   // only add dependency information for library targets
   this->TargetTypeValue = type;
   if(this->TargetTypeValue >= STATIC_LIBRARY
@@ -1099,6 +1226,9 @@ void cmTarget::SetMakefile(cmMakefile* mf)
                        this->Makefile->IsOn("CYGWIN") ||
                        this->Makefile->IsOn("MINGW"));
 
+  // Check whether we are targeting an Apple platform.
+  this->IsApple = this->Makefile->IsOn("APPLE");
+
   // Setup default property values.
   this->SetPropertyDefault("INSTALL_NAME_DIR", "");
   this->SetPropertyDefault("INSTALL_RPATH", "");
@@ -1108,8 +1238,15 @@ void cmTarget::SetMakefile(cmMakefile* mf)
   this->SetPropertyDefault("ARCHIVE_OUTPUT_DIRECTORY", 0);
   this->SetPropertyDefault("LIBRARY_OUTPUT_DIRECTORY", 0);
   this->SetPropertyDefault("RUNTIME_OUTPUT_DIRECTORY", 0);
+  this->SetPropertyDefault("Fortran_FORMAT", 0);
   this->SetPropertyDefault("Fortran_MODULE_DIRECTORY", 0);
+  this->SetPropertyDefault("GNUtoMS", 0);
   this->SetPropertyDefault("OSX_ARCHITECTURES", 0);
+  this->SetPropertyDefault("AUTOMOC", 0);
+  this->SetPropertyDefault("AUTOMOC_MOC_OPTIONS", 0);
+  this->SetPropertyDefault("LINK_INTERFACE_LIBRARIES", 0);
+  this->SetPropertyDefault("WIN32_EXECUTABLE", 0);
+  this->SetPropertyDefault("MACOSX_BUNDLE", 0);
 
   // Collect the set of configuration types.
   std::vector<std::string> configNames;
@@ -1148,6 +1285,11 @@ void cmTarget::SetMakefile(cmMakefile* mf)
 
   // Save the backtrace of target construction.
   this->Makefile->GetBacktrace(this->Internal->Backtrace);
+
+  // Initialize the INCLUDE_DIRECTORIES property based on the current value
+  // of the same directory property:
+  this->SetProperty("INCLUDE_DIRECTORIES",
+                    this->Makefile->GetProperty("INCLUDE_DIRECTORIES"));
 
   // Record current policies for later use.
   this->PolicyStatusCMP0003 =
@@ -1412,7 +1554,7 @@ bool cmTargetTraceDependencies::IsUtility(std::string const& dep)
     // the fact that the name matched a target was just a coincidence.
     if(cmSystemTools::FileIsFullPath(dep.c_str()))
       {
-      if(t->GetType() >= cmTarget::EXECUTABLE && 
+      if(t->GetType() >= cmTarget::EXECUTABLE &&
          t->GetType() <= cmTarget::MODULE_LIBRARY)
         {
         // This is really only for compatibility so we do not need to
@@ -1588,7 +1730,15 @@ void cmTarget::AddSources(std::vector<std::string> const& srcs)
   for(std::vector<std::string>::const_iterator i = srcs.begin();
       i != srcs.end(); ++i)
     {
-    this->AddSource(i->c_str());
+    const char* src = i->c_str();
+    if(src[0] == '$' && src[1] == '<')
+      {
+      this->ProcessSourceExpression(*i);
+      }
+    else
+      {
+      this->AddSource(src);
+      }
     }
 }
 
@@ -1604,6 +1754,24 @@ cmSourceFile* cmTarget::AddSource(const char* s)
   cmSourceFile* sf = this->Makefile->GetOrCreateSource(src.c_str());
   this->AddSourceFile(sf);
   return sf;
+}
+
+//----------------------------------------------------------------------------
+void cmTarget::ProcessSourceExpression(std::string const& expr)
+{
+  if(strncmp(expr.c_str(), "$<TARGET_OBJECTS:", 17) == 0 &&
+     expr[expr.size()-1] == '>')
+    {
+    std::string objLibName = expr.substr(17, expr.size()-18);
+    this->ObjectLibraries.push_back(objLibName);
+    }
+  else
+    {
+    cmOStringStream e;
+    e << "Unrecognized generator expression:\n"
+      << "  " << expr;
+    this->Makefile->IssueMessage(cmake::FATAL_ERROR, e.str());
+    }
 }
 
 //----------------------------------------------------------------------------
@@ -2191,13 +2359,14 @@ void cmTarget::SetProperty(const char* prop, const char* value)
 }
 
 //----------------------------------------------------------------------------
-void cmTarget::AppendProperty(const char* prop, const char* value)
+void cmTarget::AppendProperty(const char* prop, const char* value,
+                              bool asString)
 {
   if (!prop)
     {
     return;
     }
-  this->Properties.AppendProperty(prop, value, cmProperty::TARGET);
+  this->Properties.AppendProperty(prop, value, cmProperty::TARGET, asString);
   this->MaybeInvalidatePropertyCache(prop);
 }
 
@@ -2302,7 +2471,7 @@ cmTarget::OutputInfo const* cmTarget::GetOutputInfo(const char* config)
     std::string msg = "cmTarget::GetOutputInfo called for ";
     msg += this->GetName();
     msg += " which has type ";
-    msg += cmTarget::TargetTypeNames[this->GetType()];
+    msg += cmTarget::GetTargetTypeName(this->GetType());
     this->GetMakefile()->IssueMessage(cmake::INTERNAL_ERROR, msg);
     abort();
     return 0;
@@ -2467,54 +2636,6 @@ const char *cmTarget::GetProperty(const char* prop)
 }
 
 //----------------------------------------------------------------------------
-void cmTarget::ComputeObjectFiles()
-{
-  if (this->IsImported())
-    {
-    return;
-    }
-#if 0
-  std::vector<std::string> dirs;
-  this->Makefile->GetLocalGenerator()->
-    GetTargetObjectFileDirectories(this,
-                                   dirs);
-  std::string objectFiles;
-  std::string objExtensionLookup1 = "CMAKE_";
-  std::string objExtensionLookup2 = "_OUTPUT_EXTENSION";
-
-  for(std::vector<std::string>::iterator d = dirs.begin();
-      d != dirs.end(); ++d)
-    {
-    for(std::vector<cmSourceFile*>::iterator s = this->SourceFiles.begin();
-        s != this->SourceFiles.end(); ++s)
-      {
-      cmSourceFile* sf = *s;
-      if(const char* lang = sf->GetLanguage())
-        {
-        std::string lookupObj = objExtensionLookup1 + lang;
-        lookupObj += objExtensionLookup2;
-        const char* obj = this->Makefile->GetDefinition(lookupObj.c_str());
-        if(obj)
-          {
-          if(objectFiles.size())
-            {
-            objectFiles += ";";
-            }
-          std::string objFile = *d;
-          objFile += "/";
-          objFile += this->Makefile->GetLocalGenerator()->
-            GetSourceObjectName(*sf);
-          objFile += obj;
-          objectFiles += objFile;
-          }
-        }
-      }
-    }
-  this->SetProperty("OBJECT_FILES", objectFiles.c_str());
-#endif
-}
-
-//----------------------------------------------------------------------------
 const char *cmTarget::GetProperty(const char* prop,
                                   cmProperty::ScopeType scope)
 {
@@ -2601,40 +2722,7 @@ const char *cmTarget::GetProperty(const char* prop,
   // the type property returns what type the target is
   if (!strcmp(prop,"TYPE"))
     {
-    switch( this->GetType() )
-      {
-      case cmTarget::STATIC_LIBRARY:
-        return "STATIC_LIBRARY";
-        // break; /* unreachable */
-      case cmTarget::MODULE_LIBRARY:
-        return "MODULE_LIBRARY";
-        // break; /* unreachable */
-      case cmTarget::SHARED_LIBRARY:
-        return "SHARED_LIBRARY";
-        // break; /* unreachable */
-      case cmTarget::EXECUTABLE:
-        return "EXECUTABLE";
-        // break; /* unreachable */
-      case cmTarget::UTILITY:
-        return "UTILITY";
-        // break; /* unreachable */
-      case cmTarget::GLOBAL_TARGET:
-        return "GLOBAL_TARGET";
-        // break; /* unreachable */
-      case cmTarget::INSTALL_FILES:
-        return "INSTALL_FILES";
-        // break; /* unreachable */
-      case cmTarget::INSTALL_PROGRAMS:
-        return "INSTALL_PROGRAMS";
-        // break; /* unreachable */
-      case cmTarget::INSTALL_DIRECTORY:
-        return "INSTALL_DIRECTORY";
-        // break; /* unreachable */
-      case cmTarget::UNKNOWN_LIBRARY:
-        return "UNKNOWN_LIBRARY";
-        // break; /* unreachable */
-      }
-    return 0;
+    return cmTarget::GetTargetTypeName(this->GetType());
     }
   bool chain = false;
   const char *retVal =
@@ -3268,7 +3356,11 @@ void cmTarget::GetLibraryNames(std::string& name,
     // the library version as the soversion.
     soversion = version;
     }
-  bool isApple = this->Makefile->IsOn("APPLE");
+  if(!version && soversion)
+    {
+    // Use the soversion as the library version.
+    version = soversion;
+    }
 
   // Get the components of the library name.
   std::string prefix;
@@ -3280,47 +3372,12 @@ void cmTarget::GetLibraryNames(std::string& name,
   name = prefix+base+suffix;
 
   // The library's soname.
-  if(isApple)
-    {
-    soName = prefix+base;
-    }
-  else
-    {
-    soName = name;
-    }
-  if(soversion)
-    {
-    soName += ".";
-    soName += soversion;
-    }
-  if(isApple)
-    {
-    soName += suffix;
-    }
+  this->ComputeVersionedName(soName, prefix, base, suffix,
+                             name, soversion);
 
   // The library's real name on disk.
-  if(isApple)
-    {
-    realName = prefix+base;
-    }
-  else
-    {
-  realName = name;
-    }
-  if(version)
-    {
-    realName += ".";
-    realName += version;
-    }
-  else if(soversion)
-    {
-    realName += ".";
-    realName += soversion;
-    }
-  if(isApple)
-    {
-    realName += suffix;
-    }
+  this->ComputeVersionedName(realName, prefix, base, suffix,
+                             name, version);
 
   // The import library name.
   if(this->GetType() == cmTarget::SHARED_LIBRARY ||
@@ -3335,6 +3392,23 @@ void cmTarget::GetLibraryNames(std::string& name,
 
   // The program database file name.
   pdbName = prefix+base+".pdb";
+}
+
+//----------------------------------------------------------------------------
+void cmTarget::ComputeVersionedName(std::string& vName,
+                                    std::string const& prefix,
+                                    std::string const& base,
+                                    std::string const& suffix,
+                                    std::string const& name,
+                                    const char* version)
+{
+  vName = this->IsApple? (prefix+base) : name;
+  if(version)
+    {
+    vName += ".";
+    vName += version;
+    }
+  vName += this->IsApple? suffix : std::string();
 }
 
 //----------------------------------------------------------------------------
@@ -3397,6 +3471,26 @@ void cmTarget::GetExecutableNames(std::string& name,
 
   // The program database file name.
   pdbName = prefix+base+".pdb";
+}
+
+//----------------------------------------------------------------------------
+bool cmTarget::HasImplibGNUtoMS()
+{
+  return this->HasImportLibrary() && this->GetPropertyAsBool("GNUtoMS");
+}
+
+//----------------------------------------------------------------------------
+bool cmTarget::GetImplibGNUtoMS(std::string const& gnuName,
+                                std::string& out, const char* newExt)
+{
+  if(this->HasImplibGNUtoMS() &&
+     gnuName.size() > 6 && gnuName.substr(gnuName.size()-6) == ".dll.a")
+    {
+    out = gnuName.substr(0, gnuName.size()-6);
+    out += newExt? newExt : ".lib";
+    return true;
+    }
+  return false;
 }
 
 //----------------------------------------------------------------------------
@@ -3498,7 +3592,8 @@ bool cmTarget::HaveBuildTreeRPATH()
 bool cmTarget::HaveInstallTreeRPATH()
 {
   const char* install_rpath = this->GetProperty("INSTALL_RPATH");
-  return install_rpath && *install_rpath;
+  return (install_rpath && *install_rpath) &&
+          !this->Makefile->IsOn("CMAKE_SKIP_INSTALL_RPATH");
 }
 
 //----------------------------------------------------------------------------
@@ -3605,7 +3700,8 @@ std::string cmTarget::GetInstallNameDirForInstallTree(const char* config,
     {
     std::string dir;
 
-    if(!this->Makefile->IsOn("CMAKE_SKIP_RPATH"))
+    if(!this->Makefile->IsOn("CMAKE_SKIP_RPATH") &&
+       !this->Makefile->IsOn("CMAKE_SKIP_INSTALL_RPATH"))
       {
       const char* install_name_dir = this->GetProperty("INSTALL_NAME_DIR");
       if(install_name_dir && *install_name_dir)
@@ -3688,9 +3784,11 @@ const char* cmTarget::GetOutputTargetType(bool implib)
 }
 
 //----------------------------------------------------------------------------
-void cmTarget::ComputeOutputDir(const char* config,
+bool cmTarget::ComputeOutputDir(const char* config,
                                 bool implib, std::string& out)
 {
+  bool usesDefaultOutputDir = false;
+
   // Look for a target property defining the target output directory
   // based on the target type.
   std::string targetTypeName = this->GetOutputTargetType(implib);
@@ -3742,6 +3840,7 @@ void cmTarget::ComputeOutputDir(const char* config,
   if(out.empty())
     {
     // Default to the current output directory.
+    usesDefaultOutputDir = true;
     out = ".";
     }
 
@@ -3754,9 +3853,22 @@ void cmTarget::ComputeOutputDir(const char* config,
   // The generator may add the configuration's subdirectory.
   if(config && *config)
     {
+    const char *platforms = this->Makefile->GetDefinition(
+      "CMAKE_XCODE_EFFECTIVE_PLATFORMS");
+    std::string suffix =
+      usesDefaultOutputDir && platforms ? "$(EFFECTIVE_PLATFORM_NAME)" : "";
     this->Makefile->GetLocalGenerator()->GetGlobalGenerator()->
-      AppendDirectoryForConfig("/", config, "", out);
+      AppendDirectoryForConfig("/", config, suffix.c_str(), out);
     }
+
+  return usesDefaultOutputDir;
+}
+
+//----------------------------------------------------------------------------
+bool cmTarget::UsesDefaultOutputDir(const char* config, bool implib)
+{
+  std::string dir;
+  return this->ComputeOutputDir(config, implib, dir);
 }
 
 //----------------------------------------------------------------------------
@@ -4462,7 +4574,21 @@ void cmTarget::ComputeLinkImplementation(const char* config,
 
   // This target needs runtime libraries for its source languages.
   std::set<cmStdString> languages;
+  // Get languages used in our source files.
   this->GetLanguages(languages);
+  // Get languages used in object library sources.
+  for(std::vector<std::string>::iterator i = this->ObjectLibraries.begin();
+      i != this->ObjectLibraries.end(); ++i)
+    {
+    if(cmTarget* objLib = this->Makefile->FindTargetToUse(i->c_str()))
+      {
+      if(objLib->GetType() == cmTarget::OBJECT_LIBRARY)
+        {
+        objLib->GetLanguages(languages);
+        }
+      }
+    }
+  // Copy the set of langauges to the link implementation.
   for(std::set<cmStdString>::iterator li = languages.begin();
       li != languages.end(); ++li)
     {
@@ -4553,6 +4679,30 @@ cmTarget::GetLinkInformation(const char* config)
     i = this->LinkInformation.insert(entry).first;
     }
   return i->second;
+}
+
+//----------------------------------------------------------------------------
+std::vector<std::string> cmTarget::GetIncludeDirectories()
+{
+  std::vector<std::string> includes;
+  const char *prop = this->GetProperty("INCLUDE_DIRECTORIES");
+  if(prop)
+    {
+    cmSystemTools::ExpandListArgument(prop, includes);
+    }
+
+  std::set<std::string> uniqueIncludes;
+  std::vector<std::string> orderedAndUniqueIncludes;
+  for(std::vector<std::string>::const_iterator
+      li = includes.begin(); li != includes.end(); ++li)
+    {
+    if(uniqueIncludes.insert(*li).second)
+      {
+      orderedAndUniqueIncludes.push_back(*li);
+      }
+    }
+
+  return orderedAndUniqueIncludes;
 }
 
 //----------------------------------------------------------------------------

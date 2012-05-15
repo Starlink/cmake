@@ -41,17 +41,17 @@ public:
   /**
    * This determines if the command is invoked when in script mode.
    */
-  virtual bool IsScriptable() { return true; }
+  virtual bool IsScriptable() const { return true; }
 
   /**
    * The name of the command as specified in CMakeList.txt.
    */
-  virtual const char* GetName() { return "file";}
+  virtual const char* GetName() const { return "file";}
 
   /**
    * Succinct documentation.
    */
-  virtual const char* GetTerseDocumentation()
+  virtual const char* GetTerseDocumentation() const
     {
     return "File manipulation command.";
     }
@@ -59,12 +59,13 @@ public:
   /**
    * More documentation.
    */
-  virtual const char* GetFullDocumentation()
+  virtual const char* GetFullDocumentation() const
     {
     return
       "  file(WRITE filename \"message to write\"... )\n"
       "  file(APPEND filename \"message to write\"... )\n"
       "  file(READ filename variable [LIMIT numBytes] [OFFSET offset] [HEX])\n"
+      "  file(<MD5|SHA1|SHA224|SHA256|SHA384|SHA512> filename variable)\n"
       "  file(STRINGS filename variable [LIMIT_COUNT num]\n"
       "       [LIMIT_INPUT numBytes] [LIMIT_OUTPUT numBytes]\n"
       "       [LENGTH_MINIMUM numBytes] [LENGTH_MAXIMUM numBytes]\n"
@@ -94,6 +95,8 @@ public:
       "variable. It will start at the given offset and read up to numBytes. "
       "If the argument HEX is given, the binary data will be converted to "
       "hexadecimal representation and this will be stored in the variable.\n"
+      "MD5, SHA1, SHA224, SHA256, SHA384, and SHA512 "
+      "will compute a cryptographic hash of the content of a file.\n"
       "STRINGS will parse a list of ASCII strings from a file and "
       "store it in a variable. Binary data in the file are ignored. Carriage "
       "return (CR) characters are ignored. It works also for Intel Hex and "
@@ -149,7 +152,8 @@ public:
       "TO_CMAKE_PATH will convert path into a cmake style path with unix /. "
       " The input can be a single path or a system path like \"$ENV{PATH}\". "
       " Note the double quotes around the ENV call TO_CMAKE_PATH only takes "
-      " one argument.\n"
+      " one argument. This command will also convert the native list"
+      " delimiters for a list of paths like the PATH environment variable.\n"
       "TO_NATIVE_PATH works just like TO_CMAKE_PATH, but will convert from "
       " a cmake style path into the native path style \\ for windows and / "
       "for UNIX.\n"
@@ -227,6 +231,7 @@ protected:
   bool HandleRemove(std::vector<std::string> const& args, bool recurse);
   bool HandleWriteCommand(std::vector<std::string> const& args, bool append);
   bool HandleReadCommand(std::vector<std::string> const& args);
+  bool HandleHashCommand(std::vector<std::string> const& args);
   bool HandleStringsCommand(std::vector<std::string> const& args);
   bool HandleGlobCommand(std::vector<std::string> const& args, bool recurse);
   bool HandleMakeDirectoryCommand(std::vector<std::string> const& args);

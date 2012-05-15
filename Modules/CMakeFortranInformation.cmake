@@ -44,6 +44,12 @@ IF (NOT _INCLUDED_FILE)
   INCLUDE(Platform/${CMAKE_SYSTEM_NAME} OPTIONAL)
 ENDIF (NOT _INCLUDED_FILE)
 
+IF(CMAKE_Fortran_SIZEOF_DATA_PTR)
+  FOREACH(f ${CMAKE_Fortran_ABI_FILES})
+    INCLUDE(${f})
+  ENDFOREACH()
+  UNSET(CMAKE_Fortran_ABI_FILES)
+ENDIF()
 
 # This should be included before the _INIT variables are
 # used to initialize the cache.  Since the rule variables 
@@ -102,6 +108,14 @@ ENDIF()
 IF(NOT DEFINED CMAKE_SHARED_LIBRARY_SONAME_Fortran_FLAG)
   SET(CMAKE_SHARED_LIBRARY_SONAME_Fortran_FLAG ${CMAKE_SHARED_LIBRARY_SONAME_C_FLAG})
 ENDIF()
+
+# for most systems a module is the same as a shared library
+# so unless the variable CMAKE_MODULE_EXISTS is set just
+# copy the values from the LIBRARY variables
+IF(NOT CMAKE_MODULE_EXISTS)
+  SET(CMAKE_SHARED_MODULE_Fortran_FLAGS ${CMAKE_SHARED_LIBRARY_Fortran_FLAGS})
+  SET(CMAKE_SHARED_MODULE_CREATE_Fortran_FLAGS ${CMAKE_SHARED_LIBRARY_CREATE_Fortran_FLAGS})
+ENDIF(NOT CMAKE_MODULE_EXISTS)
 
 # repeat for modules
 IF(NOT DEFINED CMAKE_SHARED_MODULE_CREATE_Fortran_FLAGS)

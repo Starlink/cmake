@@ -236,7 +236,7 @@ int cmCPackDebGenerator::PackageFiles()
   int retval = -1;
 
   /* Are we in the component packaging case */
-  if (SupportsComponentInstallation()) {
+  if (WantsComponentInstallation()) {
     // CASE 1 : COMPONENT ALL-IN-ONE package
     // If ALL GROUPS or ALL COMPONENTS in ONE package has been requested
     // then the package file is unique and should be open here.
@@ -392,7 +392,10 @@ int cmCPackDebGenerator::createDeb()
     }
 
   std::string cmd;
-  cmd = "\"";
+  if (NULL != this->GetOption("CPACK_DEBIAN_FAKEROOT_EXECUTABLE")) {
+      cmd += this->GetOption("CPACK_DEBIAN_FAKEROOT_EXECUTABLE");
+  }
+  cmd += " \"";
   cmd += cmakeExecutable;
   cmd += "\" -E tar cfz data.tar.gz ";
 

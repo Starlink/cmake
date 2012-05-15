@@ -34,12 +34,12 @@ public:
   /**
    * The name of the command as specified in CMakeList.txt.
    */
-  virtual const char* GetName() { return "set_property";}
+  virtual const char* GetName() const { return "set_property";}
 
   /**
    * Succinct documentation.
    */
-  virtual const char* GetTerseDocumentation()
+  virtual const char* GetTerseDocumentation() const
     {
     return "Set a named property in a given scope.";
     }
@@ -47,7 +47,7 @@ public:
   /**
    * Longer documentation.
    */
-  virtual const char* GetFullDocumentation()
+  virtual const char* GetFullDocumentation() const
     {
       return
         "  set_property(<GLOBAL                            |\n"
@@ -56,7 +56,7 @@ public:
         "                SOURCE    [src1 [src2 ...]]       |\n"
         "                TEST      [test1 [test2 ...]]     |\n"
         "                CACHE     [entry1 [entry2 ...]]>\n"
-        "               [APPEND]\n"
+        "               [APPEND] [APPEND_STRING]\n"
         "               PROPERTY <name> [value1 [value2 ...]])\n"
         "Set one property on zero or more objects of a scope.  "
         "The first argument determines the scope in which the property "
@@ -77,13 +77,16 @@ public:
         "list.  "
         "If the APPEND option is given the list is appended to any "
         "existing property value."
+        "If the APPEND_STRING option is given the string is append to any "
+        "existing property value as string, i.e. it results in a longer "
+        "string and not a list of strings."
         ;
     }
 
   /**
    * This determines if the command is invoked when in script mode.
    */
-  virtual bool IsScriptable() { return true; }
+  virtual bool IsScriptable() const { return true; }
 
   cmTypeMacro(cmSetPropertyCommand, cmCommand);
 
@@ -93,6 +96,7 @@ private:
   std::string PropertyValue;
   bool Remove;
   bool AppendMode;
+  bool AppendAsString;
 
   // Implementation of each property type.
   bool HandleGlobalMode();

@@ -44,7 +44,7 @@ public:
 
   ///! Set/Get a property of this source file
   void SetProperty(const char *prop, const char *value);
-  void AppendProperty(const char* prop, const char* value);
+  void AppendProperty(const char* prop, const char* value,bool asString=false);
   const char *GetProperty(const char *prop) const;
   bool GetPropertyAsBool(const char *prop) const;
 
@@ -115,5 +115,8 @@ private:
 
   std::vector<std::string> Depends;
 };
+
+// TODO: Factor out into platform information modules.
+#define CM_HEADER_REGEX "\\.(h|hh|h\\+\\+|hm|hpp|hxx|in|txx|inl)$"
 
 #endif

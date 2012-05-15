@@ -18,10 +18,11 @@
 #include "windows.h"
 
 //----------------------------------------------------------------------------
-cmLocalVisualStudioGenerator::cmLocalVisualStudioGenerator()
+cmLocalVisualStudioGenerator::cmLocalVisualStudioGenerator(VSVersion v)
 {
   this->WindowsShell = true;
   this->WindowsVSIDE = true;
+  this->Version = v;
 }
 
 //----------------------------------------------------------------------------
@@ -61,96 +62,6 @@ cmLocalVisualStudioGenerator::MaybeCreateImplibDir(cmTarget& target,
   pcc->SetEscapeOldStyle(false);
   pcc->SetEscapeAllowMakeVars(true);
   return pcc;
-}
-
-//----------------------------------------------------------------------------
-bool cmLocalVisualStudioGenerator::SourceFileCompiles(const cmSourceFile* sf)
-{
-  // Identify the language of the source file.
-  if(const char* lang = this->GetSourceFileLanguage(*sf))
-    {
-    // Check whether this source will actually be compiled.
-    return (!sf->GetCustomCommand() &&
-            !sf->GetPropertyAsBool("HEADER_FILE_ONLY") &&
-            !sf->GetPropertyAsBool("EXTERNAL_OBJECT"));
-    }
-  else
-    {
-    // Unknown source file language.  Assume it will not be compiled.
-    return false;
-    }
-}
-
-//----------------------------------------------------------------------------
-void cmLocalVisualStudioGenerator::CountObjectNames(
-    const std::vector<cmSourceGroup>& groups,
-    std::map<cmStdString, int>& counts)
-{
-  for(unsigned int i = 0; i < groups.size(); ++i)
-    {
-    cmSourceGroup sg = groups[i];
-    std::vector<const cmSourceFile*> const& srcs = sg.GetSourceFiles();
-    for(std::vector<const cmSourceFile*>::const_iterator s = srcs.begin();
-        s != srcs.end(); ++s)
-      {
-      const cmSourceFile* sf = *s;
-      if(this->SourceFileCompiles(sf))
-        {
-        std::string objectName = cmSystemTools::LowerCase(
-            cmSystemTools::GetFilenameWithoutLastExtension(
-              sf->GetFullPath()));
-        objectName += ".obj";
-        counts[objectName] += 1;
-        }
-      }
-    this->CountObjectNames(sg.GetGroupChildren(), counts);
-    }
-}
-
-//----------------------------------------------------------------------------
-void cmLocalVisualStudioGenerator::InsertNeedObjectNames(
-   const std::vector<cmSourceGroup>& groups,
-    std::map<cmStdString, int>& count)
-{
-  for(unsigned int i = 0; i < groups.size(); ++i)
-    {
-    cmSourceGroup sg = groups[i];
-    std::vector<const cmSourceFile*> const& srcs = sg.GetSourceFiles();
-    for(std::vector<const cmSourceFile*>::const_iterator s = srcs.begin();
-        s != srcs.end(); ++s)
-      {
-      const cmSourceFile* sf = *s;
-      if(this->SourceFileCompiles(sf))
-        {
-        std::string objectName = cmSystemTools::LowerCase(
-           cmSystemTools::GetFilenameWithoutLastExtension(sf->GetFullPath()));
-        objectName += ".obj";
-        if(count[objectName] > 1)
-          {
-          this->NeedObjectName.insert(sf);
-          }
-        }
-      }
-    this->InsertNeedObjectNames(sg.GetGroupChildren(), count);
-    }
-}
-
-
-//----------------------------------------------------------------------------
-void cmLocalVisualStudioGenerator::ComputeObjectNameRequirements
-(std::vector<cmSourceGroup> const& sourceGroups)
-{
-  // Clear the current set of requirements.
-  this->NeedObjectName.clear();
-
-  // Count the number of object files with each name.  Note that
-  // windows file names are not case sensitive.
-  std::map<cmStdString, int> objectNameCounts;
-  this->CountObjectNames(sourceGroups, objectNameCounts);
-
-  // For all source files producing duplicate names we need unique
-  // object name computation.
-  this->InsertNeedObjectNames(sourceGroups, objectNameCounts);
 }
 
 //----------------------------------------------------------------------------
@@ -249,6 +160,20 @@ cmLocalVisualStudioGenerator
 
     // Add this command line.
     std::string cmd = ccg.GetCommand(c);
+
+    // Use "call " before any invocations of .bat or .cmd files
+    // invoked as custom commands.
+    //
+    std::string suffix;
+    if (cmd.size() > 4)
+      {
+      suffix = cmSystemTools::LowerCase(cmd.substr(cmd.size()-4));
+      if (suffix == ".bat" || suffix == ".cmd")
+        {
+        script += "call ";
+        }
+      }
+
     script += this->Convert(cmd.c_str(), relativeRoot, SHELL);
     ccg.AppendArguments(c, script);
 

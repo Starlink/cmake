@@ -13,6 +13,7 @@
 #define cmExportCommand_h
 
 #include "cmCommand.h"
+#include "cmDocumentLocationUndefined.h"
 
 class cmExportBuildFileGenerator;
 
@@ -44,12 +45,12 @@ public:
   /**
    * The name of the command as specified in CMakeList.txt.
    */
-  virtual const char* GetName() { return "export";}
+  virtual const char* GetName() const { return "export";}
 
   /**
    * Succinct documentation.
    */
-  virtual const char* GetTerseDocumentation()
+  virtual const char* GetTerseDocumentation() const
     {
     return
       "Export targets from the build tree for use by outside projects.";
@@ -58,7 +59,7 @@ public:
   /**
    * More documentation.
    */
-  virtual const char* GetFullDocumentation()
+  virtual const char* GetFullDocumentation() const
     {
     return
       "  export(TARGETS [target1 [target2 [...]]] [NAMESPACE <namespace>]\n"
@@ -80,6 +81,7 @@ public:
       "should never be installed.  "
       "See the install(EXPORT) command to export targets from an "
       "installation tree."
+      CM_LOCATION_UNDEFINED_BEHAVIOR("passing it to this command")
       "\n"
       "  export(PACKAGE <name>)\n"
       "Store the current build directory in the CMake user package registry "

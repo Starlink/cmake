@@ -32,12 +32,12 @@ public:
   /**
    * The name of the command as specified in CMakeList.txt.
    */
-  virtual const char* GetName() { return "set_target_properties";}  
+  virtual const char* GetName() const { return "set_target_properties";}
 
   /**
    * Succinct documentation.
    */
-  virtual const char* GetTerseDocumentation() 
+  virtual const char* GetTerseDocumentation() const
     {
     return "Targets can have properties that affect how they are built.";
     }
@@ -52,7 +52,7 @@ public:
   /**
    * Longer documentation.
    */
-  virtual const char* GetFullDocumentation()
+  virtual const char* GetFullDocumentation() const
     {
       return
         "  set_target_properties(target1 target2 ...\n"
@@ -92,7 +92,7 @@ public:
         "If not set here then it is set to target_EXPORTS by default "
         "(with some substitutions if the target is not a valid C "
         "identifier). This is useful for headers to know whether they are "
-        "being included from inside their library our outside to properly "
+        "being included from inside their library or outside to properly "
         "setup dllexport/dllimport decorations. "
         "The COMPILE_FLAGS property sets additional compiler flags used "
         "to build sources within the target.  It may also be used to pass "
@@ -140,9 +140,14 @@ public:
         "the target in an IDE like visual studio.  VS_KEYWORD can be set "
         "to change the visual studio keyword, for example QT integration "
         "works better if this is set to Qt4VSv1.0.\n"
-        "VS_SCC_PROJECTNAME, VS_SCC_LOCALPATH, VS_SCC_PROVIDER can be set "
+        "VS_SCC_PROJECTNAME, VS_SCC_LOCALPATH, VS_SCC_PROVIDER and "
+        "VS_SCC_AUXPATH can be set "
         "to add support for source control bindings in a  Visual Studio "
         "project file.\n"
+        "VS_GLOBAL_<variable> can be set to add a Visual Studio "
+        "project-specific global variable. "
+        "Qt integration works better if VS_GLOBAL_QtVersion is set to "
+        "the Qt version FindQt4.cmake found. For example, \"4.7.3\"\n"
         "The PRE_INSTALL_SCRIPT and POST_INSTALL_SCRIPT properties are the "
         "old way to specify CMake scripts to run before and after "
         "installing a target.  They are used only when the old "

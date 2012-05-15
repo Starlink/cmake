@@ -31,7 +31,7 @@ dependencies for each target such that no cycles are left and the
 build order is safe.
 
 For most target types cyclic dependencies are not allowed.  However
-STATIC libraries may depend on each other in a cyclic fasion.  In
+STATIC libraries may depend on each other in a cyclic fashion.  In
 general the directed dependency graph forms a directed-acyclic-graph
 of strongly connected components.  All strongly connected components
 should consist of only STATIC_LIBRARY targets.
@@ -276,9 +276,11 @@ void cmComputeTargetDepends::AddTargetDepend(int depender_index,
     for(std::set<cmStdString>::const_iterator i = utils.begin();
         i != utils.end(); ++i)
       {
-      cmTarget* transitive_dependee =
-        dependee->GetMakefile()->FindTargetToUse(i->c_str());
-      this->AddTargetDepend(depender_index, transitive_dependee, false);
+      if(cmTarget* transitive_dependee =
+         dependee->GetMakefile()->FindTargetToUse(i->c_str()))
+        {
+        this->AddTargetDepend(depender_index, transitive_dependee, false);
+        }
       }
     }
   else
@@ -402,7 +404,7 @@ cmComputeTargetDepends
 
     // Describe the depender.
     e << "  \"" << depender->GetName() << "\" of type "
-      << cmTarget::TargetTypeNames[depender->GetType()] << "\n";
+      << cmTarget::GetTargetTypeName(depender->GetType()) << "\n";
 
     // List its dependencies that are inside the component.
     EdgeList const& nl = this->InitialGraph[i];

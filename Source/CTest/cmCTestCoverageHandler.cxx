@@ -555,7 +555,7 @@ int cmCTestCoverageHandler::ProcessHandler()
     covSumFile << "\t<File Name=\"" << cmXMLSafe(fileName)
       << "\" FullPath=\"" << cmXMLSafe(
         this->CTest->GetShortPathToFile(fullFileName.c_str()))
-      << "\" Covered=\"" << (tested > 0 ? "true":"false") << "\">\n"
+      << "\" Covered=\"" << (tested+untested > 0 ? "true":"false") << "\">\n"
       << "\t\t<LOCTested>" << tested << "</LOCTested>\n"
       << "\t\t<LOCUnTested>" << untested << "</LOCUnTested>\n"
       << "\t\t<PercentCoverage>";
@@ -751,12 +751,15 @@ int cmCTestCoverageHandler::HandlePHPCoverage(
     }
   return static_cast<int>(cont->TotalCoverage.size());
 }
+
 //----------------------------------------------------------------------
 int cmCTestCoverageHandler::HandleGCovCoverage(
   cmCTestCoverageHandlerContainer* cont)
 {
   std::string gcovCommand
     = this->CTest->GetCTestConfiguration("CoverageCommand");
+  std::string gcovExtraFlags
+    = this->CTest->GetCTestConfiguration("CoverageExtraFlags");
 
   // Style 1
   std::string st1gcovOutputRex1
@@ -825,8 +828,10 @@ int cmCTestCoverageHandler::HandleGCovCoverage(
     // Call gcov to get coverage data for this *.gcda file:
     //
     std::string fileDir = cmSystemTools::GetFilenamePath(it->c_str());
-    std::string command = "\"" + gcovCommand + "\" -l -p -o \"" + fileDir
-      + "\" \"" + *it + "\"";
+    std::string command = "\"" + gcovCommand + "\" " +
+      gcovExtraFlags + " " +
+      "-o \"" + fileDir + "\" " +
+      "\"" + *it + "\"";
 
     cmCTestLog(this->CTest, HANDLER_VERBOSE_OUTPUT, command.c_str()
       << std::endl);

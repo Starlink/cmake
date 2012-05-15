@@ -280,6 +280,18 @@ if(do_cvs_tests)
   set_property(TARGET ${proj}
     PROPERTY FOLDER "SetupRepos/Local/Deeply/Nested/For/Testing")
 
+  # The MSYS cvs tool interprets "c:/" as a "machine:" name for SSH.
+  # Detect the MSYS cvs and convert the repo path to an MSYS path.
+  if(WIN32)
+    if(EXISTS "${CVS_EXECUTABLE}")
+      file(STRINGS "${CVS_EXECUTABLE}" cvs_is_msys LIMIT_COUNT 1 REGEX "[Mm][Ss][Yy][Ss]")
+      if(cvs_is_msys)
+        message(STATUS "'${CVS_EXECUTABLE}' is from MSYS (contains '${cvs_is_msys}')")
+        string(REGEX REPLACE "^([A-Za-z]):" "/\\1" local_cvs_repo "${local_cvs_repo}")
+      endif()
+    endif()
+  endif()
+
   # CVS by date stamp:
   #
   set(proj TutorialStep1-CVS-20090626)
@@ -343,13 +355,6 @@ endif()
 # Only do svn tests with svn >= version 1.2
 #
 if(do_svn_tests)
-  execute_process(COMMAND ${Subversion_SVN_EXECUTABLE} --version
-    OUTPUT_VARIABLE Subversion_VERSION_SVN
-    OUTPUT_STRIP_TRAILING_WHITESPACE)
-  string(REGEX REPLACE "^(.*\n)?svn, version ([.0-9]+).*"
-    "\\2" Subversion_VERSION_SVN "${Subversion_VERSION_SVN}")
-  message(STATUS "Subversion_VERSION_SVN='${Subversion_VERSION_SVN}'")
-
   if(Subversion_VERSION_SVN VERSION_LESS 1.2)
     message(STATUS "No ExternalProject svn tests with svn client less than version 1.2")
     set(do_svn_tests 0)

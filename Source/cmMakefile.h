@@ -19,6 +19,7 @@
 #include "cmPropertyMap.h"
 #include "cmSystemTools.h"
 #include "cmTarget.h"
+#include "cmNewLineStyle.h"
 #include "cmake.h"
 
 #if defined(CMAKE_BUILD_WITH_CMAKE)
@@ -72,7 +73,7 @@ public:
   /** Return whether compatibility features needed for a version of
       the cache or lower should be enabled.  */
   bool NeedCacheCompatibility(int major, int minor);
-  
+
   /**
    * Construct an empty makefile.
    */
@@ -87,8 +88,8 @@ public:
   /**
    * Read and parse a CMakeLists.txt file.
    */
-  bool ReadListFile(const char* listfile, 
-                    const char* external= 0, 
+  bool ReadListFile(const char* listfile,
+                    const char* external= 0,
                     std::string* fullPath= 0,
                     bool noPolicyScope = true);
 
@@ -121,21 +122,21 @@ public:
    * Try running cmake and building a file. This is used for dynalically
    * loaded commands, not as part of the usual build process.
    */
-  int TryCompile(const char *srcdir, const char *bindir, 
+  int TryCompile(const char *srcdir, const char *bindir,
                  const char *projectName, const char *targetName,
                  bool fast,
                  const std::vector<std::string> *cmakeArgs,
                  std::string *output);
-    
+
   /**
    * Specify the makefile generator. This is platform/compiler
    * dependent, although the interface is through a generic
    * superclass.
    */
   void SetLocalGenerator(cmLocalGenerator*);
-  
+
   ///! Get the current makefile generator.
-  cmLocalGenerator* GetLocalGenerator() 
+  cmLocalGenerator* GetLocalGenerator()
     { return this->LocalGenerator;}
 
   /**
@@ -153,15 +154,15 @@ public:
 
   /**
    * Perform FinalPass, Library dependency analysis etc before output of the
-   * makefile.  
+   * makefile.
    */
   void ConfigureFinalPass();
-  
+
   /**
    * run the final pass on all commands.
    */
   void FinalPass();
-  
+
   /**
    * Print the object state to std::cout.
    */
@@ -202,14 +203,15 @@ public:
   void RemoveDefineFlag(const char* definition);
 
   /** Create a new imported target with the name and type given.  */
-  cmTarget* AddImportedTarget(const char* name, cmTarget::TargetType type);
+  cmTarget* AddImportedTarget(const char* name, cmTarget::TargetType type,
+                              bool global);
 
   cmTarget* AddNewTarget(cmTarget::TargetType type, const char* name);
-  
+
   /**
    * Add an executable to the build.
    */
-  cmTarget* AddExecutable(const char *exename, 
+  cmTarget* AddExecutable(const char *exename,
                           const std::vector<std::string> &srcs,
                           bool excludeFromAll = false);
 
@@ -237,7 +239,7 @@ public:
    */
   void AddLinkLibrary(const char*);
   void AddLinkLibrary(const char*, cmTarget::LinkLibraryType type);
-  void AddLinkLibraryForTarget(const char *tgt, const char*, 
+  void AddLinkLibraryForTarget(const char *tgt, const char*,
                                cmTarget::LinkLibraryType type);
   void AddLinkDirectoryForTarget(const char *tgt, const char* d);
 
@@ -265,9 +267,9 @@ public:
   /**
    * Add a subdirectory to the build.
    */
-  void AddSubDirectory(const char*, bool excludeFromAll=false, 
+  void AddSubDirectory(const char*, bool excludeFromAll=false,
                        bool preorder = false);
-  void AddSubDirectory(const char* fullSrcDir,const char *fullBinDir, 
+  void AddSubDirectory(const char* fullSrcDir,const char *fullBinDir,
                        bool excludeFromAll, bool preorder,
                        bool immediate);
 
@@ -275,7 +277,7 @@ public:
    * Configure a subdirectory
    */
   void ConfigureSubDirectory(cmLocalGenerator *);
-                             
+
   /**
    * Add an include directory to the build.
    */
@@ -287,13 +289,13 @@ public:
    */
   void AddDefinition(const char* name, const char* value);
   ///! Add a definition to this makefile and the global cmake cache.
-  void AddCacheDefinition(const char* name, const char* value, 
+  void AddCacheDefinition(const char* name, const char* value,
                           const char* doc,
                           cmCacheManager::CacheEntryType type,
                           bool force = false);
 
   /**
-   * Add bool variable definition to the build. 
+   * Add bool variable definition to the build.
    */
   void AddDefinition(const char* name, bool);
 
@@ -304,7 +306,7 @@ public:
   void RemoveDefinition(const char* name);
   ///! Remove a definition from the cache.
   void RemoveCacheDefinition(const char* name);
-  
+
   /**
    * Specify the name of the project for this build.
    */
@@ -325,7 +327,7 @@ public:
   /**
    * Set the name of the library.
    */
-  void AddLibrary(const char *libname, cmTarget::TargetType type,
+  cmTarget* AddLibrary(const char *libname, cmTarget::TargetType type,
                   const std::vector<std::string> &srcs,
                   bool excludeFromAll = false);
 
@@ -339,14 +341,14 @@ public:
    * Add a source group for consideration when adding a new source.
    * name is tokenized.
    */
-  void AddSourceGroup(const std::vector<std::string>& name, 
+  void AddSourceGroup(const std::vector<std::string>& name,
                       const char* regex=0);
 
 #endif
 
   //@{
   /**
-     * Set, Push, Pop policy values for CMake.   
+     * Set, Push, Pop policy values for CMake.
      */
   bool SetPolicy(cmPolicies::PolicyID id, cmPolicies::PolicyStatus status);
   bool SetPolicy(const char *id, cmPolicies::PolicyStatus status);
@@ -374,31 +376,31 @@ public:
     * Get the Policies Instance
     */
  cmPolicies *GetPolicies();
-   
+
   /**
    * Add an auxiliary directory to the build.
    */
   void AddExtraDirectory(const char* dir);
-  
+
 
   /**
    * Add an auxiliary directory to the build.
    */
   void MakeStartDirectoriesCurrent()
     {
-      this->AddDefinition("CMAKE_CURRENT_SOURCE_DIR", 
+      this->AddDefinition("CMAKE_CURRENT_SOURCE_DIR",
                           this->cmStartDirectory.c_str());
-      this->AddDefinition("CMAKE_CURRENT_BINARY_DIR", 
+      this->AddDefinition("CMAKE_CURRENT_BINARY_DIR",
                           this->StartOutputDirectory.c_str());
     }
-  
+
   //@{
   /**
    * Set/Get the home directory (or output directory) in the project. The
    * home directory is the top directory of the project. It is where
    * CMakeSetup or configure was run. Remember that CMake processes
    * CMakeLists files by recursing up the tree starting at the StartDirectory
-   * and going up until it reaches the HomeDirectory.  
+   * and going up until it reaches the HomeDirectory.
    */
   void SetHomeDirectory(const char* dir);
   const char* GetHomeDirectory() const
@@ -428,15 +430,15 @@ public:
    * is the directory of the CMakeLists.txt file that started the current
    * round of processing. Remember that CMake processes CMakeLists files by
    * recursing up the tree starting at the StartDirectory and going up until
-   * it reaches the HomeDirectory.  
+   * it reaches the HomeDirectory.
    */
-  void SetStartDirectory(const char* dir) 
+  void SetStartDirectory(const char* dir)
     {
       this->cmStartDirectory = dir;
       cmSystemTools::ConvertToUnixSlashes(this->cmStartDirectory);
-      this->cmStartDirectory = 
+      this->cmStartDirectory =
         cmSystemTools::CollapseFullPath(this->cmStartDirectory.c_str());
-      this->AddDefinition("CMAKE_CURRENT_SOURCE_DIR", 
+      this->AddDefinition("CMAKE_CURRENT_SOURCE_DIR",
                           this->cmStartDirectory.c_str());
     }
   const char* GetStartDirectory() const
@@ -447,10 +449,10 @@ public:
     {
       this->StartOutputDirectory = lib;
       cmSystemTools::ConvertToUnixSlashes(this->StartOutputDirectory);
-      this->StartOutputDirectory = 
+      this->StartOutputDirectory =
         cmSystemTools::CollapseFullPath(this->StartOutputDirectory.c_str());
       cmSystemTools::MakeDirectory(this->StartOutputDirectory.c_str());
-      this->AddDefinition("CMAKE_CURRENT_BINARY_DIR", 
+      this->AddDefinition("CMAKE_CURRENT_BINARY_DIR",
                           this->StartOutputDirectory.c_str());
     }
   const char* GetStartOutputDirectory() const
@@ -459,7 +461,7 @@ public:
     }
   //@}
 
-  const char* GetCurrentDirectory() const 
+  const char* GetCurrentDirectory() const
     {
       return this->cmStartDirectory.c_str();
     }
@@ -478,7 +480,7 @@ public:
 
   //@}
 
-  /** 
+  /**
    * Set a regular expression that include files must match
    * in order to be considered as part of the depend information.
    */
@@ -487,11 +489,11 @@ public:
       this->IncludeFileRegularExpression = regex;
     }
   const char* GetIncludeRegularExpression()
-    { 
+    {
       return this->IncludeFileRegularExpression.c_str();
     }
 
-  /** 
+  /**
    * Set a regular expression that include files that are not found
    * must match in order to be considered a problem.
    */
@@ -520,29 +522,13 @@ public:
   cmTarget* FindTargetToUse(const char* name);
 
   /**
-   * Get a list of include directories in the build.
-   */
-  std::vector<std::string>& GetIncludeDirectories()
-    { 
-      return this->IncludeDirectories;
-    }
-  const std::vector<std::string>& GetIncludeDirectories() const
-    { 
-      return this->IncludeDirectories;
-    }
-  void SetIncludeDirectories(const std::vector<std::string>& vec)
-    {
-      this->IncludeDirectories = vec;
-    }
-
-  /**
    * Mark include directories as system directories.
    */
   void AddSystemIncludeDirectory(const char* dir);
   bool IsSystemIncludeDirectory(const char* dir);
 
   /** Expand out any arguements in the vector that have ; separated
-   *  strings into multiple arguements.  A new vector is created 
+   *  strings into multiple arguements.  A new vector is created
    *  containing the expanded versions of all arguments in argsIn.
    * This method differes from the one in cmSystemTools in that if
    * the CmakeLists file is version 1.2 or earlier it will check for
@@ -558,7 +544,7 @@ public:
   cmSourceFile* GetSource(const char* sourceName);
 
   /** Get a cmSourceFile pointer for a given source name, if the name is
-   *  not found, then create the source file and return it. generated 
+   *  not found, then create the source file and return it. generated
    * indicates if it is a generated file, this is used in determining
    * how to create the source file instance e.g. name
    */
@@ -597,8 +583,8 @@ public:
    * variables will be listed.
    */
   std::vector<std::string> GetDefinitions(int cacheonly=0) const;
-  
-  /** Test a boolean cache entry to see if it is true or false, 
+
+  /** Test a boolean cache entry to see if it is true or false,
    *  returns false if no entry defined.
    */
   bool IsOn(const char* name) const;
@@ -617,13 +603,7 @@ public:
    * Make sure CMake can write this file
    */
   bool CanIWriteThisFile(const char* fileName);
-  
-  /**
-   * Get the vector of used command instances.
-   */
-  const std::vector<cmCommand*>& GetUsedCommands() const
-    {return this->UsedCommands;}
-  
+
 #if defined(CMAKE_BUILD_WITH_CMAKE)
   /**
    * Get the vector source groups.
@@ -663,12 +643,12 @@ public:
     { return this->OutputFiles; }
   void AddCMakeOutputFile(const char* file)
     { this->OutputFiles.push_back(file);}
-  
+
   /**
-   * Expand all defined variables in the string.  
+   * Expand all defined variables in the string.
    * Defined variables come from the this->Definitions map.
    * They are expanded with ${var} where var is the
-   * entry in the this->Definitions map.  Also @var@ is
+   * entry in the this->Definitions map.  Also \@var\@ is
    * expanded to match autoconf style expansions.
    */
   const char *ExpandVariablesInString(std::string& source);
@@ -682,15 +662,15 @@ public:
 
   /**
    * Remove any remaining variables in the string. Anything with ${var} or
-   * @var@ will be removed.  
+   * \@var\@ will be removed.
    */
-  void RemoveVariablesInString(std::string& source, 
+  void RemoveVariablesInString(std::string& source,
                                bool atOnly = false) const;
 
   /**
    * Expand variables in the makefiles ivars such as link directories etc
    */
-  void ExpandVariables();  
+  void ExpandVariables();
 
   /**
    * Replace variables and #cmakedefine lines in the given string.
@@ -702,8 +682,10 @@ public:
   /**
    * Copy file but change lines acording to ConfigureString
    */
-  int ConfigureFile(const char* infile, const char* outfile, 
-                    bool copyonly, bool atOnly, bool escapeQuotes);
+  int ConfigureFile(const char* infile, const char* outfile,
+                    bool copyonly, bool atOnly, bool escapeQuotes,
+                    const cmNewLineStyle& = cmNewLineStyle());
+
 
 #if defined(CMAKE_BUILD_WITH_CMAKE)
   /**
@@ -717,12 +699,12 @@ public:
    * Execute a single CMake command.  Returns true if the command
    * succeeded or false if it failed.
    */
-  bool ExecuteCommand(const cmListFileFunction& lff, 
+  bool ExecuteCommand(const cmListFileFunction& lff,
                       cmExecutionStatus &status);
 
   /** Check if a command exists. */
   bool CommandExists(const char* name) const;
-    
+
   /**
    * Add a command to this cmake instance
    */
@@ -748,7 +730,7 @@ public:
 
   ///! Display progress or status message.
   void DisplayStatus(const char*, float);
-  
+
   /**
    * Expand the given list file arguments into the full set after
    * variable replacement and list expansion.
@@ -757,13 +739,13 @@ public:
                        std::vector<std::string>& outArgs);
   /**
    * Get the instance
-   */ 
+   */
   cmake *GetCMakeInstance() const;
 
   /**
    * Get all the source files this makefile knows about
    */
-  const std::vector<cmSourceFile*> &GetSourceFiles() const 
+  const std::vector<cmSourceFile*> &GetSourceFiles() const
     {return this->SourceFiles;}
   std::vector<cmSourceFile*> &GetSourceFiles() {return this->SourceFiles;}
 
@@ -775,7 +757,7 @@ public:
 
   /**
    * Add a macro to the list of macros. The arguments should be name of the
-   * macro and a documentation signature of it 
+   * macro and a documentation signature of it
    */
   void AddMacro(const char* name, const char* signature);
 
@@ -797,9 +779,9 @@ public:
    */
   std::string GetModulesFile(const char* name);
 
-  ///! Set/Get a property of this directory 
+  ///! Set/Get a property of this directory
   void SetProperty(const char *prop, const char *value);
-  void AppendProperty(const char *prop, const char *value);
+  void AppendProperty(const char *prop, const char *value,bool asString=false);
   const char *GetProperty(const char *prop);
   const char *GetPropertyOrDefinition(const char *prop);
   const char *GetProperty(const char *prop, cmProperty::ScopeType scope);
@@ -812,7 +794,7 @@ public:
 
   ///! Initialize a makefile from its parent
   void InitializeFromParent();
-  
+
   ///! Set/Get the preorder flag
   void SetPreOrder(bool p) { this->PreOrder = p; }
   bool GetPreOrder() const { return this->PreOrder; }
@@ -859,11 +841,11 @@ protected:
   void CheckForUnused(const char* reason, const char* name) const;
 
   std::string Prefix;
-  std::vector<std::string> AuxSourceDirectories; // 
+  std::vector<std::string> AuxSourceDirectories; //
 
-  std::string cmStartDirectory; 
-  std::string StartOutputDirectory; 
-  std::string cmHomeDirectory; 
+  std::string cmStartDirectory;
+  std::string StartOutputDirectory;
+  std::string cmHomeDirectory;
   std::string HomeOutputDirectory;
   std::string cmCurrentListFile;
 
@@ -875,10 +857,8 @@ protected:
 
   // Tests
   std::map<cmStdString, cmTest*> Tests;
-  
-  // The include and link-library paths.  These may have order
-  // dependency, so they must be vectors (not set).
-  std::vector<std::string> IncludeDirectories;
+
+  // The link-library paths.  Order matters, use std::vector (not std::set).
   std::vector<std::string> LinkDirectories;
 
   // The set of include directories that are marked as system include
@@ -887,8 +867,8 @@ protected:
 
   std::vector<std::string> ListFiles; // list of command files loaded
   std::vector<std::string> OutputFiles; // list of command files loaded
-  
-  
+
+
   cmTarget::LinkLibraryVectorType LinkLibraries;
 
   std::vector<cmInstallGenerator*> InstallGenerators;
@@ -909,11 +889,11 @@ protected:
   std::vector<cmSourceGroup> SourceGroups;
 #endif
 
-  std::vector<cmCommand*> UsedCommands;
+  std::vector<cmCommand*> FinalPassCommands;
   cmLocalGenerator* LocalGenerator;
-  bool IsFunctionBlocked(const cmListFileFunction& lff, 
+  bool IsFunctionBlocked(const cmListFileFunction& lff,
                          cmExecutionStatus &status);
-  
+
 private:
   void Initialize();
 
@@ -923,10 +903,10 @@ private:
 
   void ReadSources(std::ifstream& fin, bool t);
   friend class cmMakeDepend;    // make depend needs direct access
-                                // to the Sources array 
-  void PrintStringVector(const char* s, const 
+                                // to the Sources array
+  void PrintStringVector(const char* s, const
                          std::vector<std::pair<cmStdString, bool> >& v) const;
-  void PrintStringVector(const char* s, 
+  void PrintStringVector(const char* s,
                          const std::vector<std::string>& v) const;
 
   void AddDefaultDefinitions();
@@ -954,7 +934,7 @@ private:
   bool WarnUnused;
   bool CheckSystemVars;
 
-  // stack of list files being read 
+  // stack of list files being read
   std::deque<cmStdString> ListFileStack;
 
   // stack of commands being invoked.

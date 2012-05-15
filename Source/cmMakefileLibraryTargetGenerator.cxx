@@ -101,6 +101,9 @@ void cmMakefileLibraryTargetGenerator::WriteRuleFiles()
         this->WriteModuleLibraryRules(true);
         }
       break;
+    case cmTarget::OBJECT_LIBRARY:
+      this->WriteObjectLibraryRules();
+      break;
     default:
       // If language is not known, this is an error.
       cmSystemTools::Error("Unknown Library Type");
@@ -119,6 +122,29 @@ void cmMakefileLibraryTargetGenerator::WriteRuleFiles()
 
   // close the streams
   this->CloseFileStreams();
+}
+
+//----------------------------------------------------------------------------
+void cmMakefileLibraryTargetGenerator::WriteObjectLibraryRules()
+{
+  std::vector<std::string> commands;
+  std::vector<std::string> depends;
+
+  // Add post-build rules.
+  this->LocalGenerator->
+    AppendCustomCommands(commands, this->Target->GetPostBuildCommands(),
+                         this->Target);
+
+  // Depend on the object files.
+  this->AppendObjectDepends(depends);
+
+  // Write the rule.
+  this->LocalGenerator->WriteMakeRule(*this->BuildFileStream, 0,
+                                      this->Target->GetName(),
+                                      depends, commands, true);
+
+  // Write the main driver rule to build everything in this target.
+  this->WriteTargetDriverRule(this->Target->GetName(), false);
 }
 
 //----------------------------------------------------------------------------
@@ -512,6 +538,13 @@ void cmMakefileLibraryTargetGenerator::WriteLibraryRules
     libCleanFiles.push_back(this->Convert(targetFullPathImport.c_str(),
         cmLocalGenerator::START_OUTPUT,
         cmLocalGenerator::UNCHANGED));
+    std::string implib;
+    if(this->Target->GetImplibGNUtoMS(targetFullPathImport, implib))
+      {
+      libCleanFiles.push_back(this->Convert(implib.c_str(),
+                                            cmLocalGenerator::START_OUTPUT,
+                                            cmLocalGenerator::UNCHANGED));
+      }
     }
 
   // List the PDB for cleaning only when the whole target is
@@ -772,7 +805,7 @@ void cmMakefileLibraryTargetGenerator::WriteLibraryRules
   else
     {
     // Get the set of commands.
-    std::string linkRule = this->Makefile->GetRequiredDefinition(linkRuleVar);
+    std::string linkRule = this->GetLinkRule(linkRuleVar);
     cmSystemTools::ExpandListArgument(linkRule, real_link_commands);
 
     // Expand placeholders.

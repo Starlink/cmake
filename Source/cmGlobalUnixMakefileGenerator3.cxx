@@ -17,6 +17,7 @@
 #include "cmGeneratedFileStream.h"
 #include "cmSourceFile.h"
 #include "cmTarget.h"
+#include "cmGeneratorTarget.h"
 
 cmGlobalUnixMakefileGenerator3::cmGlobalUnixMakefileGenerator3()
 {
@@ -39,7 +40,6 @@ void cmGlobalUnixMakefileGenerator3
                  bool optional)
 {
   this->cmGlobalGenerator::EnableLanguage(languages, mf, optional);
-  std::string path;
   for(std::vector<std::string>::const_iterator l = languages.begin();
       l != languages.end(); ++l)
     {
@@ -47,74 +47,7 @@ void cmGlobalUnixMakefileGenerator3
       {
       continue;
       }
-    const char* lang = l->c_str();
-    std::string langComp = "CMAKE_";
-    langComp += lang;
-    langComp += "_COMPILER";
-
-    if(!mf->GetDefinition(langComp.c_str()))
-      {
-      if(!optional)
-        {
-        cmSystemTools::Error(langComp.c_str(),
-                             " not set, after EnableLanguage");
-        }
-      continue;
-      }
-    const char* name = mf->GetRequiredDefinition(langComp.c_str());
-    if(!cmSystemTools::FileIsFullPath(name))
-      {
-      path = cmSystemTools::FindProgram(name);
-      }
-    else
-      {
-      path = name;
-      }
-    if((path.size() == 0 || !cmSystemTools::FileExists(path.c_str()))
-        && (optional==false))
-      {
-      std::string message = "your ";
-      message += lang;
-      message += " compiler: \"";
-      message +=  name;
-      message += "\" was not found.   Please set ";
-      message += langComp;
-      message += " to a valid compiler path or name.";
-      cmSystemTools::Error(message.c_str());
-      path = name;
-      }
-    std::string doc = lang;
-    doc += " compiler.";
-    const char* cname = this->GetCMakeInstance()->
-      GetCacheManager()->GetCacheValue(langComp.c_str());
-    std::string changeVars;
-    if(cname && (path != cname) && (optional==false))
-      {
-      std::string cnameString = cname;
-      std::string pathString = path;
-      // get rid of potentially multiple slashes:
-      cmSystemTools::ConvertToUnixSlashes(cnameString);
-      cmSystemTools::ConvertToUnixSlashes(pathString);
-      if (cnameString != pathString)
-        {
-        const char* cvars =
-          this->GetCMakeInstance()->GetProperty(
-            "__CMAKE_DELETE_CACHE_CHANGE_VARS_");
-        if(cvars)
-          {
-          changeVars += cvars;
-          changeVars += ";";
-          }
-        changeVars += langComp;
-        changeVars += ";";
-        changeVars += cname;
-        this->GetCMakeInstance()->SetProperty(
-          "__CMAKE_DELETE_CACHE_CHANGE_VARS_",
-          changeVars.c_str());
-        }
-      }
-    mf->AddCacheDefinition(langComp.c_str(), path.c_str(),
-                           doc.c_str(), cmCacheManager::FILEPATH);
+    this->ResolveLanguageCompiler(*l, mf, optional);
     }
 }
 
@@ -136,6 +69,38 @@ void cmGlobalUnixMakefileGenerator3
     "A hierarchy of UNIX makefiles is generated into the build tree.  Any "
     "standard UNIX-style make program can build the project through the "
     "default make target.  A \"make install\" target is also provided.";
+}
+
+//----------------------------------------------------------------------------
+void
+cmGlobalUnixMakefileGenerator3
+::ComputeTargetObjects(cmGeneratorTarget* gt) const
+{
+  cmTarget* target = gt->Target;
+  cmLocalUnixMakefileGenerator3* lg =
+    static_cast<cmLocalUnixMakefileGenerator3*>(gt->LocalGenerator);
+
+  // Compute full path to object file directory for this target.
+  std::string dir_max;
+  dir_max += gt->Makefile->GetCurrentOutputDirectory();
+  dir_max += "/";
+  dir_max += gt->LocalGenerator->GetTargetDirectory(*target);
+  dir_max += "/";
+  gt->ObjectDirectory = dir_max;
+
+  // Compute the name of each object file.
+  for(std::vector<cmSourceFile*>::iterator
+        si = gt->ObjectSources.begin();
+      si != gt->ObjectSources.end(); ++si)
+    {
+    cmSourceFile* sf = *si;
+    bool hasSourceExtension = true;
+    std::string objectName = gt->LocalGenerator
+      ->GetObjectFileNameWithoutTarget(*sf, dir_max,
+                                       &hasSourceExtension);
+    gt->Objects[sf] = objectName;
+    lg->AddLocalObjectFile(target, sf, objectName, hasSourceExtension);
+    }
 }
 
 //----------------------------------------------------------------------------
@@ -446,6 +411,7 @@ void cmGlobalUnixMakefileGenerator3
          (l->second.GetType() == cmTarget::STATIC_LIBRARY) ||
          (l->second.GetType() == cmTarget::SHARED_LIBRARY) ||
          (l->second.GetType() == cmTarget::MODULE_LIBRARY) ||
+         (l->second.GetType() == cmTarget::OBJECT_LIBRARY) ||
          (l->second.GetType() == cmTarget::UTILITY))
         {
         std::string tname = lg->GetRelativeTargetDirectory(l->second);
@@ -481,6 +447,7 @@ cmGlobalUnixMakefileGenerator3
        (l->second.GetType() == cmTarget::STATIC_LIBRARY) ||
        (l->second.GetType() == cmTarget::SHARED_LIBRARY) ||
        (l->second.GetType() == cmTarget::MODULE_LIBRARY) ||
+       (l->second.GetType() == cmTarget::OBJECT_LIBRARY) ||
        (l->second.GetType() == cmTarget::UTILITY))
       {
       // Add this to the list of depends rules in this directory.
@@ -655,6 +622,7 @@ cmGlobalUnixMakefileGenerator3
           (t->second.GetType() == cmTarget::STATIC_LIBRARY) ||
           (t->second.GetType() == cmTarget::SHARED_LIBRARY) ||
           (t->second.GetType() == cmTarget::MODULE_LIBRARY) ||
+          (t->second.GetType() == cmTarget::OBJECT_LIBRARY) ||
           (t->second.GetType() == cmTarget::UTILITY)))
         {
         // Add a rule to build the target by name.
@@ -741,6 +709,7 @@ cmGlobalUnixMakefileGenerator3
         || (t->second.GetType() == cmTarget::STATIC_LIBRARY)
         || (t->second.GetType() == cmTarget::SHARED_LIBRARY)
         || (t->second.GetType() == cmTarget::MODULE_LIBRARY)
+        || (t->second.GetType() == cmTarget::OBJECT_LIBRARY)
         || (t->second.GetType() == cmTarget::UTILITY)))
       {
       std::string makefileName;
@@ -1050,6 +1019,7 @@ void cmGlobalUnixMakefileGenerator3::WriteHelpRule
            (t->second.GetType() == cmTarget::STATIC_LIBRARY) ||
            (t->second.GetType() == cmTarget::SHARED_LIBRARY) ||
            (t->second.GetType() == cmTarget::MODULE_LIBRARY) ||
+           (t->second.GetType() == cmTarget::OBJECT_LIBRARY) ||
            (t->second.GetType() == cmTarget::GLOBAL_TARGET) ||
            (t->second.GetType() == cmTarget::UTILITY))
           {

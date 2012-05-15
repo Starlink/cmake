@@ -33,6 +33,7 @@
 #include <float.h>
 
 #include <memory> // auto_ptr
+#include <set>
 
 //----------------------------------------------------------------------
 class cmCTestSubdirCommand : public cmCommand
@@ -58,11 +59,11 @@ public:
   /**
    * The name of the command as specified in CMakeList.txt.
    */
-  virtual const char* GetName() { return "subdirs";}
+  virtual const char* GetName() const { return "subdirs";}
 
   // Unused methods
-  virtual const char* GetTerseDocumentation() { return ""; }
-  virtual const char* GetFullDocumentation() { return ""; }
+  virtual const char* GetTerseDocumentation() const { return ""; }
+  virtual const char* GetFullDocumentation() const { return ""; }
 
   cmTypeMacro(cmCTestSubdirCommand, cmCommand);
 
@@ -160,11 +161,11 @@ public:
   /**
    * The name of the command as specified in CMakeList.txt.
    */
-  virtual const char* GetName() { return "add_subdirectory";}
+  virtual const char* GetName() const { return "add_subdirectory";}
 
   // Unused methods
-  virtual const char* GetTerseDocumentation() { return ""; }
-  virtual const char* GetFullDocumentation() { return ""; }
+  virtual const char* GetTerseDocumentation() const { return ""; }
+  virtual const char* GetFullDocumentation() const { return ""; }
 
   cmTypeMacro(cmCTestAddSubdirectoryCommand, cmCommand);
 
@@ -250,11 +251,11 @@ public:
   /**
    * The name of the command as specified in CMakeList.txt.
    */
-  virtual const char* GetName() { return "ADD_TEST";}
+  virtual const char* GetName() const { return "ADD_TEST";}
 
   // Unused methods
-  virtual const char* GetTerseDocumentation() { return ""; }
-  virtual const char* GetFullDocumentation() { return ""; }
+  virtual const char* GetTerseDocumentation() const { return ""; }
+  virtual const char* GetFullDocumentation() const { return ""; }
 
   cmTypeMacro(cmCTestAddTestCommand, cmCommand);
 
@@ -298,11 +299,11 @@ public:
   /**
    * The name of the command as specified in CMakeList.txt.
    */
-  virtual const char* GetName() { return "SET_TESTS_PROPERTIES";}
+  virtual const char* GetName() const { return "SET_TESTS_PROPERTIES";}
 
   // Unused methods
-  virtual const char* GetTerseDocumentation() { return ""; }
-  virtual const char* GetFullDocumentation() { return ""; }
+  virtual const char* GetTerseDocumentation() const { return ""; }
+  virtual const char* GetFullDocumentation() const { return ""; }
 
   cmTypeMacro(cmCTestSetTestsPropertiesCommand, cmCommand);
 
@@ -617,9 +618,13 @@ int cmCTestTestHandler::ProcessHandler()
                  << "The following tests FAILED:" << std::endl);
       this->StartLogFile("TestsFailed", ofs);
 
-      std::vector<cmCTestTestHandler::cmCTestTestResult>::iterator ftit;
-      for(ftit = this->TestResults.begin();
-          ftit != this->TestResults.end(); ++ftit)
+      typedef std::set<cmCTestTestHandler::cmCTestTestResult,
+                       cmCTestTestResultLess> SetOfTests;
+      SetOfTests resultsSet(this->TestResults.begin(),
+                            this->TestResults.end());
+
+      for(SetOfTests::iterator ftit = resultsSet.begin();
+          ftit != resultsSet.end(); ++ftit)
         {
         if ( ftit->Status != cmCTestTestHandler::COMPLETED )
           {
@@ -1301,7 +1306,8 @@ int cmCTestTestHandler::ExecuteCommands(std::vector<cmStdString>& vec)
     int retVal = 0;
     cmCTestLog(this->CTest, HANDLER_VERBOSE_OUTPUT, "Run command: " << *it
       << std::endl);
-    if ( !cmSystemTools::RunSingleCommand(it->c_str(), 0, &retVal, 0, true
+    if ( !cmSystemTools::RunSingleCommand(it->c_str(), 0, &retVal, 0,
+                                          cmSystemTools::OUTPUT_MERGE
         /*this->Verbose*/) || retVal != 0 )
       {
       cmCTestLog(this->CTest, ERROR_MESSAGE, "Problem running command: "

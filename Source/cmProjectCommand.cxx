@@ -47,9 +47,13 @@ bool cmProjectCommand
   this->Makefile->AddDefinition("PROJECT_NAME", args[0].c_str());
 
   // Set the CMAKE_PROJECT_NAME variable to be the highest-level
-  // project name in the tree.  This is always the first PROJECT
-  // command encountered.
-  if(!this->Makefile->GetDefinition("CMAKE_PROJECT_NAME"))
+  // project name in the tree. If there are two project commands
+  // in the same CMakeLists.txt file, and it is the top level
+  // CMakeLists.txt file, then go with the last one, so that
+  // CMAKE_PROJECT_NAME will match PROJECT_NAME, and cmake --build
+  // will work.
+  if(!this->Makefile->GetDefinition("CMAKE_PROJECT_NAME")
+     || (this->Makefile->GetLocalGenerator()->GetParent() == 0) )
     {
     this->Makefile->AddDefinition("CMAKE_PROJECT_NAME", args[0].c_str());
     this->Makefile->AddCacheDefinition
@@ -73,6 +77,24 @@ bool cmProjectCommand
     languages.push_back("CXX");
     }
   this->Makefile->EnableLanguage(languages, false);
+  std::string extraInclude = "CMAKE_PROJECT_" + args[0] + "_INCLUDE";
+  const char* include = this->Makefile->GetDefinition(extraInclude.c_str());
+  if(include)
+    {
+    std::string fullFilePath;
+    bool readit =
+      this->Makefile->ReadListFile( this->Makefile->GetCurrentListFile(),
+                                    include);
+    if(!readit && !cmSystemTools::GetFatalErrorOccured())
+      {
+      std::string m =
+        "could not find file:\n"
+        "  ";
+      m += include;
+      this->SetError(m.c_str());
+      return false;
+      }
+    }
   return true;
 }
 
