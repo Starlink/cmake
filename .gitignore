@@ -79,4 +79,8 @@ Tests/CMakeLib/testXMLParser.h
 Utilities/cmcurl/LIBCURL
 Utilities/cmlibarchive/config.h
 cmake.tmp/
-
+Tests/FindPackageModeMakefileTest/ConfMakefile
+Utilities/KWIML/test/cmIML_test
+Utilities/KWIML/test/test_ABI_endian.h
+Utilities/KWIML/test/test_INT_format.h
+Utilities/cmIML/
