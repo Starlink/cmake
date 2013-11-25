@@ -313,6 +313,60 @@ static const char* targetPropertyTransitiveWhitelist[] = {
   , "INTERFACE_COMPILE_DEFINITIONS"
 };
 
+std::string getLinkedTargetsContent(const std::vector<std::string> &libraries,
+                                  cmTarget *target,
+                                  cmTarget *headTarget,
+                                  cmGeneratorExpressionContext *context,
+                                  cmGeneratorExpressionDAGChecker *dagChecker,
+                                  const std::string &interfacePropertyName)
+{
+  cmGeneratorExpression ge(context->Backtrace);
+
+  std::string sep;
+  std::string depString;
+  for (std::vector<std::string>::const_iterator
+      it = libraries.begin();
+      it != libraries.end(); ++it)
+    {
+    if (*it == target->GetName())
+      {
+      // Broken code can have a target in its own link interface.
+      // Don't follow such link interface entries so as not to create a
+      // self-referencing loop.
+      continue;
+      }
+    if (context->Makefile->FindTargetToUse(it->c_str()))
+      {
+      depString +=
+        sep + "$<TARGET_PROPERTY:" + *it + "," + interfacePropertyName + ">";
+      sep = ";";
+      }
+    }
+  cmsys::auto_ptr<cmCompiledGeneratorExpression> cge = ge.Parse(depString);
+  std::string linkedTargetsContent = cge->Evaluate(context->Makefile,
+                      context->Config,
+                      context->Quiet,
+                      headTarget,
+                      target,
+                      dagChecker);
+  if (cge->GetHadContextSensitiveCondition())
+    {
+    context->HadContextSensitiveCondition = true;
+    }
+  return linkedTargetsContent;
+}
+
+//----------------------------------------------------------------------------
+struct TransitiveWhitelistCompare
+{
+  explicit TransitiveWhitelistCompare(const std::string &needle)
+    : Needle(needle) {}
+  bool operator() (const char *item)
+  { return strcmp(item, this->Needle.c_str()) == 0; }
+private:
+  std::string Needle;
+};
+
 //----------------------------------------------------------------------------
 static const struct TargetPropertyNode : public cmGeneratorExpressionNode
 {
@@ -485,49 +539,40 @@ static const struct TargetPropertyNode : public cmGeneratorExpressionNode
       interfacePropertyName = "INTERFACE_COMPILE_DEFINITIONS";
       }
 
-    if (interfacePropertyName == "INTERFACE_INCLUDE_DIRECTORIES"
-        || interfacePropertyName == "INTERFACE_COMPILE_DEFINITIONS")
+    cmTarget *headTarget = context->HeadTarget ? context->HeadTarget : target;
+
+    const char **transBegin = targetPropertyTransitiveWhitelist;
+    const char **transEnd = targetPropertyTransitiveWhitelist
+              + (sizeof(targetPropertyTransitiveWhitelist) /
+              sizeof(*targetPropertyTransitiveWhitelist));
+    if (std::find_if(transBegin, transEnd,
+              TransitiveWhitelistCompare(propertyName)) != transEnd)
       {
       const cmTarget::LinkInterface *iface = target->GetLinkInterface(
                                                     context->Config,
-                                                    context->HeadTarget);
+                                                    headTarget);
       if(iface)
         {
-        cmGeneratorExpression ge(context->Backtrace);
-
-        std::string sep;
-        std::string depString;
-        for (std::vector<std::string>::const_iterator
-            it = iface->Libraries.begin();
-            it != iface->Libraries.end(); ++it)
-          {
-          if (*it == target->GetName())
-            {
-            // Broken code can have a target in its own link interface.
-            // Don't follow such link interface entries so as not to create a
-            // self-referencing loop.
-            continue;
-            }
-          if (context->Makefile->FindTargetToUse(it->c_str()))
-            {
-            depString +=
-              sep + "$<TARGET_PROPERTY:" + *it + ","
-                                         + interfacePropertyName + ">";
-            sep = ";";
-            }
-          }
-        cmsys::auto_ptr<cmCompiledGeneratorExpression> cge =
-                                                      ge.Parse(depString);
-        linkedTargetsContent = cge->Evaluate(context->Makefile,
-                            context->Config,
-                            context->Quiet,
-                            context->HeadTarget,
-                            target,
-                            &dagChecker);
-        if (cge->GetHadContextSensitiveCondition())
-          {
-          context->HadContextSensitiveCondition = true;
-          }
+        linkedTargetsContent =
+                  getLinkedTargetsContent(iface->Libraries, target,
+                                          headTarget,
+                                          context, &dagChecker,
+                                          interfacePropertyName);
+        }
+      }
+    else if (std::find_if(transBegin, transEnd,
+              TransitiveWhitelistCompare(interfacePropertyName)) != transEnd)
+      {
+      const cmTarget::LinkImplementation *impl = target->GetLinkImplementation(
+                                                    context->Config,
+                                                    headTarget);
+      if(impl)
+        {
+        linkedTargetsContent =
+                  getLinkedTargetsContent(impl->Libraries, target,
+                                          headTarget,
+                                          context, &dagChecker,
+                                          interfacePropertyName);
         }
       }
 
@@ -574,7 +619,7 @@ static const struct TargetPropertyNode : public cmGeneratorExpressionNode
         std::string result = cge->Evaluate(context->Makefile,
                             context->Config,
                             context->Quiet,
-                            context->HeadTarget,
+                            headTarget,
                             target,
                             &dagChecker);
 
