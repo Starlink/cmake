@@ -136,8 +136,23 @@ cmGlobalGenerator* cmGlobalXCodeGenerator::New()
 {
 #if defined(CMAKE_BUILD_WITH_CMAKE)
   cmXcodeVersionParser parser;
-  if (cmSystemTools::FileExists(
-       "/Applications/Xcode.app/Contents/version.plist"))
+  std::string versionFile;
+  {
+  std::string out;
+  std::string::size_type pos;
+  if(cmSystemTools::RunSingleCommand("xcode-select --print-path", &out, 0, 0,
+                                     cmSystemTools::OUTPUT_NONE) &&
+     (pos = out.find(".app/"), pos != out.npos))
+    {
+    versionFile = out.substr(0, pos+5)+"Contents/version.plist";
+    }
+  }
+  if(!versionFile.empty() && cmSystemTools::FileExists(versionFile.c_str()))
+    {
+    parser.ParseFile(versionFile.c_str());
+    }
+  else if (cmSystemTools::FileExists(
+             "/Applications/Xcode.app/Contents/version.plist"))
     {
     parser.ParseFile
       ("/Applications/Xcode.app/Contents/version.plist");
@@ -771,6 +786,10 @@ GetSourcecodeValueFromFileExtension(const std::string& _ext,
   else if(lang == "Fortran")
     {
     sourcecode += ".fortran.f90";
+    }
+  else if(lang == "ASM")
+    {
+    sourcecode += ".asm";
     }
   //else
   //  {
@@ -1628,16 +1647,12 @@ void cmGlobalXCodeGenerator::CreateBuildSettings(cmTarget& target,
     // Add the export symbol definition for shared library objects.
     this->AppendDefines(ppDefs, exportMacro);
     }
-  this->AppendDefines
-    (ppDefs, this->CurrentMakefile->GetProperty("COMPILE_DEFINITIONS"));
-  this->AppendDefines(ppDefs, target.GetProperty("COMPILE_DEFINITIONS"));
+  cmGeneratorTarget *gtgt = this->GetGeneratorTarget(&target);
+  this->AppendDefines(ppDefs, gtgt->GetCompileDefinitions().c_str());
   if(configName)
     {
-    std::string defVarName = "COMPILE_DEFINITIONS_";
-    defVarName += cmSystemTools::UpperCase(configName);
-    this->AppendDefines
-      (ppDefs, this->CurrentMakefile->GetProperty(defVarName.c_str()));
-    this->AppendDefines(ppDefs, target.GetProperty(defVarName.c_str()));
+    this->AppendDefines(ppDefs,
+                        gtgt->GetCompileDefinitions(configName).c_str());
     }
   buildSettings->AddAttribute
     ("GCC_PREPROCESSOR_DEFINITIONS", ppDefs.CreateList());
@@ -1694,7 +1709,8 @@ void cmGlobalXCodeGenerator::CreateBuildSettings(cmTarget& target,
 
   // Set target-specific architectures.
   std::vector<std::string> archs;
-  target.GetAppleArchs(configName, archs);
+  gtgt->GetAppleArchs(configName, archs);
+
   if(!archs.empty())
     {
     // Enable ARCHS attribute.
@@ -1931,7 +1947,8 @@ void cmGlobalXCodeGenerator::CreateBuildSettings(cmTarget& target,
   BuildObjectListOrString dirs(this, this->XcodeVersion >= 30);
   BuildObjectListOrString fdirs(this, this->XcodeVersion >= 30);
   std::vector<std::string> includes;
-  this->CurrentLocalGenerator->GetIncludeDirectories(includes, &target);
+  this->CurrentLocalGenerator->GetIncludeDirectories(includes, gtgt,
+                                                     "C", configName);
   std::set<cmStdString> emitted;
   emitted.insert("/System/Library/Frameworks");
   for(std::vector<std::string>::iterator i = includes.begin();
@@ -2606,7 +2623,8 @@ void cmGlobalXCodeGenerator
       }
 
     // Compute the link library and directory information.
-    cmComputeLinkInformation* pcli = cmtarget->GetLinkInformation(configName);
+    cmGeneratorTarget* gtgt = this->GetGeneratorTarget(cmtarget);
+    cmComputeLinkInformation* pcli = gtgt->GetLinkInformation(configName);
     if(!pcli)
       {
       continue;
@@ -3099,18 +3117,14 @@ void cmGlobalXCodeGenerator
 
   const char* sysroot =
       this->CurrentMakefile->GetDefinition("CMAKE_OSX_SYSROOT");
-  const char* sysrootDefault =
-    this->CurrentMakefile->GetDefinition("CMAKE_OSX_SYSROOT_DEFAULT");
   const char* deploymentTarget =
     this->CurrentMakefile->GetDefinition("CMAKE_OSX_DEPLOYMENT_TARGET");
   if(osxArch && sysroot)
     {
-    bool flagsUsed = false;
     // recompute this as it may have been changed since enable language
     this->Architectures.clear();
     cmSystemTools::ExpandListArgument(std::string(osxArch),
                                       this->Architectures);
-    flagsUsed = true;
     buildSettings->AddAttribute("SDKROOT",
                                 this->CreateString(sysroot));
     std::string archString;
@@ -3125,12 +3139,6 @@ void cmGlobalXCodeGenerator
       }
     buildSettings->AddAttribute("ARCHS",
                                 this->CreateString(archString.c_str()));
-    if(!flagsUsed && sysrootDefault &&
-       strcmp(sysroot, sysrootDefault) != 0)
-      {
-      buildSettings->AddAttribute("SDKROOT",
-                                  this->CreateString(sysroot));
-      }
     }
   if(deploymentTarget && *deploymentTarget)
     {
@@ -3739,7 +3747,7 @@ cmGlobalXCodeGenerator
 
   const char* configName = this->GetCMakeCFGIntDir();
   std::string dir = this->GetObjectsNormalDirectory(
-    this->CurrentProject, configName, gt->Target);
+    "$(PROJECT_NAME)", configName, gt->Target);
   if(this->XcodeVersion >= 21)
     {
     dir += "$(CURRENT_ARCH)/";

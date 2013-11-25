@@ -55,6 +55,11 @@ bool cmIncludeDirectoryCommand
   return true;
 }
 
+static bool StartsWithGeneratorExpression(const std::string &input)
+{
+  return input[0] == '$' && input[1] == '<';
+}
+
 // do a lot of cleanup on the arguments because this is one place where folks
 // sometimes take the output of a program and pass it directly into this
 // command not thinking that a single argument could be filled with spaces
@@ -67,8 +72,8 @@ bool cmIncludeDirectoryCommand
 // output from a program and passing it into a command the cleanup doesn't
 // always happen
 //
-void cmIncludeDirectoryCommand::AddDirectory(const char *i, 
-                                             bool before, 
+void cmIncludeDirectoryCommand::AddDirectory(const char *i,
+                                             bool before,
                                              bool system)
 {
   // break apart any line feed arguments
@@ -91,7 +96,7 @@ void cmIncludeDirectoryCommand::AddDirectory(const char *i,
   // remove any leading or trailing spaces and \r
   std::string::size_type b = ret.find_first_not_of(" \r");
   std::string::size_type e = ret.find_last_not_of(" \r");
-  if ((b!=ret.npos) && (e!=ret.npos))  
+  if ((b!=ret.npos) && (e!=ret.npos))
     {
     ret.assign(ret, b, 1+e-b);   // copy the remaining substring
     }
@@ -105,10 +110,13 @@ void cmIncludeDirectoryCommand::AddDirectory(const char *i,
     cmSystemTools::ConvertToUnixSlashes(ret);
     if(!cmSystemTools::FileIsFullPath(ret.c_str()))
       {
-      std::string tmp = this->Makefile->GetStartDirectory();
-      tmp += "/";
-      tmp += ret;
-      ret = tmp;
+      if(!StartsWithGeneratorExpression(ret))
+        {
+        std::string tmp = this->Makefile->GetStartDirectory();
+        tmp += "/";
+        tmp += ret;
+        ret = tmp;
+        }
       }
     }
   this->Makefile->AddIncludeDirectory(ret.c_str(), before);

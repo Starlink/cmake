@@ -9,6 +9,10 @@
   implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
   See the License for more information.
 ============================================================================*/
+
+#ifndef cmGeneratorExpression_h
+#define cmGeneratorExpression_h
+
 #include "cmStandardIncludes.h"
 
 #include <stack>
@@ -16,8 +20,14 @@
 #include <cmsys/RegularExpression.hxx>
 
 class cmTarget;
+class cmGeneratorTarget;
 class cmMakefile;
 class cmListFileBacktrace;
+
+struct cmGeneratorExpressionEvaluator;
+struct cmGeneratorExpressionDAGChecker;
+
+class cmCompiledGeneratorExpression;
 
 /** \class cmGeneratorExpression
  * \brief Evaluate generate-time query expression syntax.
@@ -31,28 +41,59 @@ class cmListFileBacktrace;
 class cmGeneratorExpression
 {
 public:
-  /** Construct with an evaluation context and configuration.  */
-  cmGeneratorExpression(cmMakefile* mf, const char* config,
-                        cmListFileBacktrace const& backtrace,
-                        bool quiet = false);
+  /** Construct. */
+  cmGeneratorExpression(cmListFileBacktrace const& backtrace);
+  ~cmGeneratorExpression();
 
-  /** Evaluate generator expressions in a string.  */
-  const char* Process(std::string const& input);
-  const char* Process(const char* input);
+  const cmCompiledGeneratorExpression& Parse(std::string const& input);
+  const cmCompiledGeneratorExpression& Parse(const char* input);
+
+  enum PreprocessContext {
+    StripAllGeneratorExpressions
+  };
+
+  static std::string Preprocess(const std::string &input,
+                                PreprocessContext context);
+
+private:
+  cmGeneratorExpression(const cmGeneratorExpression &);
+  void operator=(const cmGeneratorExpression &);
+
+  cmListFileBacktrace const& Backtrace;
+  cmCompiledGeneratorExpression *CompiledExpression;
+};
+
+class cmCompiledGeneratorExpression
+{
+public:
+  const char* Evaluate(cmMakefile* mf, const char* config,
+                       bool quiet = false,
+                       cmGeneratorTarget *target = 0,
+                       cmGeneratorExpressionDAGChecker *dagChecker = 0) const;
 
   /** Get set of targets found during evaluations.  */
   std::set<cmTarget*> const& GetTargets() const
     { return this->Targets; }
+
+  ~cmCompiledGeneratorExpression();
+
 private:
-  cmMakefile* Makefile;
-  const char* Config;
+  cmCompiledGeneratorExpression(cmListFileBacktrace const& backtrace,
+              const std::vector<cmGeneratorExpressionEvaluator*> &evaluators,
+              const char *input, bool needsParsing);
+
+  friend class cmGeneratorExpression;
+
+  cmCompiledGeneratorExpression(const cmCompiledGeneratorExpression &);
+  void operator=(const cmCompiledGeneratorExpression &);
+
   cmListFileBacktrace const& Backtrace;
-  bool Quiet;
-  std::vector<char> Data;
-  std::stack<size_t> Barriers;
-  cmsys::RegularExpression TargetInfo;
-  std::set<cmTarget*> Targets;
-  bool Evaluate();
-  bool Evaluate(const char* expr, std::string& result);
-  bool EvaluateTargetInfo(std::string& result);
+  const std::vector<cmGeneratorExpressionEvaluator*> Evaluators;
+  const char* const Input;
+  const bool NeedsParsing;
+
+  mutable std::set<cmTarget*> Targets;
+  mutable std::string Output;
 };
+
+#endif

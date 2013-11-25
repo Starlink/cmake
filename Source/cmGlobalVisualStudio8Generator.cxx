@@ -21,7 +21,6 @@ cmGlobalVisualStudio8Generator::cmGlobalVisualStudio8Generator()
 {
   this->FindMakeProgramFile = "CMakeVS8FindMake.cmake";
   this->ProjectConfigurationSectionName = "ProjectConfigurationPlatforms";
-  this->ArchitectureId = "X86";
 }
 
 //----------------------------------------------------------------------------
@@ -35,7 +34,7 @@ cmLocalGenerator *cmGlobalVisualStudio8Generator::CreateLocalGenerator()
   lg->SetGlobalGenerator(this);
   return lg;
 }
-  
+
 //----------------------------------------------------------------------------
 // ouput standard header for dsw file
 void cmGlobalVisualStudio8Generator::WriteSLNHeader(std::ostream& fout)
@@ -49,16 +48,8 @@ void cmGlobalVisualStudio8Generator
 ::GetDocumentation(cmDocumentationEntry& entry) const
 {
   entry.Name = this->GetName();
-  entry.Brief = "Generates Visual Studio .NET 2005 project files.";
+  entry.Brief = "Generates Visual Studio 8 2005 project files.";
   entry.Full = "";
-}
-
-//----------------------------------------------------------------------------
-void cmGlobalVisualStudio8Generator::AddPlatformDefinitions(cmMakefile* mf)
-{
-  mf->AddDefinition("MSVC_C_ARCHITECTURE_ID", this->ArchitectureId);
-  mf->AddDefinition("MSVC_CXX_ARCHITECTURE_ID", this->ArchitectureId);
-  mf->AddDefinition("MSVC80", "1");
 }
 
 //----------------------------------------------------------------------------
@@ -336,7 +327,7 @@ bool cmGlobalVisualStudio8Generator::NeedLinkLibraryDependencies(
 
 //----------------------------------------------------------------------------
 static cmVS7FlagTable cmVS8ExtraFlagTable[] =
-{ 
+{
   {"CallingConvention", "Gd", "cdecl", "0", 0 },
   {"CallingConvention", "Gr", "fastcall", "1", 0 },
   {"CallingConvention", "Gz", "stdcall", "2", 0 },

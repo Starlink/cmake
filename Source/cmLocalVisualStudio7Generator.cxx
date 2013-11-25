@@ -291,7 +291,7 @@ cmSourceFile* cmLocalVisualStudio7Generator::CreateVCProjBuildRule()
   comment += makefileIn;
   std::string args;
   args = "-H";
-  args += this->Convert(this->Makefile->GetHomeDirectory(), 
+  args += this->Convert(this->Makefile->GetHomeDirectory(),
                         START_OUTPUT, UNCHANGED, true);
   commandLine.push_back(args);
   args = "-B";
@@ -343,8 +343,8 @@ void cmLocalVisualStudio7Generator::WriteConfigurations(std::ostream& fout,
   fout << "\t</Configurations>\n";
 }
 cmVS7FlagTable cmLocalVisualStudio7GeneratorFortranFlagTable[] =
-{ 
-  {"Preprocess", "fpp", "Run Preprocessor on files", "preprocessYes", 0}, 
+{
+  {"Preprocess", "fpp", "Run Preprocessor on files", "preprocessYes", 0},
   {"SuppressStartupBanner", "nologo", "SuppressStartupBanner", "true", 0},
   {"SourceFileFormat", "fixed", "Use Fixed Format", "fileFormatFixed", 0},
   {"SourceFileFormat", "free", "Use Free Format", "fileFormatFree", 0},
@@ -376,15 +376,15 @@ cmVS7FlagTable cmLocalVisualStudio7GeneratorFortranFlagTable[] =
   {"OptimizeForProcessor", "QxO", "", "codeExclusivelyCore2StreamingSIMD", 0},
   {"OptimizeForProcessor", "QxS", "", "codeExclusivelyCore2StreamingSIMD4", 0},
 
-  {"ModulePath", "module:", "", "", 
+  {"ModulePath", "module:", "", "",
    cmVS7FlagTable::UserValueRequired},
-  {"LoopUnrolling", "Qunroll:", "", "", 
+  {"LoopUnrolling", "Qunroll:", "", "",
    cmVS7FlagTable::UserValueRequired},
-  {"AutoParallelThreshold", "Qpar-threshold:", "", "", 
+  {"AutoParallelThreshold", "Qpar-threshold:", "", "",
    cmVS7FlagTable::UserValueRequired},
-  {"HeapArrays", "heap-arrays:", "", "", 
+  {"HeapArrays", "heap-arrays:", "", "",
    cmVS7FlagTable::UserValueRequired},
-  {"ObjectText", "bintext:", "", "", 
+  {"ObjectText", "bintext:", "", "",
    cmVS7FlagTable::UserValueRequired},
   {"Parallelization", "Qparallel", "", "true", 0},
   {"PrefetchInsertion", "Qprefetch-", "", "false", 0},
@@ -476,7 +476,7 @@ cmVS7FlagTable cmLocalVisualStudio7GeneratorFlagTable[] =
   // boolean flags
   {"BufferSecurityCheck", "GS", "Buffer security check", "TRUE", 0},
   {"BufferSecurityCheck", "GS-", "Turn off Buffer security check", "FALSE", 0},
-  {"Detect64BitPortabilityProblems", "Wp64", 
+  {"Detect64BitPortabilityProblems", "Wp64",
    "Detect 64-bit Portability Problems", "TRUE", 0},
   {"EnableFiberSafeOptimizations", "GT", "Enable Fiber-safe Optimizations",
    "TRUE", 0},
@@ -566,7 +566,7 @@ cmVS7FlagTable cmLocalVisualStudio7GeneratorLinkFlagTable[] =
   {"TurnOffAssemblyGeneration", "NOASSEMBLY",
    "No assembly even if CLR information is present in objects.", "true", 0},
   {"ModuleDefinitionFile", "DEF:", "add an export def file", "",
-   cmVS7FlagTable::UserValue}, 
+   cmVS7FlagTable::UserValue},
   {"GenerateMapFile", "MAP", "enable generation of map file", "TRUE", 0},
   {0,0,0,0,0}
 };
@@ -724,10 +724,6 @@ void cmLocalVisualStudio7Generator::WriteConfiguration(std::ostream& fout,
     flags += targetFlags;
     }
 
-  std::string configUpper = cmSystemTools::UpperCase(configName);
-  std::string defPropName = "COMPILE_DEFINITIONS_";
-  defPropName += configUpper;
-
   // Get preprocessor definitions for this directory.
   std::string defineFlags = this->Makefile->GetDefineFlags();
   Options::Tool t = Options::Compiler;
@@ -744,11 +740,10 @@ void cmLocalVisualStudio7Generator::WriteConfiguration(std::ostream& fout,
   targetOptions.Parse(flags.c_str());
   targetOptions.Parse(defineFlags.c_str());
   targetOptions.ParseFinish();
-  targetOptions.AddDefines
-    (this->Makefile->GetProperty("COMPILE_DEFINITIONS"));
-  targetOptions.AddDefines(target.GetProperty("COMPILE_DEFINITIONS"));
-  targetOptions.AddDefines(this->Makefile->GetProperty(defPropName.c_str()));
-  targetOptions.AddDefines(target.GetProperty(defPropName.c_str()));
+  cmGeneratorTarget* gt =
+    this->GlobalGenerator->GetGeneratorTarget(&target);
+  targetOptions.AddDefines(gt->GetCompileDefinitions().c_str());
+  targetOptions.AddDefines(gt->GetCompileDefinitions(configName).c_str());
   targetOptions.SetVerboseMakefile(
     this->Makefile->IsOn("CMAKE_VERBOSE_MAKEFILE"));
 
@@ -800,7 +795,7 @@ void cmLocalVisualStudio7Generator::WriteConfiguration(std::ostream& fout,
   if(this->FortranProject)
     {
     const char* target_mod_dir =
-      target.GetProperty("Fortran_MODULE_DIRECTORY"); 
+      target.GetProperty("Fortran_MODULE_DIRECTORY");
     std::string modDir;
     if(target_mod_dir)
       {
@@ -812,21 +807,21 @@ void cmLocalVisualStudio7Generator::WriteConfiguration(std::ostream& fout,
       {
       modDir = ".";
       }
-    fout << "\t\t\t\tModulePath=\"" 
+    fout << "\t\t\t\tModulePath=\""
          << this->ConvertToXMLOutputPath(modDir.c_str())
          << "\\$(ConfigurationName)\"\n";
     }
   targetOptions.OutputAdditionalOptions(fout, "\t\t\t\t", "\n");
   fout << "\t\t\t\tAdditionalIncludeDirectories=\"";
   std::vector<std::string> includes;
-  this->GetIncludeDirectories(includes, &target);
+  this->GetIncludeDirectories(includes, gt, "C", configName);
   std::vector<std::string>::iterator i = includes.begin();
   for(;i != includes.end(); ++i)
     {
     // output the include path
     std::string ipath = this->ConvertToXMLOutputPath(i->c_str());
     fout << ipath << ";";
-    // if this is fortran then output the include with 
+    // if this is fortran then output the include with
     // a ConfigurationName on the end of it.
     if(this->FortranProject)
       {
@@ -847,7 +842,7 @@ void cmLocalVisualStudio7Generator::WriteConfiguration(std::ostream& fout,
     // non-debug configurations because VS still creates .idb files.
     fout <<  "\t\t\t\tProgramDataBaseFileName=\""
          << this->ConvertToXMLOutputPathSingle(
-              target.GetDirectory(configName).c_str())
+              target.GetPDBDirectory(configName).c_str())
          << "/"
          << target.GetPDBName(configName) << "\"\n";
     }
@@ -918,7 +913,7 @@ void cmLocalVisualStudio7Generator::WriteConfiguration(std::ostream& fout,
       // Add a flag telling the manifest tool to use a workaround
       // for FAT32 file systems, which can cause an empty manifest
       // to be embedded into the resulting executable.  See CMake
-      // bug #2617. 
+      // bug #2617.
       const char* tool  = "VCManifestTool";
       if(this->FortranProject)
         {
@@ -941,7 +936,7 @@ cmLocalVisualStudio7Generator
 ::GetBuildTypeLinkerFlags(std::string rootLinkerFlags, const char* configName)
 {
   std::string configTypeUpper = cmSystemTools::UpperCase(configName);
-  std::string extraLinkOptionsBuildTypeDef = 
+  std::string extraLinkOptionsBuildTypeDef =
     rootLinkerFlags + "_" + configTypeUpper;
 
   std::string extraLinkOptionsBuildType =
@@ -962,23 +957,23 @@ void cmLocalVisualStudio7Generator::OutputBuildTool(std::ostream& fout,
   std::string extraLinkOptions;
   if(target.GetType() == cmTarget::EXECUTABLE)
     {
-    extraLinkOptions = 
-      this->Makefile->GetRequiredDefinition("CMAKE_EXE_LINKER_FLAGS") 
-      + std::string(" ") 
+    extraLinkOptions =
+      this->Makefile->GetRequiredDefinition("CMAKE_EXE_LINKER_FLAGS")
+      + std::string(" ")
       + GetBuildTypeLinkerFlags("CMAKE_EXE_LINKER_FLAGS", configName);
     }
   if(target.GetType() == cmTarget::SHARED_LIBRARY)
     {
-    extraLinkOptions = 
-      this->Makefile->GetRequiredDefinition("CMAKE_SHARED_LINKER_FLAGS") 
-      + std::string(" ") 
+    extraLinkOptions =
+      this->Makefile->GetRequiredDefinition("CMAKE_SHARED_LINKER_FLAGS")
+      + std::string(" ")
       + GetBuildTypeLinkerFlags("CMAKE_SHARED_LINKER_FLAGS", configName);
     }
   if(target.GetType() == cmTarget::MODULE_LIBRARY)
     {
-    extraLinkOptions = 
-      this->Makefile->GetRequiredDefinition("CMAKE_MODULE_LINKER_FLAGS") 
-      + std::string(" ") 
+    extraLinkOptions =
+      this->Makefile->GetRequiredDefinition("CMAKE_MODULE_LINKER_FLAGS")
+      + std::string(" ")
       + GetBuildTypeLinkerFlags("CMAKE_MODULE_LINKER_FLAGS", configName);
     }
 
@@ -1079,7 +1074,9 @@ void cmLocalVisualStudio7Generator::OutputBuildTool(std::ostream& fout,
                            targetNameImport, targetNamePDB, configName);
 
     // Compute the link library and directory information.
-    cmComputeLinkInformation* pcli = target.GetLinkInformation(configName);
+    cmGeneratorTarget* gt =
+      this->GlobalGenerator->GetGeneratorTarget(&target);
+    cmComputeLinkInformation* pcli = gt->GetLinkInformation(configName);
     if(!pcli)
       {
       return;
@@ -1125,7 +1122,7 @@ void cmLocalVisualStudio7Generator::OutputBuildTool(std::ostream& fout,
     fout << "\t\t\t\tAdditionalLibraryDirectories=\"";
     this->OutputLibraryDirectories(fout, cli.GetDirectories());
     fout << "\"\n";
-    temp = target.GetDirectory(configName);
+    temp = target.GetPDBDirectory(configName);
     temp += "/";
     temp += targetNamePDB;
     fout << "\t\t\t\tProgramDatabaseFile=\"" <<
@@ -1164,7 +1161,9 @@ void cmLocalVisualStudio7Generator::OutputBuildTool(std::ostream& fout,
                               targetNameImport, targetNamePDB, configName);
 
     // Compute the link library and directory information.
-    cmComputeLinkInformation* pcli = target.GetLinkInformation(configName);
+    cmGeneratorTarget* gt =
+      this->GlobalGenerator->GetGeneratorTarget(&target);
+    cmComputeLinkInformation* pcli = gt->GetLinkInformation(configName);
     if(!pcli)
       {
       return;
@@ -1203,7 +1202,7 @@ void cmLocalVisualStudio7Generator::OutputBuildTool(std::ostream& fout,
     temp = target.GetDirectory(configName);
     temp += "/";
     temp += targetNameFull;
-    fout << "\t\t\t\tOutputFile=\"" 
+    fout << "\t\t\t\tOutputFile=\""
          << this->ConvertToXMLOutputPathSingle(temp.c_str()) << "\"\n";
     this->WriteTargetVersionAttribute(fout, target);
     linkOptions.OutputFlagMap(fout, "\t\t\t\t");
@@ -1211,7 +1210,7 @@ void cmLocalVisualStudio7Generator::OutputBuildTool(std::ostream& fout,
     this->OutputLibraryDirectories(fout, cli.GetDirectories());
     fout << "\"\n";
     std::string path = this->ConvertToXMLOutputPathSingle(
-      target.GetDirectory(configName).c_str());
+      target.GetPDBDirectory(configName).c_str());
     fout << "\t\t\t\tProgramDatabaseFile=\""
          << path << "/" << targetNamePDB
          << "\"\n";
@@ -1594,7 +1593,7 @@ cmLocalVisualStudio7Generator
 
 void cmLocalVisualStudio7Generator
 ::WriteGroup(const cmSourceGroup *sg, cmTarget& target,
-             std::ostream &fout, const char *libName, 
+             std::ostream &fout, const char *libName,
              std::vector<std::string> *configs)
 {
   const std::vector<const cmSourceFile *> &sourceFiles =
@@ -1652,7 +1651,7 @@ void cmLocalVisualStudio7Generator
           }
         if(ext == "rc")
           {
-          aCompilerTool = "VCResourceCompilerTool";  
+          aCompilerTool = "VCResourceCompilerTool";
           lang = "RC";
           if(this->FortranProject)
             {
@@ -1744,7 +1743,7 @@ WriteCustomRule(std::ostream& fout,
                 FCInfo& fcinfo)
 {
   std::string comment = this->ConstructComment(command);
-  
+
   // Write the rule for each configuration.
   std::vector<std::string>::iterator i;
   std::vector<std::string> *configs =
@@ -1780,9 +1779,9 @@ WriteCustomRule(std::ostream& fout,
       }
     fout << "\t\t\t\t\t<Tool\n"
          << "\t\t\t\t\tName=\"" << customTool << "\"\n"
-         << "\t\t\t\t\tDescription=\"" 
+         << "\t\t\t\t\tDescription=\""
          << this->EscapeForXML(comment.c_str()) << "\"\n"
-         << "\t\t\t\t\tCommandLine=\"" 
+         << "\t\t\t\t\tCommandLine=\""
          << this->EscapeForXML(script.c_str()) << "\"\n"
          << "\t\t\t\t\tAdditionalDependencies=\"";
     if(command.GetDepends().empty())
@@ -1799,9 +1798,9 @@ WriteCustomRule(std::ostream& fout,
     else
       {
       // Write out the dependencies for the rule.
-      for(std::vector<std::string>::const_iterator d = 
+      for(std::vector<std::string>::const_iterator d =
           command.GetDepends().begin();
-          d != command.GetDepends().end(); 
+          d != command.GetDepends().end();
           ++d)
         {
         // Get the real name of the dependency in case it is a CMake target.
@@ -1823,9 +1822,9 @@ WriteCustomRule(std::ostream& fout,
       {
       // Write a rule for the output generated by this command.
       const char* sep = "";
-      for(std::vector<std::string>::const_iterator o = 
-          command.GetOutputs().begin(); 
-          o != command.GetOutputs().end(); 
+      for(std::vector<std::string>::const_iterator o =
+          command.GetOutputs().begin();
+          o != command.GetOutputs().end();
           ++o)
         {
         fout << sep << this->ConvertToXMLOutputPathSingle(o->c_str());
@@ -1922,7 +1921,7 @@ cmLocalVisualStudio7Generator
                            const char *libName,
                            cmTarget & target)
 {
-  
+
   cmGlobalVisualStudio7Generator* gg =
     static_cast<cmGlobalVisualStudio7Generator *>(this->GlobalGenerator);
 
@@ -1954,7 +1953,7 @@ cmLocalVisualStudio7Generator
   if(!keyword)
     {
     keyword = "Console Application";
-    } 
+    }
   const char* projectType = 0;
   switch(target.GetType())
     {
@@ -1990,7 +1989,7 @@ cmLocalVisualStudio7Generator
     fout << "\tProjectType=\"" << projectType << "\"\n";
     }
   this->WriteProjectSCC(fout, target);
-  fout<< "\tKeyword=\"" << keyword << "\">\n" 
+  fout<< "\tKeyword=\"" << keyword << "\">\n"
        << "\tProjectGUID=\"{" << gg->GetGUID(libName) << "}\">\n"
        << "\t<Platforms>\n"
        << "\t\t<Platform\n\t\t\tName=\"" << this->PlatformName << "\"/>\n"
@@ -2110,7 +2109,7 @@ std::string cmLocalVisualStudio7Generator
 
 
 // This class is used to parse an existing vs 7 project
-// and extract the GUID 
+// and extract the GUID
 class cmVS7XMLParser : public cmXMLParser
 {
 public:
@@ -2130,7 +2129,7 @@ public:
         while(atts[i])
           {
           if(strcmp(atts[i], "ProjectGUID") == 0)
-            { 
+            {
             if(atts[i+1])
               {
               this->GUID =  atts[i+1];
@@ -2144,7 +2143,7 @@ public:
             }
           ++i;
           }
-        } 
+        }
     }
   int InitializeParser()
     {
@@ -2153,7 +2152,7 @@ public:
         {
         return ret;
         }
-      // visual studio projects have a strange encoding, but it is 
+      // visual studio projects have a strange encoding, but it is
       // really utf-8
       XML_SetEncoding(static_cast<XML_Parser>(this->Parser), "utf-8");
       return 1;

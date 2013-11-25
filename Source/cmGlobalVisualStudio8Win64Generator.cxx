@@ -22,23 +22,12 @@ cmGlobalVisualStudio8Win64Generator::cmGlobalVisualStudio8Win64Generator()
   this->ArchitectureId = "x64";
 }
 
-///! Create a local generator appropriate to this Global Generator
-cmLocalGenerator *cmGlobalVisualStudio8Win64Generator::CreateLocalGenerator()
-{
-  cmLocalVisualStudio7Generator *lg
-    = new cmLocalVisualStudio7Generator(cmLocalVisualStudioGenerator::VS8);
-  lg->SetPlatformName(this->GetPlatformName());
-  lg->SetExtraFlagTable(this->GetExtraFlagTableVS8());
-  lg->SetGlobalGenerator(this);
-  return lg;
-}
-
 //----------------------------------------------------------------------------
 void cmGlobalVisualStudio8Win64Generator
 ::GetDocumentation(cmDocumentationEntry& entry) const
 {
   entry.Name = this->GetName();
-  entry.Brief = "Generates Visual Studio .NET 2005 Win64 project files.";
+  entry.Brief = "Generates Visual Studio 8 2005 Win64 project files.";
   entry.Full = "";
 }
 

@@ -35,6 +35,8 @@ private:
                                  const char* targetDirectory);
   void WriteOldMocDefinitionsFile(const char* targetDirectory);
 
+  std::string MakeCompileSettingsString(cmMakefile* makefile);
+
   bool RunAutomoc();
   bool GenerateMoc(const std::string& sourceFile,
                    const std::string& mocFileName);
@@ -67,14 +69,14 @@ private:
   std::string Builddir;
   std::string MocExecutable;
   std::string MocCompileDefinitionsStr;
-  std::string MocDefinitionsStr;
   std::string MocIncludesStr;
   std::string MocOptionsStr;
   std::string ProjectBinaryDir;
   std::string ProjectSourceDir;
   std::string TargetName;
 
-  std::string OldMocDefinitionsStr;
+  std::string CurrentCompileSettingsStr;
+  std::string OldCompileSettingsStr;
 
   std::string OutMocCppFilename;
   std::list<std::string> MocIncludes;

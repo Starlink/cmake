@@ -98,7 +98,7 @@ bool cmListCommand::GetList(std::vector<std::string>& list, const char* var)
     {
     return false;
     }
-  // if the size of the list 
+  // if the size of the list
   if(listString.size() == 0)
     {
     return true;
@@ -107,7 +107,7 @@ bool cmListCommand::GetList(std::vector<std::string>& list, const char* var)
   cmSystemTools::ExpandListArgument(listString, list, true);
   // check the list for empty values
   bool hasEmpty = false;
-  for(std::vector<std::string>::iterator i = list.begin(); 
+  for(std::vector<std::string>::iterator i = list.begin();
       i != list.end(); ++i)
     {
     if(i->size() == 0)
@@ -116,7 +116,7 @@ bool cmListCommand::GetList(std::vector<std::string>& list, const char* var)
       break;
       }
     }
-  // if no empty elements then just return 
+  // if no empty elements then just return
   if(!hasEmpty)
     {
     return true;
@@ -124,7 +124,7 @@ bool cmListCommand::GetList(std::vector<std::string>& list, const char* var)
   // if we have empty elements we need to check policy CMP0007
   switch(this->Makefile->GetPolicyStatus(cmPolicies::CMP0007))
     {
-    case cmPolicies::WARN: 
+    case cmPolicies::WARN:
       {
       // Default is to warn and use old behavior
       // OLD behavior is to allow compatibility, so recall
@@ -429,6 +429,12 @@ bool cmListCommand
     this->SetError("sub-command REVERSE requires a list as an argument.");
     return false;
     }
+  else if(args.size() > 2)
+    {
+    this->SetError(
+      "sub-command REVERSE only takes one argument.");
+    return false;
+    }
 
   const std::string& listName = args[1];
   // expand the variable
@@ -461,6 +467,12 @@ bool cmListCommand
     {
     this->SetError(
       "sub-command REMOVE_DUPLICATES requires a list as an argument.");
+    return false;
+    }
+  else if(args.size() > 2)
+    {
+    this->SetError(
+      "sub-command REMOVE_DUPLICATES only takes one argument.");
     return false;
     }
 
@@ -504,6 +516,12 @@ bool cmListCommand
   if(args.size() < 2)
     {
     this->SetError("sub-command SORT requires a list as an argument.");
+    return false;
+    }
+  else if(args.size() > 2)
+    {
+    this->SetError(
+      "sub-command SORT only takes one argument.");
     return false;
     }
 

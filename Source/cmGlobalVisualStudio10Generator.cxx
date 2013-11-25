@@ -29,9 +29,12 @@ cmGlobalVisualStudio10Generator::cmGlobalVisualStudio10Generator()
 //----------------------------------------------------------------------------
 void cmGlobalVisualStudio10Generator::AddPlatformDefinitions(cmMakefile* mf)
 {
-  mf->AddDefinition("MSVC10", "1");
-  mf->AddDefinition("MSVC_C_ARCHITECTURE_ID", "X86");
-  mf->AddDefinition("MSVC_CXX_ARCHITECTURE_ID", "X86");
+  cmGlobalVisualStudio8Generator::AddPlatformDefinitions(mf);
+  if(!this->PlatformToolset.empty())
+    {
+    mf->AddDefinition("CMAKE_VS_PLATFORM_TOOLSET",
+                      this->PlatformToolset.c_str());
+    }
 }
 
 //----------------------------------------------------------------------------
@@ -94,7 +97,7 @@ void cmGlobalVisualStudio10Generator
 
 //----------------------------------------------------------------------------
 void cmGlobalVisualStudio10Generator
-::EnableLanguage(std::vector<std::string>const &  lang, 
+::EnableLanguage(std::vector<std::string>const &  lang,
                  cmMakefile *mf, bool optional)
 {
   cmGlobalVisualStudio8Generator::EnableLanguage(lang, mf, optional);
@@ -146,12 +149,12 @@ std::string cmGlobalVisualStudio10Generator::GetUserMacrosRegKeyBase()
 
 std::string cmGlobalVisualStudio10Generator
 ::GenerateBuildCommand(const char* makeProgram,
-                       const char *projectName, 
+                       const char *projectName,
                        const char* additionalOptions, const char *targetName,
                        const char* config, bool ignoreErrors, bool fast)
 {
   // now build the test
-  std::string makeCommand 
+  std::string makeCommand
     = cmSystemTools::ConvertToOutputPath(makeProgram);
   std::string lowerCaseCommand = makeCommand;
   cmSystemTools::LowerCase(lowerCaseCommand);
@@ -177,7 +180,7 @@ std::string cmGlobalVisualStudio10Generator
   if(!targetName || strlen(targetName) == 0)
     {
     targetName = "ALL_BUILD";
-    }    
+    }
   bool clean = false;
   if ( targetName && strcmp(targetName, "clean") == 0 )
     {
@@ -202,6 +205,8 @@ std::string cmGlobalVisualStudio10Generator
     {
     makeCommand += "Debug";
     }
+  makeCommand += " /p:VisualStudioVersion=";
+  makeCommand += this->GetIDEVersion();
   if ( additionalOptions )
     {
     makeCommand += " ";

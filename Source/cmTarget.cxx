@@ -15,8 +15,8 @@
 #include "cmSourceFile.h"
 #include "cmLocalGenerator.h"
 #include "cmGlobalGenerator.h"
-#include "cmComputeLinkInformation.h"
 #include "cmDocumentCompileDefinitions.h"
+#include "cmDocumentGeneratorExpressions.h"
 #include "cmDocumentLocationUndefined.h"
 #include "cmListFileCache.h"
 #include "cmGeneratorExpression.h"
@@ -57,6 +57,7 @@ struct cmTarget::OutputInfo
 {
   std::string OutDir;
   std::string ImpDir;
+  std::string PdbDir;
 };
 
 //----------------------------------------------------------------------------
@@ -205,6 +206,9 @@ void cmTarget::DefineProperties(cmake *cm)
      "are not supported by the native build tool.  "
      "The VS6 IDE does not support definition values with spaces "
      "(but NMake does).\n"
+     "Contents of COMPILE_DEFINITIONS may use \"generator expressions\" with "
+     "the syntax \"$<...>\".  "
+     CM_DOCUMENT_COMMAND_GENERATOR_EXPRESSIONS
      CM_DOCUMENT_COMPILE_DEFINITIONS_DISCLAIMER);
 
   cm->DefineProperty
@@ -498,8 +502,11 @@ void cmTarget::DefineProperties(cmake *cm)
      "to the include_directories command."
      "\n"
      "The target property values are used by the generators to set "
-     "the include paths for the compiler. "
-     "See also the include_directories command.");
+     "the include paths for the compiler.  "
+     "See also the include_directories command.\n"
+     "Contents of INCLUDE_DIRECTORIES may use \"generator expressions\" with "
+     "the syntax \"$<...>\".  "
+     CM_DOCUMENT_COMMAND_GENERATOR_EXPRESSIONS);
 
   cm->DefineProperty
     ("INSTALL_NAME_DIR", cmProperty::TARGET,
@@ -741,6 +748,22 @@ void cmTarget::DefineProperties(cmake *cm)
      "Use OUTPUT_NAME_<CONFIG> instead.");
 
   cm->DefineProperty
+    ("PDB_NAME", cmProperty::TARGET,
+     "Output name for MS debug symbols .pdb file.",
+     "Set the base name for debug symbols file created for an "
+     "executable or library target.  "
+     "If not set, the logical target name is used by default.  "
+     "\n"
+     "This property is not implemented by the Visual Studio 6 generator.");
+
+  cm->DefineProperty
+    ("PDB_NAME_<CONFIG>", cmProperty::TARGET,
+     "Per-configuration name for MS debug symbols .pdb file.  ",
+     "This is the configuration-specific version of PDB_NAME.  "
+     "\n"
+     "This property is not implemented by the Visual Studio 6 generator.");
+
+  cm->DefineProperty
     ("PRE_INSTALL_SCRIPT", cmProperty::TARGET,
      "Deprecated install support.",
      "The PRE_INSTALL_SCRIPT and POST_INSTALL_SCRIPT properties are the "
@@ -761,7 +784,10 @@ void cmTarget::DefineProperties(cmake *cm)
      "The POSITION_INDEPENDENT_CODE property determines whether position "
      "independent executables or shared libraries will be created.  "
      "This property is true by default for SHARED and MODULE library "
-     "targets and false otherwise.");
+     "targets and false otherwise.  "
+     "This property is initialized by the value of the variable "
+     "CMAKE_POSITION_INDEPENDENT_CODE if it is set when a target is "
+     "created.");
 
   cm->DefineProperty
     ("POST_INSTALL_SCRIPT", cmProperty::TARGET,
@@ -903,7 +929,7 @@ void cmTarget::DefineProperties(cmake *cm)
      "Build an executable with a WinMain entry point on windows.",
      "When this property is set to true the executable when linked "
      "on Windows will be created with a WinMain() entry point instead "
-     "of of just main()."
+     "of just main().  "
      "This makes it a GUI executable instead of a console application.  "
      "See the CMAKE_MFC_FLAG variable documentation to configure use "
      "of MFC for WinMain executables.  "
@@ -1068,7 +1094,7 @@ void cmTarget::DefineProperties(cmake *cm)
     ("VS_KEYWORD", cmProperty::TARGET,
      "Visual Studio project keyword.",
      "Can be set to change the visual studio keyword, for example "
-     "QT integration works better if this is set to Qt4VSv1.0. ");
+     "Qt integration works better if this is set to Qt4VSv1.0. ");
   cm->DefineProperty
     ("VS_SCC_PROVIDER", cmProperty::TARGET,
      "Visual Studio Source Code Control Provider.",
@@ -1187,6 +1213,27 @@ void cmTarget::DefineProperties(cmake *cm)
      CM_TARGET_OUTDIR_CONFIG_DOC(RUNTIME));
 
   cm->DefineProperty
+    ("PDB_OUTPUT_DIRECTORY", cmProperty::TARGET,
+     "Output directory for MS debug symbols .pdb files.",
+     "This property specifies the directory into which the MS debug symbols "
+     "will be placed.  "
+     "This property is initialized by the value of the variable "
+     "CMAKE_PDB_OUTPUT_DIRECTORY if it is set when a target is created."
+     "\n"
+     "This property is not implemented by the Visual Studio 6 generator.");
+  cm->DefineProperty
+    ("PDB_OUTPUT_DIRECTORY_<CONFIG>", cmProperty::TARGET,
+     "Per-configuration output directory for MS debug symbols .pdb files.",
+     "This is a per-configuration version of PDB_OUTPUT_DIRECTORY, "
+     "but multi-configuration generators (VS, Xcode) do NOT append "
+     "a per-configuration subdirectory to the specified directory. "
+     "This property is initialized by the value of the variable "
+     "CMAKE_PDB_OUTPUT_DIRECTORY_<CONFIG> "
+     "if it is set when a target is created."
+     "\n"
+     "This property is not implemented by the Visual Studio 6 generator.");
+
+  cm->DefineProperty
     ("ARCHIVE_OUTPUT_NAME", cmProperty::TARGET,
      "Output name for ARCHIVE target files.",
      "This property specifies the base name for archive target files. "
@@ -1260,6 +1307,7 @@ void cmTarget::SetMakefile(cmMakefile* mf)
   this->SetPropertyDefault("ARCHIVE_OUTPUT_DIRECTORY", 0);
   this->SetPropertyDefault("LIBRARY_OUTPUT_DIRECTORY", 0);
   this->SetPropertyDefault("RUNTIME_OUTPUT_DIRECTORY", 0);
+  this->SetPropertyDefault("PDB_OUTPUT_DIRECTORY", 0);
   this->SetPropertyDefault("Fortran_FORMAT", 0);
   this->SetPropertyDefault("Fortran_MODULE_DIRECTORY", 0);
   this->SetPropertyDefault("GNUtoMS", 0);
@@ -1279,6 +1327,7 @@ void cmTarget::SetMakefile(cmMakefile* mf)
     "ARCHIVE_OUTPUT_DIRECTORY_",
     "LIBRARY_OUTPUT_DIRECTORY_",
     "RUNTIME_OUTPUT_DIRECTORY_",
+    "PDB_OUTPUT_DIRECTORY_",
     0};
   for(std::vector<std::string>::iterator ci = configNames.begin();
       ci != configNames.end(); ++ci)
@@ -1620,7 +1669,11 @@ cmTargetTraceDependencies
 {
   // Transform command names that reference targets built in this
   // project to corresponding target-level dependencies.
-  cmGeneratorExpression ge(this->Makefile, 0, cc.GetBacktrace(), true);
+  cmGeneratorExpression ge(cc.GetBacktrace());
+
+  // Add target-level dependencies referenced by generator expressions.
+  std::set<cmTarget*> targets;
+
   for(cmCustomCommandLines::const_iterator cit = cc.GetCommandLines().begin();
       cit != cc.GetCommandLines().end(); ++cit)
     {
@@ -1642,12 +1695,17 @@ cmTargetTraceDependencies
     for(cmCustomCommandLine::const_iterator cli = cit->begin();
         cli != cit->end(); ++cli)
       {
-      ge.Process(*cli);
+      const cmCompiledGeneratorExpression &cge = ge.Parse(*cli);
+      cge.Evaluate(this->Makefile, 0, true);
+      std::set<cmTarget*> geTargets = cge.GetTargets();
+      for(std::set<cmTarget*>::const_iterator it = geTargets.begin();
+          it != geTargets.end(); ++it)
+        {
+        targets.insert(*it);
+        }
       }
     }
 
-  // Add target-level dependencies referenced by generator expressions.
-  std::set<cmTarget*> targets = ge.GetTargets();
   for(std::set<cmTarget*>::iterator ti = targets.begin();
       ti != targets.end(); ++ti)
     {
@@ -2002,9 +2060,8 @@ bool cmTarget::NameResolvesToFramework(const std::string& libname)
 }
 
 //----------------------------------------------------------------------------
-bool cmTarget::AddFramework(const std::string& libname, LinkLibraryType llt)
+bool cmTarget::AddFramework(const std::string& libname, LinkLibraryType)
 {
-  (void)llt; // TODO: What is this?
   if(this->NameResolvesToFramework(libname.c_str()))
     {
     std::string frameworkDir = libname;
@@ -2284,7 +2341,7 @@ void cmTarget::Emit(const LibraryID lib,
       // be preserved.
 
       // This variable will keep track of the libraries that were
-      // emitted directory from the current node, and not from a
+      // emitted directly from the current node, and not from a
       // recursive call. This way, if we come across a library that
       // has already been emitted, we repeat it iff it has been
       // emitted here.
@@ -2402,7 +2459,7 @@ void cmTarget::AppendProperty(const char* prop, const char* value,
 //----------------------------------------------------------------------------
 void cmTarget::MaybeInvalidatePropertyCache(const char* prop)
 {
-  // Wipe wipe out maps caching information affected by this property.
+  // Wipe out maps caching information affected by this property.
   if(this->IsImported() && strncmp(prop, "IMPORTED", 8) == 0)
     {
     this->Internal->ImportInfoMap.clear();
@@ -2527,6 +2584,7 @@ cmTarget::OutputInfo const* cmTarget::GetOutputInfo(const char* config)
     OutputInfo info;
     this->ComputeOutputDir(config, false, info.OutDir);
     this->ComputeOutputDir(config, true, info.ImpDir);
+    this->ComputePDBOutputDir(config, info.PdbDir);
     OutputInfoMapType::value_type entry(config_upper, info);
     i = this->Internal->OutputInfoMap.insert(entry).first;
     }
@@ -2547,6 +2605,17 @@ std::string cmTarget::GetDirectory(const char* config, bool implib)
     {
     // Return the directory in which the target will be built.
     return implib? info->ImpDir : info->OutDir;
+    }
+  return "";
+}
+
+//----------------------------------------------------------------------------
+std::string cmTarget::GetPDBDirectory(const char* config)
+{
+  if(OutputInfo const* info = this->GetOutputInfo(config))
+    {
+    // Return the directory in which the target will be built.
+    return info->PdbDir;
     }
   return "";
 }
@@ -2942,25 +3011,6 @@ void cmTarget::ComputeLinkClosure(const char* config, LinkClosure& lc)
 }
 
 //----------------------------------------------------------------------------
-const char* cmTarget::GetCreateRuleVariable()
-{
-  switch(this->GetType())
-    {
-    case cmTarget::STATIC_LIBRARY:
-      return "_CREATE_STATIC_LIBRARY";
-    case cmTarget::SHARED_LIBRARY:
-      return "_CREATE_SHARED_LIBRARY";
-    case cmTarget::MODULE_LIBRARY:
-      return "_CREATE_SHARED_MODULE";
-    case cmTarget::EXECUTABLE:
-      return "_LINK_EXECUTABLE";
-    default:
-      break;
-    }
-  return "";
-}
-
-//----------------------------------------------------------------------------
 const char* cmTarget::GetSuffixVariableInternal(bool implib)
 {
   switch(this->GetType())
@@ -3016,6 +3066,28 @@ std::string cmTarget::GetPDBName(const char* config)
   std::string base;
   std::string suffix;
   this->GetFullNameInternal(config, false, prefix, base, suffix);
+
+  std::vector<std::string> props;
+  std::string configUpper =
+    cmSystemTools::UpperCase(config? config : "");
+  if(!configUpper.empty())
+    {
+    // PDB_NAME_<CONFIG>
+    props.push_back("PDB_NAME_" + configUpper);
+    }
+
+  // PDB_NAME
+  props.push_back("PDB_NAME");
+
+  for(std::vector<std::string>::const_iterator i = props.begin();
+      i != props.end(); ++i)
+    {
+    if(const char* outName = this->GetProperty(i->c_str()))
+      {
+      base = outName;
+      break;
+      }
+    }
   return prefix+base+".pdb";
 }
 
@@ -3400,7 +3472,7 @@ void cmTarget::GetLibraryNames(std::string& name,
     }
 
   // The program database file name.
-  pdbName = prefix+base+".pdb";
+  pdbName = this->GetPDBName(config);
 }
 
 //----------------------------------------------------------------------------
@@ -3479,7 +3551,7 @@ void cmTarget::GetExecutableNames(std::string& name,
   impName = this->GetFullNameInternal(config, true);
 
   // The program database file name.
-  pdbName = prefix+base+".pdb";
+  pdbName = this->GetPDBName(config);
 }
 
 //----------------------------------------------------------------------------
@@ -3558,7 +3630,7 @@ void cmTarget::GenerateTargetManifest(const char* config)
     }
   if(!pdbName.empty())
     {
-    f = dir;
+    f = this->GetPDBDirectory(config);
     f += "/";
     f += pdbName;
     gg->AddToManifest(config? config:"", f);
@@ -3868,6 +3940,65 @@ bool cmTarget::ComputeOutputDir(const char* config,
 }
 
 //----------------------------------------------------------------------------
+void cmTarget::ComputePDBOutputDir(const char* config, std::string& out)
+{
+  // Look for a target property defining the target output directory
+  // based on the target type.
+  std::string targetTypeName = "PDB";
+  const char* propertyName = 0;
+  std::string propertyNameStr = targetTypeName;
+  if(!propertyNameStr.empty())
+    {
+    propertyNameStr += "_OUTPUT_DIRECTORY";
+    propertyName = propertyNameStr.c_str();
+    }
+
+  // Check for a per-configuration output directory target property.
+  std::string configUpper = cmSystemTools::UpperCase(config? config : "");
+  const char* configProp = 0;
+  std::string configPropStr = targetTypeName;
+  if(!configPropStr.empty())
+    {
+    configPropStr += "_OUTPUT_DIRECTORY_";
+    configPropStr += configUpper;
+    configProp = configPropStr.c_str();
+    }
+
+  // Select an output directory.
+  if(const char* config_outdir = this->GetProperty(configProp))
+    {
+    // Use the user-specified per-configuration output directory.
+    out = config_outdir;
+
+    // Skip per-configuration subdirectory.
+    config = 0;
+    }
+  else if(const char* outdir = this->GetProperty(propertyName))
+    {
+    // Use the user-specified output directory.
+    out = outdir;
+    }
+  if(out.empty())
+    {
+    // Default to the current output directory.
+    out = ".";
+    }
+
+  // Convert the output path to a full path in case it is
+  // specified as a relative path.  Treat a relative path as
+  // relative to the current output directory for this makefile.
+  out = (cmSystemTools::CollapseFullPath
+         (out.c_str(), this->Makefile->GetStartOutputDirectory()));
+
+  // The generator may add the configuration's subdirectory.
+  if(config && *config)
+    {
+    this->Makefile->GetLocalGenerator()->GetGlobalGenerator()->
+      AppendDirectoryForConfig("/", config, "", out);
+    }
+}
+
+//----------------------------------------------------------------------------
 bool cmTarget::UsesDefaultOutputDir(const char* config, bool implib)
 {
   std::string dir;
@@ -3964,27 +4095,6 @@ void cmTarget::GetLanguages(std::set<cmStdString>& languages) const
       {
       languages.insert(lang);
       }
-    }
-}
-
-//----------------------------------------------------------------------------
-void cmTarget::GetAppleArchs(const char* config,
-                             std::vector<std::string>& archVec)
-{
-  const char* archs = 0;
-  if(config && *config)
-    {
-    std::string defVarName = "OSX_ARCHITECTURES_";
-    defVarName += cmSystemTools::UpperCase(config);
-    archs = this->GetProperty(defVarName.c_str());
-    }
-  if(!archs)
-    {
-    archs = this->GetProperty("OSX_ARCHITECTURES");
-    }
-  if(archs)
-    {
-    cmSystemTools::ExpandListArgument(std::string(archs), archVec);
     }
 }
 
@@ -4659,56 +4769,6 @@ std::string cmTarget::CheckCMP0004(std::string const& item)
 }
 
 //----------------------------------------------------------------------------
-cmComputeLinkInformation*
-cmTarget::GetLinkInformation(const char* config)
-{
-  // Lookup any existing information for this configuration.
-  std::map<cmStdString, cmComputeLinkInformation*>::iterator
-    i = this->LinkInformation.find(config?config:"");
-  if(i == this->LinkInformation.end())
-    {
-    // Compute information for this configuration.
-    cmComputeLinkInformation* info =
-      new cmComputeLinkInformation(this, config);
-    if(!info || !info->Compute())
-      {
-      delete info;
-      info = 0;
-      }
-
-    // Store the information for this configuration.
-    std::map<cmStdString, cmComputeLinkInformation*>::value_type
-      entry(config?config:"", info);
-    i = this->LinkInformation.insert(entry).first;
-    }
-  return i->second;
-}
-
-//----------------------------------------------------------------------------
-std::vector<std::string> cmTarget::GetIncludeDirectories()
-{
-  std::vector<std::string> includes;
-  const char *prop = this->GetProperty("INCLUDE_DIRECTORIES");
-  if(prop)
-    {
-    cmSystemTools::ExpandListArgument(prop, includes);
-    }
-
-  std::set<std::string> uniqueIncludes;
-  std::vector<std::string> orderedAndUniqueIncludes;
-  for(std::vector<std::string>::const_iterator
-      li = includes.begin(); li != includes.end(); ++li)
-    {
-    if(uniqueIncludes.insert(*li).second)
-      {
-      orderedAndUniqueIncludes.push_back(*li);
-      }
-    }
-
-  return orderedAndUniqueIncludes;
-}
-
-//----------------------------------------------------------------------------
 std::string cmTarget::GetFrameworkDirectory(const char* config)
 {
   std::string fpath;
@@ -4763,29 +4823,6 @@ std::string cmTarget::GetMacContentDirectory(const char* config,
   fpath += "/";
   fpath = this->BuildMacContentDirectory(fpath, config, includeMacOS);
   return fpath;
-}
-
-//----------------------------------------------------------------------------
-cmTargetLinkInformationMap
-::cmTargetLinkInformationMap(cmTargetLinkInformationMap const& r): derived()
-{
-  // Ideally cmTarget instances should never be copied.  However until
-  // we can make a sweep to remove that, this copy constructor avoids
-  // allowing the resources (LinkInformation) from getting copied.  In
-  // the worst case this will lead to extra cmComputeLinkInformation
-  // instances.  We also enforce in debug mode that the map be emptied
-  // when copied.
-  static_cast<void>(r);
-  assert(r.empty());
-}
-
-//----------------------------------------------------------------------------
-cmTargetLinkInformationMap::~cmTargetLinkInformationMap()
-{
-  for(derived::iterator i = this->begin(); i != this->end(); ++i)
-    {
-    delete i->second;
-    }
 }
 
 //----------------------------------------------------------------------------

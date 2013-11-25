@@ -628,9 +628,14 @@ bool cmake::FindPackage(const std::vector<std::string>& args)
 
 
     std::string linkLibs;
+    std::string frameworkPath;
+    std::string linkPath;
     std::string flags;
     std::string linkFlags;
-    lg->GetTargetFlags(linkLibs, flags, linkFlags, *tgt);
+    cmGeneratorTarget gtgt(tgt);
+    lg->GetTargetFlags(linkLibs, frameworkPath, linkPath, flags, linkFlags,
+                       &gtgt);
+    linkLibs = frameworkPath + linkPath + linkLibs;
 
     printf("%s\n", linkLibs.c_str() );
 
@@ -1043,7 +1048,7 @@ int cmake::AddCMakePaths()
       {
       cMakeRoot = cMakeRoot.substr(0, slashPos);
       }
-    // is there no Modules direcory there?
+    // is there no Modules directory there?
     modules = cMakeRoot + "/Modules/CMake.cmake";
     }
 
@@ -1072,7 +1077,7 @@ int cmake::AddCMakePaths()
     {
     // next try exe
     cMakeRoot  = cmSystemTools::GetProgramPath(cMakeSelf.c_str());
-    // is there no Modules direcory there?
+    // is there no Modules directory there?
     modules = cMakeRoot + "/Modules/CMake.cmake";
     }
   if (!cmSystemTools::FileExists(modules.c_str()))
@@ -1421,7 +1426,7 @@ int cmake::ExecuteCMakeCommand(std::vector<std::string>& args)
       int retval = 0;
       int timeout = 0;
       if ( cmSystemTools::RunSingleCommand(command.c_str(), 0, &retval,
-             directory.c_str(), cmSystemTools::OUTPUT_MERGE, timeout) )
+             directory.c_str(), cmSystemTools::OUTPUT_NORMAL, timeout) )
         {
         return retval;
         }
@@ -2184,6 +2189,7 @@ int cmake::ActualConfigure()
       std::vector<std::string> vsVerions;
       vsVerions.push_back("VisualStudio\\");
       vsVerions.push_back("VCExpress\\");
+      vsVerions.push_back("WDExpress\\");
       struct VSRegistryEntryName
       {
         const char* MSVersion;
@@ -2196,10 +2202,11 @@ int cmake::ActualConfigure()
         {"8.0", "Visual Studio 8 2005"},
         {"9.0", "Visual Studio 9 2008"},
         {"10.0", "Visual Studio 10"},
+        {"11.0", "Visual Studio 11"},
         {0, 0}};
-      for(size_t b=0; b < vsVerions.size() && installedCompiler.empty(); b++)
+      for(int i=0; version[i].MSVersion != 0; i++)
         {
-        for(int i =0; version[i].MSVersion != 0; i++)
+        for(size_t b=0; b < vsVerions.size(); b++)
           {
           std::string reg = vsregBase + vsVerions[b] + version[i].MSVersion;
           reg += ";InstallDir]";
@@ -2208,6 +2215,7 @@ int cmake::ActualConfigure()
           if (!(reg == "/registry"))
             {
             installedCompiler = version[i].GeneratorName;
+            break;
             }
           }
         }
@@ -2326,6 +2334,17 @@ int cmake::ActualConfigure()
     this->CacheManager->RemoveCacheEntry("CMAKE_GENERATOR");
     this->CacheManager->RemoveCacheEntry("CMAKE_EXTRA_GENERATOR");
     }
+
+  cmMakefile* mf=this->GlobalGenerator->GetLocalGenerators()[0]->GetMakefile();
+  if (mf->IsOn("CTEST_USE_LAUNCHERS")
+              && !this->GetProperty("RULE_LAUNCH_COMPILE", cmProperty::GLOBAL))
+    {
+    cmSystemTools::Error("CTEST_USE_LAUNCHERS is enabled, but the "
+                        "RULE_LAUNCH_COMPILE global property is not defined.\n"
+                        "Did you forget to include(CTest) in the toplevel "
+                         "CMakeLists.txt ?");
+    }
+
   // only save the cache if there were no fatal errors
   if ( this->GetWorkingMode() == NORMAL_MODE )
     {
@@ -2437,9 +2456,6 @@ int cmake::Run(const std::vector<std::string>& args, bool noconfigure)
     }
 
   this->PreLoadCMakeFiles();
-
-  std::string systemFile = this->GetHomeOutputDirectory();
-  systemFile += "/CMakeSystem.cmake";
 
   if ( noconfigure )
     {

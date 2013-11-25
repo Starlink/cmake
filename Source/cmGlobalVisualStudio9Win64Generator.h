@@ -20,14 +20,14 @@
  *
  * cmGlobalVisualStudio8Win64Generator manages UNIX build process for a tree
  */
-class cmGlobalVisualStudio9Win64Generator : 
+class cmGlobalVisualStudio9Win64Generator :
   public cmGlobalVisualStudio9Generator
 {
 public:
   cmGlobalVisualStudio9Win64Generator();
-  static cmGlobalGenerator* New() { 
+  static cmGlobalGenerator* New() {
     return new cmGlobalVisualStudio9Win64Generator; }
-  
+
   ///! Get the name for the generator.
   virtual const char* GetName() const {
     return cmGlobalVisualStudio9Win64Generator::GetActualName();}
@@ -38,12 +38,9 @@ public:
   /** Get the documentation entry for this generator.  */
   virtual void GetDocumentation(cmDocumentationEntry& entry) const;
 
-  ///! create the correct local generator
-  virtual cmLocalGenerator *CreateLocalGenerator();
-
   /**
    * Try to determine system infomation such as shared library
-   * extension, pthreads, byte order etc.  
+   * extension, pthreads, byte order etc.
    */
   virtual void AddPlatformDefinitions(cmMakefile *);
 };

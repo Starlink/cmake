@@ -15,6 +15,8 @@
 #include "cmInstallGenerator.h"
 #include "cmTarget.h"
 
+class cmGeneratorTarget;
+
 /** \class cmInstallTargetGenerator
  * \brief Generate target installation rules.
  */
@@ -24,7 +26,7 @@ public:
   cmInstallTargetGenerator(
     cmTarget& t, const char* dest, bool implib,
     const char* file_permissions = "",
-    std::vector<std::string> const& configurations 
+    std::vector<std::string> const& configurations
     = std::vector<std::string>(),
     const char* component = "Unspecified",
     bool optional = false
@@ -86,17 +88,20 @@ protected:
   void AddRPathCheckRule(std::ostream& os, Indent const& indent,
                          const char* config,
                          std::string const& toDestDirPath);
-  
+
   void AddStripRule(std::ostream& os, Indent const& indent,
                     const std::string& toDestDirPath);
   void AddRanlibRule(std::ostream& os, Indent const& indent,
                      const std::string& toDestDirPath);
+
+  void CreateGeneratorTarget();
 
   cmTarget* Target;
   bool ImportLibrary;
   std::string FilePermissions;
   bool Optional;
   NamelinkModeType NamelinkMode;
+  cmGeneratorTarget* GeneratorTarget;
 };
 
 #endif

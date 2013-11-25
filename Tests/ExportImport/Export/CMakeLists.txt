@@ -56,7 +56,7 @@ add_library(testLib6 STATIC testLib6.cxx testLib6c.c)
 set(VS6)
 if("${CMAKE_GENERATOR}" MATCHES "Visual Studio 6")
   set(VS6 1)
-endif("${CMAKE_GENERATOR}" MATCHES "Visual Studio 6")
+endif()
 
 # Test using the target_link_libraries command to set the
 # LINK_INTERFACE_LIBRARIES* properties.  We construct two libraries
@@ -86,6 +86,18 @@ add_library(testLibCycleB STATIC
 target_link_libraries(testLibCycleA testLibCycleB)
 target_link_libraries(testLibCycleB testLibCycleA)
 set_property(TARGET testLibCycleA PROPERTY LINK_INTERFACE_MULTIPLICITY 3)
+
+# Test exporting dependent libraries into different exports
+add_library(testLibRequired testLibRequired.c)
+add_library(testLibDepends testLibDepends.c)
+target_link_libraries(testLibDepends testLibRequired)
+
+install(TARGETS testLibRequired EXPORT RequiredExp DESTINATION lib )
+install(EXPORT RequiredExp NAMESPACE Req:: FILE testLibRequiredConfig.cmake DESTINATION lib/cmake/testLibRequired)
+
+install(TARGETS testLibDepends EXPORT DependsExp DESTINATION lib )
+install(EXPORT DependsExp FILE testLibDependsConfig.cmake DESTINATION lib/cmake/testLibDepends)
+
 
 # Install and export from install tree.
 install(
@@ -129,7 +141,7 @@ install(EXPORT exp NAMESPACE exp_ DESTINATION lib/exp)
 # Install testLib5.dll outside the export.
 if(WIN32)
   install(TARGETS testLib5 RUNTIME DESTINATION bin)
-endif(WIN32)
+endif()
 
 # Export from build tree.
 export(TARGETS testExe1 testLib1 testLib2 testLib3

@@ -111,6 +111,7 @@ cmQtAutomoc::cmQtAutomoc()
 void cmQtAutomoc::SetupAutomocTarget(cmTarget* target)
 {
   cmMakefile* makefile = target->GetMakefile();
+  cmLocalGenerator* localGen = makefile->GetLocalGenerator();
   const char* targetName = target->GetName();
   // don't do anything if there is no Qt4 or Qt5Core (which contains moc):
   std::string qtMajorVersion = makefile->GetSafeDefinition("QT_VERSION_MAJOR");
@@ -169,7 +170,8 @@ void cmQtAutomoc::SetupAutomocTarget(cmTarget* target)
       ++fileIt)
     {
     cmSourceFile* sf = *fileIt;
-    std::string absFile = sf->GetFullPath();
+    std::string absFile = cmsys::SystemTools::GetRealPath(
+                                                    sf->GetFullPath().c_str());
     bool skip = cmSystemTools::IsOn(sf->GetPropertyForUser("SKIP_AUTOMOC"));
     bool generated = cmSystemTools::IsOn(sf->GetPropertyForUser("GENERATED"));
 
@@ -193,12 +195,28 @@ void cmQtAutomoc::SetupAutomocTarget(cmTarget* target)
       }
     }
 
-  const char* tmp = makefile->GetProperty("INCLUDE_DIRECTORIES");
-  std::string _moc_incs = (tmp!=0 ? tmp : "");
-  tmp = makefile->GetProperty("DEFINITIONS");
-  std::string _moc_defs = (tmp!=0 ? tmp : "");
-  tmp = makefile->GetProperty("COMPILE_DEFINITIONS");
+  std::vector<std::string> includeDirs;
+  cmGeneratorTarget gtgt(target);
+  localGen->GetIncludeDirectories(includeDirs, &gtgt, "CXX");
+  std::string _moc_incs = "";
+  const char* sep = "";
+  for(std::vector<std::string>::const_iterator incDirIt = includeDirs.begin();
+      incDirIt != includeDirs.end();
+      ++incDirIt)
+    {
+    _moc_incs += sep;
+    sep = ";";
+    _moc_incs += *incDirIt;
+    }
+
+  const char* tmp = target->GetProperty("COMPILE_DEFINITIONS");
   std::string _moc_compile_defs = (tmp!=0 ? tmp : "");
+  tmp = makefile->GetProperty("COMPILE_DEFINITIONS");
+  if (tmp)
+    {
+    _moc_compile_defs += ";";
+    _moc_compile_defs += tmp;
+    }
   tmp = target->GetProperty("AUTOMOC_MOC_OPTIONS");
   std::string _moc_options = (tmp!=0 ? tmp : "");
 
@@ -210,8 +228,6 @@ void cmQtAutomoc::SetupAutomocTarget(cmTarget* target)
           cmLocalGenerator::EscapeForCMake(automocTargetName.c_str()).c_str());
   makefile->AddDefinition("_moc_incs",
           cmLocalGenerator::EscapeForCMake(_moc_incs.c_str()).c_str());
-  makefile->AddDefinition("_moc_defs",
-          cmLocalGenerator::EscapeForCMake(_moc_defs.c_str()).c_str());
   makefile->AddDefinition("_moc_compile_defs",
           cmLocalGenerator::EscapeForCMake(_moc_compile_defs.c_str()).c_str());
   makefile->AddDefinition("_moc_options",
@@ -314,16 +330,34 @@ bool cmQtAutomoc::ReadAutomocInfoFile(cmMakefile* makefile,
   this->MocExecutable = makefile->GetSafeDefinition("AM_QT_MOC_EXECUTABLE");
   this->MocCompileDefinitionsStr = makefile->GetSafeDefinition(
                                                  "AM_MOC_COMPILE_DEFINITIONS");
-  this->MocDefinitionsStr = makefile->GetSafeDefinition("AM_MOC_DEFINITIONS");
   this->MocIncludesStr = makefile->GetSafeDefinition("AM_MOC_INCLUDES");
   this->MocOptionsStr = makefile->GetSafeDefinition("AM_MOC_OPTIONS");
   this->ProjectBinaryDir = makefile->GetSafeDefinition("AM_CMAKE_BINARY_DIR");
   this->ProjectSourceDir = makefile->GetSafeDefinition("AM_CMAKE_SOURCE_DIR");
   this->TargetName = makefile->GetSafeDefinition("AM_TARGET_NAME");
 
+  this->CurrentCompileSettingsStr = this->MakeCompileSettingsString(makefile);
+
   this->RelaxedMode = makefile->IsOn("AM_RELAXED_MODE");
 
   return true;
+}
+
+
+std::string cmQtAutomoc::MakeCompileSettingsString(cmMakefile* makefile)
+{
+  std::string s;
+  s += makefile->GetSafeDefinition("AM_MOC_COMPILE_DEFINITIONS");
+  s += " ~~~ ";
+  s += makefile->GetSafeDefinition("AM_MOC_INCLUDES");
+  s += " ~~~ ";
+  s += makefile->GetSafeDefinition("AM_MOC_OPTIONS");
+  s += " ~~~ ";
+  s += makefile->IsOn("AM_CMAKE_INCLUDE_DIRECTORIES_PROJECT_BEFORE") ? "TRUE"
+                                                                     : "FALSE";
+  s += " ~~~ ";
+
+  return s;
 }
 
 
@@ -336,8 +370,8 @@ bool cmQtAutomoc::ReadOldMocDefinitionsFile(cmMakefile* makefile,
 
   if (makefile->ReadListFile(0, filename.c_str()))
     {
-    this->OldMocDefinitionsStr =
-                         makefile->GetSafeDefinition("AM_OLD_MOC_DEFINITIONS");
+    this->OldCompileSettingsStr =
+                        makefile->GetSafeDefinition("AM_OLD_COMPILE_SETTINGS");
     }
   return true;
 }
@@ -352,9 +386,9 @@ void cmQtAutomoc::WriteOldMocDefinitionsFile(const char* targetDirectory)
   std::fstream outfile;
   outfile.open(filename.c_str(),
                std::ios::out | std::ios::trunc);
-  outfile << "set(AM_OLD_MOC_DEFINITIONS "
+  outfile << "set(AM_OLD_COMPILE_SETTINGS "
               << cmLocalGenerator::EscapeForCMake(
-                       this->Join(this->MocDefinitions, ' ').c_str()) << ")\n";
+                 this->CurrentCompileSettingsStr.c_str()) << ")\n";
 
   outfile.close();
 }
@@ -368,32 +402,11 @@ void cmQtAutomoc::Init()
 
   std::vector<std::string> cdefList;
   cmSystemTools::ExpandListArgument(this->MocCompileDefinitionsStr, cdefList);
-  if (!cdefList.empty())
+  for(std::vector<std::string>::const_iterator it = cdefList.begin();
+      it != cdefList.end();
+      ++it)
     {
-    for(std::vector<std::string>::const_iterator it = cdefList.begin();
-        it != cdefList.end();
-        ++it)
-      {
-      this->MocDefinitions.push_back("-D" + (*it));
-      }
-    }
-  else
-    {
-    std::string tmpMocDefs = this->MocDefinitionsStr;
-    cmSystemTools::ReplaceString(tmpMocDefs, " ", ";");
-
-    std::vector<std::string> defList;
-    cmSystemTools::ExpandListArgument(tmpMocDefs, defList);
-
-    for(std::vector<std::string>::const_iterator it = defList.begin();
-        it != defList.end();
-        ++it)
-      {
-      if (this->StartsWith(*it, "-D"))
-        {
-        this->MocDefinitions.push_back(*it);
-        }
-      }
+    this->MocDefinitions.push_back("-D" + (*it));
     }
 
   cmSystemTools::ExpandListArgument(this->MocOptionsStr, this->MocOptions);
@@ -471,7 +484,7 @@ void cmQtAutomoc::Init()
 bool cmQtAutomoc::RunAutomoc()
 {
   if (!cmsys::SystemTools::FileExists(this->OutMocCppFilename.c_str())
-    || (this->OldMocDefinitionsStr != this->Join(this->MocDefinitions, ' ')))
+    || (this->OldCompileSettingsStr != this->CurrentCompileSettingsStr))
     {
     this->GenerateAll = true;
     }

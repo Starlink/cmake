@@ -21,6 +21,7 @@
 //----------------------------------------------------------------------------
 cmGlobalVisualStudioGenerator::cmGlobalVisualStudioGenerator()
 {
+  this->ArchitectureId = "X86";
 }
 
 //----------------------------------------------------------------------------
@@ -53,7 +54,7 @@ void cmGlobalVisualStudioGenerator::Generate()
       {
       // Use no actual command lines so that the target itself is not
       // considered always out of date.
-      cmTarget* allBuild = 
+      cmTarget* allBuild =
         gen[0]->GetMakefile()->
         AddUtilityCommand("ALL_BUILD", true, no_working_dir,
                           no_depends, no_commands, false,
@@ -486,6 +487,13 @@ void cmGlobalVisualStudioGenerator::ComputeVSTargetDepends(cmTarget& target)
       vsTargetDepend.insert(this->GetUtilityDepend(dep));
       }
     }
+}
+
+//----------------------------------------------------------------------------
+void cmGlobalVisualStudioGenerator::AddPlatformDefinitions(cmMakefile* mf)
+{
+  mf->AddDefinition("MSVC_C_ARCHITECTURE_ID", this->ArchitectureId);
+  mf->AddDefinition("MSVC_CXX_ARCHITECTURE_ID", this->ArchitectureId);
 }
 
 //----------------------------------------------------------------------------
