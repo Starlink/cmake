@@ -33,8 +33,9 @@
 #endif
 
 //----------------------------------------------------------------------
-cmCPackNSISGenerator::cmCPackNSISGenerator()
+cmCPackNSISGenerator::cmCPackNSISGenerator(bool nsis64)
 {
+  Nsis64 = nsis64;
 }
 
 //----------------------------------------------------------------------
@@ -356,18 +357,45 @@ int cmCPackNSISGenerator::InitializeInternal()
     << std::endl);
   std::vector<std::string> path;
   std::string nsisPath;
-  bool gotRegValue = true;
+  bool gotRegValue = false;
 
 #ifdef _WIN32
-  if ( !cmsys::SystemTools::ReadRegistryValue(
+  if (Nsis64)
+    {
+    if ( !gotRegValue && cmsys::SystemTools::ReadRegistryValue(
+      "HKEY_LOCAL_MACHINE\\SOFTWARE\\NSIS\\Unicode", nsisPath,
+      cmsys::SystemTools::KeyWOW64_64) )
+      {
+      gotRegValue = true;
+      }
+    if ( !gotRegValue && cmsys::SystemTools::ReadRegistryValue(
+      "HKEY_LOCAL_MACHINE\\SOFTWARE\\NSIS", nsisPath,
+      cmsys::SystemTools::KeyWOW64_64) )
+      {
+      gotRegValue = true;
+      }
+    }
+  if ( !gotRegValue && cmsys::SystemTools::ReadRegistryValue(
+      "HKEY_LOCAL_MACHINE\\SOFTWARE\\NSIS\\Unicode", nsisPath,
+      cmsys::SystemTools::KeyWOW64_32) )
+    {
+    gotRegValue = true;
+    }
+  if ( !gotRegValue && cmsys::SystemTools::ReadRegistryValue(
+      "HKEY_LOCAL_MACHINE\\SOFTWARE\\NSIS\\Unicode", nsisPath) )
+    {
+    gotRegValue = true;
+    }
+  if ( !gotRegValue && cmsys::SystemTools::ReadRegistryValue(
       "HKEY_LOCAL_MACHINE\\SOFTWARE\\NSIS", nsisPath,
       cmsys::SystemTools::KeyWOW64_32) )
     {
-    if ( !cmsys::SystemTools::ReadRegistryValue(
-        "HKEY_LOCAL_MACHINE\\SOFTWARE\\NSIS", nsisPath) )
-      {
-      gotRegValue = false;
-      }
+    gotRegValue = true;
+    }
+  if ( !gotRegValue && cmsys::SystemTools::ReadRegistryValue(
+      "HKEY_LOCAL_MACHINE\\SOFTWARE\\NSIS", nsisPath) )
+    {
+    gotRegValue = true;
     }
 
   if (gotRegValue)
@@ -404,11 +432,14 @@ int cmCPackNSISGenerator::InitializeInternal()
   int retVal = 1;
   bool resS = cmSystemTools::RunSingleCommand(nsisCmd.c_str(),
     &output, &retVal, 0, this->GeneratorVerbose, 0);
-
   cmsys::RegularExpression versionRex("v([0-9]+.[0-9]+)");
-  if ( !resS || retVal || !versionRex.find(output))
+  cmsys::RegularExpression versionRexCVS("v(.*)\\.cvs");
+  if ( !resS || retVal ||
+      (!versionRex.find(output) && !versionRexCVS.find(output))
+     )
     {
-    std::string tmpFile = this->GetOption("CPACK_TOPLEVEL_DIRECTORY");
+    const char* topDir = this->GetOption("CPACK_TOPLEVEL_DIRECTORY");
+    std::string tmpFile = topDir ? topDir : ".";
     tmpFile += "/NSISOutput.log";
     cmGeneratedFileStream ofs(tmpFile.c_str());
     ofs << "# Run command: " << nsisCmd.c_str() << std::endl
@@ -420,17 +451,26 @@ int cmCPackNSISGenerator::InitializeInternal()
       << "Please check " << tmpFile.c_str() << " for errors" << std::endl);
     return 0;
     }
-  double nsisVersion = atof(versionRex.match(1).c_str());
-  double minNSISVersion = 2.09;
-  cmCPackLogger(cmCPackLog::LOG_DEBUG, "NSIS Version: "
-    << nsisVersion << std::endl);
-  if ( nsisVersion < minNSISVersion )
+  if ( versionRex.find(output))
     {
-    cmCPackLogger(cmCPackLog::LOG_ERROR,
-      "CPack requires NSIS Version 2.09 or greater. NSIS found on the system "
-      "was: "
+    double nsisVersion = atof(versionRex.match(1).c_str());
+    double minNSISVersion = 2.09;
+    cmCPackLogger(cmCPackLog::LOG_DEBUG, "NSIS Version: "
       << nsisVersion << std::endl);
-    return 0;
+    if ( nsisVersion < minNSISVersion )
+      {
+      cmCPackLogger(cmCPackLog::LOG_ERROR,
+        "CPack requires NSIS Version 2.09 or greater.  "
+        "NSIS found on the system was: "
+        << nsisVersion << std::endl);
+      return 0;
+      }
+    }
+  if ( versionRexCVS.find(output))
+    {
+    // No version check for NSIS cvs build
+    cmCPackLogger(cmCPackLog::LOG_DEBUG, "NSIS Version: CVS "
+      << versionRexCVS.match(1).c_str() << std::endl);
     }
   this->SetOptionIfNotSet("CPACK_INSTALLER_PROGRAM", nsisPath.c_str());
   this->SetOptionIfNotSet("CPACK_NSIS_EXECUTABLES_DIRECTORY", "bin");

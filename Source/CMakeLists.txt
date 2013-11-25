@@ -176,6 +176,8 @@ set(SRCS
   cmExportFileGenerator.cxx
   cmExportInstallFileGenerator.h
   cmExportInstallFileGenerator.cxx
+  cmExportTryCompileFileGenerator.h
+  cmExportTryCompileFileGenerator.cxx
   cmExportSet.h
   cmExportSet.cxx
   cmExportSetMap.h
@@ -184,6 +186,8 @@ set(SRCS
   cmExtraCodeBlocksGenerator.h
   cmExtraEclipseCDT4Generator.cxx
   cmExtraEclipseCDT4Generator.h
+  cmExtraSublimeTextGenerator.cxx
+  cmExtraSublimeTextGenerator.h
   cmFileTimeComparison.cxx
   cmFileTimeComparison.h
   cmGeneratedFileStream.cxx
@@ -201,6 +205,7 @@ set(SRCS
   cmGeneratorTarget.h
   cmGlobalGenerator.cxx
   cmGlobalGenerator.h
+  cmGlobalGeneratorFactory.h
   cmGlobalUnixMakefileGenerator3.cxx
   cmGlobalUnixMakefileGenerator3.h
   cmGraphAdjacencyList.h
@@ -330,12 +335,6 @@ if (WIN32)
       cmGlobalVisualStudio8Generator.h
       cmGlobalVisualStudio9Generator.cxx
       cmGlobalVisualStudio9Generator.h
-      cmGlobalVisualStudio8Win64Generator.cxx
-      cmGlobalVisualStudio8Win64Generator.h
-      cmGlobalVisualStudio9Win64Generator.cxx
-      cmGlobalVisualStudio9Win64Generator.h
-      cmGlobalVisualStudio9IA64Generator.cxx
-      cmGlobalVisualStudio9IA64Generator.h
       cmVisualStudioGeneratorOptions.h
       cmVisualStudioGeneratorOptions.cxx
       cmVisualStudio10TargetGenerator.h
@@ -344,16 +343,8 @@ if (WIN32)
       cmLocalVisualStudio10Generator.h
       cmGlobalVisualStudio10Generator.h
       cmGlobalVisualStudio10Generator.cxx
-      cmGlobalVisualStudio10Win64Generator.h
-      cmGlobalVisualStudio10Win64Generator.cxx
-      cmGlobalVisualStudio10IA64Generator.h
-      cmGlobalVisualStudio10IA64Generator.cxx
       cmGlobalVisualStudio11Generator.h
       cmGlobalVisualStudio11Generator.cxx
-      cmGlobalVisualStudio11Win64Generator.h
-      cmGlobalVisualStudio11Win64Generator.cxx
-      cmGlobalVisualStudio11ARMGenerator.h
-      cmGlobalVisualStudio11ARMGenerator.cxx
       cmGlobalVisualStudioGenerator.cxx
       cmGlobalVisualStudioGenerator.h
       cmGlobalWatcomWMakeGenerator.cxx
@@ -366,6 +357,8 @@ if (WIN32)
       cmLocalVisualStudio7Generator.h
       cmLocalVisualStudioGenerator.cxx
       cmLocalVisualStudioGenerator.h
+      cmVisualStudioWCEPlatformParser.h
+      cmVisualStudioWCEPlatformParser.cxx
       cmWin32ProcessExecution.cxx
       cmWin32ProcessExecution.h
       )
@@ -508,6 +501,14 @@ if(UNIX)
     CPack/cmCPackDebGenerator.cxx
     CPack/cmCPackRPMGenerator.cxx
     )
+endif()
+
+if(WIN32)
+  set(CPACK_SRCS ${CPACK_SRCS}
+    CPack/WiX/cmCPackWIXGenerator.cxx
+    CPack/WiX/cmWIXSourceWriter.cxx
+    CPack/WiX/cmWIXRichTextFormatWriter.cxx
+  )
 endif()
 
 if(APPLE)

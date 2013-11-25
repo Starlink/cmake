@@ -41,11 +41,8 @@ void cmGlobalVisualStudio6Generator
                  bool optional)
 {
   cmGlobalVisualStudioGenerator::AddPlatformDefinitions(mf);
-  mf->AddDefinition("CMAKE_GENERATOR_CC", "cl");
-  mf->AddDefinition("CMAKE_GENERATOR_CXX", "cl");
   mf->AddDefinition("CMAKE_GENERATOR_RC", "rc");
   mf->AddDefinition("CMAKE_GENERATOR_NO_COMPILER_ENV", "1");
-  mf->AddDefinition("CMAKE_GENERATOR_Fortran", "ifort");
   this->GenerateConfigurations(mf);
   this->cmGlobalGenerator::EnableLanguage(lang, mf, optional);
 }
@@ -200,7 +197,6 @@ void cmGlobalVisualStudio6Generator
       tt != orderedProjectTargets.end(); ++tt)
     {
     cmTarget* target = *tt;
-    cmMakefile* mf = target->GetMakefile();
     // Write the project into the DSW file
     const char* expath = target->GetProperty("EXTERNAL_MSPROJECT");
     if(expath)
@@ -398,9 +394,9 @@ cmGlobalVisualStudio6Generator::WriteUtilityDepend(cmTarget* target)
 
 //----------------------------------------------------------------------------
 void cmGlobalVisualStudio6Generator
-::GetDocumentation(cmDocumentationEntry& entry) const
+::GetDocumentation(cmDocumentationEntry& entry)
 {
-  entry.Name = this->GetName();
+  entry.Name = cmGlobalVisualStudio6Generator::GetActualName();
   entry.Brief = "Generates Visual Studio 6 project files.";
   entry.Full = "";
 }

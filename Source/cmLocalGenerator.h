@@ -49,29 +49,29 @@ public:
   /**
    * Calls TraceVSDependencies() on all targets of this generator.
    */
-  virtual void TraceDependencies();
+  void TraceDependencies();
 
   virtual void AddHelperCommands() {}
 
   /**
    * Perform any final calculations prior to generation
    */
-  virtual void ConfigureFinalPass();
+  void ConfigureFinalPass();
 
   /**
    * Generate the install rules files in this directory.
    */
-  virtual void GenerateInstallRules();
+  void GenerateInstallRules();
 
   /**
    * Generate the test files for tests.
    */
-  virtual void GenerateTestFiles();
+  void GenerateTestFiles();
 
   /**
    * Generate a manifest of target files that will be built.
    */
-  virtual void GenerateTargetManifest();
+  void GenerateTargetManifest();
 
   ///! Get the makefile for this generator
   cmMakefile *GetMakefile() {
@@ -142,14 +142,15 @@ public:
   void AddLanguageFlags(std::string& flags, const char* lang,
                         const char* config);
   void AddCMP0018Flags(std::string &flags, cmTarget* target,
-                       std::string const& lang);
+                       std::string const& lang, const char *config);
   void AddConfigVariableFlags(std::string& flags, const char* var,
                               const char* config);
   ///! Append flags to a string.
   virtual void AppendFlags(std::string& flags, const char* newFlags);
   ///! Get the include flags for the current makefile and language
   std::string GetIncludeFlags(const std::vector<std::string> &includes,
-                              const char* lang, bool forResponseFile = false);
+                              const char* lang, bool forResponseFile = false,
+                              const char *config = 0);
 
   /**
    * Encode a list of preprocessor definitions for the compiler
@@ -212,7 +213,8 @@ public:
   /** Get the include flags for the current makefile and language.  */
   void GetIncludeDirectories(std::vector<std::string>& dirs,
                              cmGeneratorTarget* target,
-                             const char* lang = "C", const char *config = 0);
+                             const char* lang = "C", const char *config = 0,
+                             bool stripImplicitInclDirs = true);
 
   /** Compute the language used to compile the given source file.  */
   const char* GetSourceFileLanguage(const cmSourceFile& source);

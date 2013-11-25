@@ -17,6 +17,10 @@
 #include "cmSourceFile.h"
 #include "cmSystemTools.h"
 
+#if defined(_WIN32) && !defined(__CYGWIN__)
+# include "cmLocalVisualStudioGenerator.h"
+#endif
+
 #include <cmsys/Terminal.h>
 #include <cmsys/ios/sstream>
 
@@ -44,14 +48,14 @@ static bool containsQ_OBJECT(const std::string& text)
 static std::string findMatchingHeader(const std::string& absPath,
                                       const std::string& mocSubDir,
                                       const std::string& basename,
-                                const std::list<std::string>& headerExtensions)
+                              const std::vector<std::string>& headerExtensions)
 {
   std::string header;
-  for(std::list<std::string>::const_iterator ext = headerExtensions.begin();
+  for(std::vector<std::string>::const_iterator ext = headerExtensions.begin();
       ext != headerExtensions.end();
       ++ext)
     {
-    std::string sourceFilePath = absPath + basename + (*ext);
+    std::string sourceFilePath = absPath + basename + "." + (*ext);
     if (cmsys::SystemTools::FileExists(sourceFilePath.c_str()))
       {
       header = sourceFilePath;
@@ -59,7 +63,7 @@ static std::string findMatchingHeader(const std::string& absPath,
       }
     if (!mocSubDir.empty())
       {
-      sourceFilePath = mocSubDir + basename + (*ext);
+      sourceFilePath = mocSubDir + basename + "." + (*ext);
       if (cmsys::SystemTools::FileExists(sourceFilePath.c_str()))
         {
         header = sourceFilePath;
@@ -85,6 +89,18 @@ static std::string extractSubDir(const std::string& absPath,
 }
 
 
+static void copyTargetProperty(cmTarget* destinationTarget,
+                               cmTarget* sourceTarget,
+                               const char* propertyName)
+{
+  const char* propertyValue = sourceTarget->GetProperty(propertyName);
+  if (propertyValue)
+    {
+    destinationTarget->SetProperty(propertyName, propertyValue);
+    }
+}
+
+
 cmQtAutomoc::cmQtAutomoc()
 :Verbose(cmsys::SystemTools::GetEnv("VERBOSE") != 0)
 ,ColorOutput(true)
@@ -107,12 +123,9 @@ cmQtAutomoc::cmQtAutomoc()
     }
 }
 
-
-void cmQtAutomoc::SetupAutomocTarget(cmTarget* target)
+bool cmQtAutomoc::InitializeMocSourceFile(cmTarget* target)
 {
   cmMakefile* makefile = target->GetMakefile();
-  cmLocalGenerator* localGen = makefile->GetLocalGenerator();
-  const char* targetName = target->GetName();
   // don't do anything if there is no Qt4 or Qt5Core (which contains moc):
   std::string qtMajorVersion = makefile->GetSafeDefinition("QT_VERSION_MAJOR");
   if (qtMajorVersion == "")
@@ -121,8 +134,29 @@ void cmQtAutomoc::SetupAutomocTarget(cmTarget* target)
     }
   if (qtMajorVersion != "4" && qtMajorVersion != "5")
     {
-    return;
+    return false;
     }
+
+  std::string automocTargetName = target->GetName();
+  automocTargetName += "_automoc";
+  std::string mocCppFile = makefile->GetCurrentOutputDirectory();
+  mocCppFile += "/";
+  mocCppFile += automocTargetName;
+  mocCppFile += ".cpp";
+  cmSourceFile* mocCppSource = makefile->GetOrCreateSource(mocCppFile.c_str(),
+                                                         true);
+  makefile->AppendProperty("ADDITIONAL_MAKE_CLEAN_FILES",
+                           mocCppFile.c_str(), false);
+
+  target->AddSourceFile(mocCppSource);
+  return true;
+}
+
+void cmQtAutomoc::SetupAutomocTarget(cmTarget* target)
+{
+  cmMakefile* makefile = target->GetMakefile();
+  cmLocalGenerator* localGen = makefile->GetLocalGenerator();
+  const char* targetName = target->GetName();
 
   bool relaxedMode = makefile->IsOn("CMAKE_AUTOMOC_RELAXED_MODE");
 
@@ -152,10 +186,44 @@ void cmQtAutomoc::SetupAutomocTarget(cmTarget* target)
   std::string automocComment = "Automoc for target ";
   automocComment += targetName;
 
-  makefile->AddUtilityCommand(automocTargetName.c_str(), true,
-                              workingDirectory.c_str(), depends,
-                              commandLines, false, automocComment.c_str());
-  target->AddUtility(automocTargetName.c_str());
+#if defined(_WIN32) && !defined(__CYGWIN__)
+  bool usePRE_BUILD = false;
+  cmGlobalGenerator* gg = localGen->GetGlobalGenerator();
+  if(strstr(gg->GetName(), "Visual Studio"))
+    {
+    cmLocalVisualStudioGenerator* vslg =
+      static_cast<cmLocalVisualStudioGenerator*>(localGen);
+    // Under VS >= 7 use a PRE_BUILD event instead of a separate target to
+    // reduce the number of targets loaded into the IDE.
+    // This also works around a VS 11 bug that may skip updating the target:
+    //  https://connect.microsoft.com/VisualStudio/feedback/details/769495
+    usePRE_BUILD = vslg->GetVersion() >= cmLocalVisualStudioGenerator::VS7;
+    }
+  if(usePRE_BUILD)
+    {
+    // Add the pre-build command directly to bypass the OBJECT_LIBRARY
+    // rejection in cmMakefile::AddCustomCommandToTarget because we know
+    // PRE_BUILD will work for an OBJECT_LIBRARY in this specific case.
+    std::vector<std::string> no_output;
+    cmCustomCommand cc(makefile, no_output, depends,
+                       commandLines, automocComment.c_str(),
+                       workingDirectory.c_str());
+    cc.SetEscapeOldStyle(false);
+    cc.SetEscapeAllowMakeVars(true);
+    target->GetPreBuildCommands().push_back(cc);
+    }
+  else
+#endif
+    {
+    cmTarget* automocTarget = makefile->AddUtilityCommand(
+                                automocTargetName.c_str(), true,
+                                workingDirectory.c_str(), depends,
+                                commandLines, false, automocComment.c_str());
+    // inherit FOLDER property from target (#13688)
+    copyTargetProperty(automocTarget, target, "FOLDER");
+
+    target->AddUtility(automocTargetName.c_str());
+    }
 
   // configure a file to get all information to automoc at buildtime:
   std::string _moc_files;
@@ -196,36 +264,11 @@ void cmQtAutomoc::SetupAutomocTarget(cmTarget* target)
     }
 
 
-  const char* qtIncDir = 0;
-  const char* qtCoreIncDir = 0;
-
-  // check whether ${QT_INCLUDE_DIR} is part of the implicit include dirs,
-  // see http://public.kitware.com/Bug/view.php?id=13667
-  bool qtIncludeDirMayHaveBeenRemoved = false;
-  if (makefile->IsSet("QT_INCLUDE_DIR"))
-    {
-    qtIncDir = makefile->GetDefinition("QT_INCLUDE_DIR");
-    std::string s =
-         makefile->GetSafeDefinition("CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES");
-    std::vector<std::string> implIncDirs;
-    cmSystemTools::ExpandListArgument(s, implIncDirs);
-    if (std::find(implIncDirs.begin(), implIncDirs.end(),std::string(qtIncDir))
-                                                          != implIncDirs.end())
-      {
-      qtIncludeDirMayHaveBeenRemoved = true;
-      if (makefile->IsSet("QT_QTCORE_INCLUDE_DIR"))
-        {
-        qtCoreIncDir = makefile->GetDefinition("QT_QTCORE_INCLUDE_DIR");
-        }
-      }
-    }
-
-  bool haveQtCoreIncDir = false;
-  bool haveQtIncDir = false;
-
   std::vector<std::string> includeDirs;
   cmGeneratorTarget gtgt(target);
-  localGen->GetIncludeDirectories(includeDirs, &gtgt, "CXX");
+  // Get the include dirs for this target, without stripping the implicit
+  // include dirs off, see http://public.kitware.com/Bug/view.php?id=13667
+  localGen->GetIncludeDirectories(includeDirs, &gtgt, "CXX", 0, false);
   std::string _moc_incs = "";
   const char* sep = "";
   for(std::vector<std::string>::const_iterator incDirIt = includeDirs.begin();
@@ -235,41 +278,14 @@ void cmQtAutomoc::SetupAutomocTarget(cmTarget* target)
     _moc_incs += sep;
     sep = ";";
     _moc_incs += *incDirIt;
-
-    if (qtIncludeDirMayHaveBeenRemoved && qtCoreIncDir && qtIncDir) // #13667
-      {
-      if (*incDirIt == qtIncDir)
-        {
-        haveQtIncDir = true;
-        qtIncludeDirMayHaveBeenRemoved = false; // it's here, i.e. not removed
-        }
-      if (*incDirIt == qtCoreIncDir)
-        {
-        haveQtCoreIncDir = true;
-        }
-      }
-    }
-
-  // Some projects (kdelibs, phonon) query the compiler for its default
-  // include search dirs, and add those to
-  // CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES.
-  // These may include e.g./usr/lib/qt/include . This is typically also part
-  // of ${QT_INCLUDES}. If this directory is then contained in the implicit
-  // include dirs, it is removed from the include dirs returned from the
-  // target above. So we add ${QT_INCLUDE_DIR} manually for moc if we detected
-  // that ${QT_QTCORE_INCLUDE_DIR} is among the include dirs (there shouldn't
-  // be a way to use Qt4 without using ${QT_QTCORE_INCLUDE_DIR} I think.
-  // See #13646 and #13667.
-  if (qtIncludeDirMayHaveBeenRemoved && qtCoreIncDir && qtIncDir
-      && (haveQtCoreIncDir == true) && (haveQtIncDir == false))
-    {
-    _moc_incs += sep;
-    sep = ";";
-    _moc_incs += qtIncDir;
     }
 
   const char* tmp = target->GetProperty("COMPILE_DEFINITIONS");
-  std::string _moc_compile_defs = (tmp!=0 ? tmp : "");
+  std::string _moc_compile_defs;
+  if (tmp)
+    {
+    _moc_compile_defs = target->GetCompileDefinitions(0);
+    }
   tmp = makefile->GetProperty("COMPILE_DEFINITIONS");
   if (tmp)
     {
@@ -304,17 +320,6 @@ void cmQtAutomoc::SetupAutomocTarget(cmTarget* target)
   outputFile += "/AutomocInfo.cmake";
   makefile->ConfigureFile(inputFile.c_str(), outputFile.c_str(),
                           false, true, false);
-
-  std::string mocCppFile =  makefile->GetCurrentOutputDirectory();
-  mocCppFile += "/";
-  mocCppFile += automocTargetName;
-  mocCppFile += ".cpp";
-  cmSourceFile* mocCppSource = makefile->GetOrCreateSource(mocCppFile.c_str(),
-                                                         true);
-  target->AddSourceFile(mocCppSource);
-
-  makefile->AppendProperty("ADDITIONAL_MAKE_CLEAN_FILES",
-                           mocCppFile.c_str(), false);
 }
 
 
@@ -332,7 +337,7 @@ bool cmQtAutomoc::Run(const char* targetDirectory)
 
   if (this->QtMajorVersion == "4" || this->QtMajorVersion == "5")
     {
-    success = this->RunAutomoc();
+    success = this->RunAutomoc(makefile);
     }
 
   this->WriteOldMocDefinitionsFile(targetDirectory);
@@ -540,7 +545,7 @@ void cmQtAutomoc::Init()
 }
 
 
-bool cmQtAutomoc::RunAutomoc()
+bool cmQtAutomoc::RunAutomoc(cmMakefile* makefile)
 {
   if (!cmsys::SystemTools::FileExists(this->OutMocCppFilename.c_str())
     || (this->OldCompileSettingsStr != this->CurrentCompileSettingsStr))
@@ -564,22 +569,8 @@ bool cmQtAutomoc::RunAutomoc()
   std::vector<std::string> sourceFiles;
   cmSystemTools::ExpandListArgument(this->Sources, sourceFiles);
 
-  std::list<std::string> headerExtensions;
-  headerExtensions.push_back(".h");
-  headerExtensions.push_back(".hpp");
-  headerExtensions.push_back(".hxx");
-#if defined(_WIN32)
-  // not case sensitive, don't add ".H"
-#elif defined(__APPLE__)
-  // detect case-sensitive filesystem
-  long caseSensitive = pathconf(this->Srcdir.c_str(), _PC_CASE_SENSITIVE);
-  if (caseSensitive == 1)
-  {
-    headerExtensions.push_back(".H");
-  }
-#else
-  headerExtensions.push_back(".H");
-#endif
+  const std::vector<std::string>& headerExtensions =
+                                               makefile->GetHeaderExtensions();
 
   for (std::vector<std::string>::const_iterator it = sourceFiles.begin();
        it != sourceFiles.end();
@@ -679,7 +670,7 @@ bool cmQtAutomoc::RunAutomoc()
 
 
 void cmQtAutomoc::ParseCppFile(const std::string& absFilename,
-                              const std::list<std::string>& headerExtensions,
+                              const std::vector<std::string>& headerExtensions,
                               std::map<std::string, std::string>& includedMocs)
 {
   cmsys::RegularExpression mocIncludeRegExp(
@@ -857,7 +848,7 @@ void cmQtAutomoc::ParseCppFile(const std::string& absFilename,
 
 
 void cmQtAutomoc::StrictParseCppFile(const std::string& absFilename,
-                              const std::list<std::string>& headerExtensions,
+                              const std::vector<std::string>& headerExtensions,
                               std::map<std::string, std::string>& includedMocs)
 {
   cmsys::RegularExpression mocIncludeRegExp(
@@ -968,8 +959,8 @@ void cmQtAutomoc::StrictParseCppFile(const std::string& absFilename,
 
 
 void cmQtAutomoc::SearchHeadersForCppFile(const std::string& absFilename,
-                                const std::list<std::string>& headerExtensions,
-                                std::set<std::string>& absHeaders)
+                              const std::vector<std::string>& headerExtensions,
+                              std::set<std::string>& absHeaders)
 {
   // search for header files and private header files we may need to moc:
   const std::string basename =
@@ -977,22 +968,22 @@ void cmQtAutomoc::SearchHeadersForCppFile(const std::string& absFilename,
   const std::string absPath = cmsys::SystemTools::GetFilenamePath(
                    cmsys::SystemTools::GetRealPath(absFilename.c_str())) + '/';
 
-  for(std::list<std::string>::const_iterator ext = headerExtensions.begin();
+  for(std::vector<std::string>::const_iterator ext = headerExtensions.begin();
       ext != headerExtensions.end();
       ++ext)
     {
-    const std::string headerName = absPath + basename + (*ext);
+    const std::string headerName = absPath + basename + "." + (*ext);
     if (cmsys::SystemTools::FileExists(headerName.c_str()))
       {
       absHeaders.insert(headerName);
       break;
       }
     }
-  for(std::list<std::string>::const_iterator ext = headerExtensions.begin();
+  for(std::vector<std::string>::const_iterator ext = headerExtensions.begin();
       ext != headerExtensions.end();
       ++ext)
     {
-    const std::string privateHeaderName = absPath+basename+"_p"+(*ext);
+    const std::string privateHeaderName = absPath+basename+"_p."+(*ext);
     if (cmsys::SystemTools::FileExists(privateHeaderName.c_str()))
       {
       absHeaders.insert(privateHeaderName);
@@ -1113,7 +1104,8 @@ bool cmQtAutomoc::GenerateMoc(const std::string& sourceFile,
 }
 
 
-std::string cmQtAutomoc::Join(const std::list<std::string>& lst,char separator)
+std::string cmQtAutomoc::Join(const std::vector<std::string>& lst,
+                              char separator)
 {
     if (lst.empty())
       {
@@ -1121,11 +1113,11 @@ std::string cmQtAutomoc::Join(const std::list<std::string>& lst,char separator)
       }
 
     std::string result;
-    for (std::list<std::string>::const_iterator it = lst.begin();
+    for (std::vector<std::string>::const_iterator it = lst.begin();
          it != lst.end();
          ++it)
       {
-      result += (*it) + separator;
+      result += "." + (*it) + separator;
       }
     result.erase(result.end() - 1);
     return result;

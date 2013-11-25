@@ -109,7 +109,7 @@ private:
                        FCInfo& fcinfo);
   void WriteTargetVersionAttribute(std::ostream& fout, cmTarget& target);
 
-  void WriteGroup(const cmSourceGroup *sg,
+  bool WriteGroup(const cmSourceGroup *sg,
                   cmTarget& target, std::ostream &fout,
                   const char *libName, std::vector<std::string> *configs);
 
@@ -122,6 +122,7 @@ private:
   cmVS7FlagTable const* ExtraFlagTable;
   std::string ModuleDefinitionFile;
   bool FortranProject;
+  bool WindowsCEProject;
   std::string PlatformName; // Win32 or x64
   cmLocalVisualStudio7GeneratorInternals* Internal;
 };

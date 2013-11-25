@@ -268,7 +268,8 @@ std::string cmMakefileTargetGenerator::GetFlags(const std::string &l)
       this->AddFortranFlags(flags);
       }
 
-    this->LocalGenerator->AddCMP0018Flags(flags, this->Target, lang);
+    this->LocalGenerator->AddCMP0018Flags(flags, this->Target,
+                                          lang, this->ConfigName);
 
     // Add include directory flags.
     this->AddIncludeFlags(flags, lang);
@@ -302,10 +303,7 @@ std::string cmMakefileTargetGenerator::GetDefines(const std::string &l)
 
     // Add preprocessor definitions for this target and configuration.
     this->LocalGenerator->AppendDefines
-      (defines, this->GeneratorTarget->GetCompileDefinitions());
-
-    this->LocalGenerator->AppendDefines
-      (defines, this->GeneratorTarget->GetCompileDefinitions(
+      (defines, this->Target->GetCompileDefinitions(
                             this->LocalGenerator->ConfigurationName.c_str()));
 
     std::string definesString;
@@ -639,18 +637,25 @@ cmMakefileTargetGenerator
       (commands, buildEcho.c_str(), cmLocalUnixMakefileGenerator3::EchoBuild);
     }
 
+  std::string targetOutPathReal;
   std::string targetOutPathPDB;
   {
+  std::string targetFullPathReal;
   std::string targetFullPathPDB;
   if(this->Target->GetType() == cmTarget::EXECUTABLE ||
      this->Target->GetType() == cmTarget::STATIC_LIBRARY ||
      this->Target->GetType() == cmTarget::SHARED_LIBRARY ||
      this->Target->GetType() == cmTarget::MODULE_LIBRARY)
     {
+    targetFullPathReal =
+      this->Target->GetFullPath(this->ConfigName, false, true);
     targetFullPathPDB = this->Target->GetPDBDirectory(this->ConfigName);
     targetFullPathPDB += "/";
     targetFullPathPDB += this->Target->GetPDBName(this->ConfigName);
     }
+  targetOutPathReal = this->Convert(targetFullPathReal.c_str(),
+                                    cmLocalGenerator::START_OUTPUT,
+                                    cmLocalGenerator::SHELL);
   targetOutPathPDB =
     this->Convert(targetFullPathPDB.c_str(),cmLocalGenerator::NONE,
                   cmLocalGenerator::SHELL);
@@ -659,6 +664,7 @@ cmMakefileTargetGenerator
   vars.RuleLauncher = "RULE_LAUNCH_COMPILE";
   vars.CMTarget = this->Target;
   vars.Language = lang;
+  vars.Target = targetOutPathReal.c_str();
   vars.TargetPDB = targetOutPathPDB.c_str();
   vars.Source = sourceFile.c_str();
   std::string shellObj =
@@ -1017,8 +1023,7 @@ void cmMakefileTargetGenerator::WriteTargetDependRules()
     << "SET(CMAKE_TARGET_LINKED_INFO_FILES\n";
   std::set<cmTarget const*> emitted;
   const char* cfg = this->LocalGenerator->ConfigurationName.c_str();
-  if(cmComputeLinkInformation* cli =
-                              this->GeneratorTarget->GetLinkInformation(cfg))
+  if(cmComputeLinkInformation* cli = this->Target->GetLinkInformation(cfg))
     {
     cmComputeLinkInformation::ItemVector const& items = cli->GetItems();
     for(cmComputeLinkInformation::ItemVector::const_iterator
@@ -1551,10 +1556,10 @@ std::string cmMakefileTargetGenerator::GetFrameworkFlags()
   this->LocalGenerator->GetIncludeDirectories(includes,
                                               this->GeneratorTarget,
                                               "C", config);
-  std::vector<std::string>::iterator i;
   // check all include directories for frameworks as this
   // will already have added a -F for the framework
-  for(i = includes.begin(); i != includes.end(); ++i)
+  for(std::vector<std::string>::iterator i = includes.begin();
+      i != includes.end(); ++i)
     {
     if(this->Target->NameResolvesToFramework(i->c_str()))
       {
@@ -1566,17 +1571,21 @@ std::string cmMakefileTargetGenerator::GetFrameworkFlags()
     }
 
   std::string flags;
-  std::vector<std::string>& frameworks = this->Target->GetFrameworks();
-  for(i = frameworks.begin();
-      i != frameworks.end(); ++i)
+  const char* cfg = this->LocalGenerator->ConfigurationName.c_str();
+  if(cmComputeLinkInformation* cli = this->Target->GetLinkInformation(cfg))
     {
-    if(emitted.insert(*i).second)
+    std::vector<std::string> const& frameworks = cli->GetFrameworkPaths();
+    for(std::vector<std::string>::const_iterator i = frameworks.begin();
+        i != frameworks.end(); ++i)
       {
-      flags += "-F";
-      flags += this->Convert(i->c_str(),
-                             cmLocalGenerator::START_OUTPUT,
-                             cmLocalGenerator::SHELL, true);
-      flags += " ";
+      if(emitted.insert(*i).second)
+        {
+        flags += "-F";
+        flags += this->Convert(i->c_str(),
+                               cmLocalGenerator::START_OUTPUT,
+                               cmLocalGenerator::SHELL, true);
+        flags += " ";
+        }
       }
     }
   return flags;
@@ -1594,8 +1603,7 @@ void cmMakefileTargetGenerator
 
   // Loop over all library dependencies.
   const char* cfg = this->LocalGenerator->ConfigurationName.c_str();
-  if(cmComputeLinkInformation* cli =
-                              this->GeneratorTarget->GetLinkInformation(cfg))
+  if(cmComputeLinkInformation* cli = this->Target->GetLinkInformation(cfg))
     {
     std::vector<std::string> const& libDeps = cli->GetDepends();
     for(std::vector<std::string>::const_iterator j = libDeps.begin();

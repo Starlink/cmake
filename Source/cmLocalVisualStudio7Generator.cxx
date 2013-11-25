@@ -229,6 +229,9 @@ void cmLocalVisualStudio7Generator
   this->FortranProject =
     static_cast<cmGlobalVisualStudioGenerator*>(this->GlobalGenerator)
     ->TargetIsFortranOnly(target);
+  this->WindowsCEProject =
+    static_cast<cmGlobalVisualStudioGenerator*>(this->GlobalGenerator)
+    ->TargetsWindowsCE();
 
   // Intel Fortran for VS10 uses VS9 format ".vfproj" files.
   VSVersion realVersion = this->Version;
@@ -742,8 +745,7 @@ void cmLocalVisualStudio7Generator::WriteConfiguration(std::ostream& fout,
   targetOptions.ParseFinish();
   cmGeneratorTarget* gt =
     this->GlobalGenerator->GetGeneratorTarget(&target);
-  targetOptions.AddDefines(gt->GetCompileDefinitions().c_str());
-  targetOptions.AddDefines(gt->GetCompileDefinitions(configName).c_str());
+  targetOptions.AddDefines(target.GetCompileDefinitions(configName).c_str());
   targetOptions.SetVerboseMakefile(
     this->Makefile->IsOn("CMAKE_VERBOSE_MAKEFILE"));
 
@@ -914,12 +916,12 @@ void cmLocalVisualStudio7Generator::WriteConfiguration(std::ostream& fout,
       // for FAT32 file systems, which can cause an empty manifest
       // to be embedded into the resulting executable.  See CMake
       // bug #2617.
-      const char* tool  = "VCManifestTool";
+      const char* manifestTool  = "VCManifestTool";
       if(this->FortranProject)
         {
-        tool = "VFManifestTool";
+        manifestTool = "VFManifestTool";
         }
-      fout << "\t\t\t<Tool\n\t\t\t\tName=\"" << tool << "\"\n"
+      fout << "\t\t\t<Tool\n\t\t\t\tName=\"" << manifestTool << "\"\n"
            << "\t\t\t\tUseFAT32Workaround=\"true\"\n"
            << "\t\t\t/>\n";
       }
@@ -1003,6 +1005,8 @@ void cmLocalVisualStudio7Generator::OutputBuildTool(std::ostream& fout,
     }
   switch(target.GetType())
     {
+    case cmTarget::UNKNOWN_LIBRARY:
+      break;
     case cmTarget::OBJECT_LIBRARY:
       {
       std::string libpath = this->GetTargetDirectory(target);
@@ -1074,9 +1078,7 @@ void cmLocalVisualStudio7Generator::OutputBuildTool(std::ostream& fout,
                            targetNameImport, targetNamePDB, configName);
 
     // Compute the link library and directory information.
-    cmGeneratorTarget* gt =
-      this->GlobalGenerator->GetGeneratorTarget(&target);
-    cmComputeLinkInformation* pcli = gt->GetLinkInformation(configName);
+    cmComputeLinkInformation* pcli = target.GetLinkInformation(configName);
     if(!pcli)
       {
       return;
@@ -1131,6 +1133,17 @@ void cmLocalVisualStudio7Generator::OutputBuildTool(std::ostream& fout,
       {
       fout << "\t\t\t\tGenerateDebugInformation=\"TRUE\"\n";
       }
+    if(this->WindowsCEProject)
+      {
+      if(this->GetVersion() < VS9)
+        {
+        fout << "\t\t\t\tSubSystem=\"9\"\n";
+        }
+      else
+        {
+        fout << "\t\t\t\tSubSystem=\"8\"\n";
+        }
+      }
     std::string stackVar = "CMAKE_";
     stackVar += linkLanguage;
     stackVar += "_STACK_SIZE";
@@ -1161,15 +1174,15 @@ void cmLocalVisualStudio7Generator::OutputBuildTool(std::ostream& fout,
                               targetNameImport, targetNamePDB, configName);
 
     // Compute the link library and directory information.
-    cmGeneratorTarget* gt =
-      this->GlobalGenerator->GetGeneratorTarget(&target);
-    cmComputeLinkInformation* pcli = gt->GetLinkInformation(configName);
+    cmComputeLinkInformation* pcli = target.GetLinkInformation(configName);
     if(!pcli)
       {
       return;
       }
     cmComputeLinkInformation& cli = *pcli;
     const char* linkLanguage = cli.GetLinkLanguage();
+
+    bool isWin32Executable = target.GetPropertyAsBool("WIN32_EXECUTABLE");
 
     // Compute the variable name to lookup standard libraries for this
     // language.
@@ -1218,15 +1231,31 @@ void cmLocalVisualStudio7Generator::OutputBuildTool(std::ostream& fout,
       {
       fout << "\t\t\t\tGenerateDebugInformation=\"TRUE\"\n";
       }
-    if ( target.GetPropertyAsBool("WIN32_EXECUTABLE") )
+    if ( this->WindowsCEProject )
+      {
+      if(this->GetVersion() < VS9)
+        {
+        fout << "\t\t\t\tSubSystem=\"9\"\n";
+        }
+      else
+        {
+        fout << "\t\t\t\tSubSystem=\"8\"\n";
+        }
+      fout << "\t\t\t\tEntryPointSymbol=\""
+           << (isWin32Executable ? "WinMainCRTStartup" : "mainACRTStartup")
+           << "\"\n";
+      }
+    else if ( this->FortranProject )
       {
       fout << "\t\t\t\tSubSystem=\""
-           << (this->FortranProject? "subSystemWindows" : "2") << "\"\n";
+           << (isWin32Executable ? "subSystemWindows" : "subSystemConsole")
+           << "\"\n";
       }
     else
       {
       fout << "\t\t\t\tSubSystem=\""
-           << (this->FortranProject? "subSystemConsole" : "1") << "\"\n";
+           << (isWin32Executable ? "2" : "1")
+           << "\"\n";
       }
     std::string stackVar = "CMAKE_";
     stackVar += linkLanguage;
@@ -1591,17 +1620,30 @@ cmLocalVisualStudio7Generator
   return dir_max;
 }
 
-void cmLocalVisualStudio7Generator
+bool cmLocalVisualStudio7Generator
 ::WriteGroup(const cmSourceGroup *sg, cmTarget& target,
              std::ostream &fout, const char *libName,
              std::vector<std::string> *configs)
 {
   const std::vector<const cmSourceFile *> &sourceFiles =
     sg->GetSourceFiles();
-  // If the group is empty, don't write it at all.
-  if(sourceFiles.empty() && sg->GetGroupChildren().empty())
+  std::vector<cmSourceGroup> const& children  = sg->GetGroupChildren();
+
+  // Write the children to temporary output.
+  bool hasChildrenWithSources = false;
+  cmOStringStream tmpOut;
+  for(unsigned int i=0;i<children.size();++i)
     {
-    return;
+    if(this->WriteGroup(&children[i], target, tmpOut, libName, configs))
+      {
+      hasChildrenWithSources = true;
+      }
+    }
+
+  // If the group is empty, don't write it at all.
+  if(sourceFiles.empty() && !hasChildrenWithSources)
+    {
+    return false;
     }
 
   // If the group has a name, write the header.
@@ -1722,11 +1764,10 @@ void cmLocalVisualStudio7Generator
       }
     }
 
-  std::vector<cmSourceGroup> const& children  = sg->GetGroupChildren();
-
-  for(unsigned int i=0;i<children.size();++i)
+  // If the group has children with source files, write the children.
+  if(hasChildrenWithSources)
     {
-    this->WriteGroup(&children[i], target, fout, libName, configs);
+    fout << tmpOut.str();
     }
 
   // If the group has a name, write the footer.
@@ -1734,6 +1775,8 @@ void cmLocalVisualStudio7Generator
     {
     this->WriteVCProjEndGroup(fout);
     }
+
+  return true;
 }
 
 void cmLocalVisualStudio7Generator::

@@ -1212,7 +1212,8 @@ cmLocalGenerator::ConvertToIncludeReference(std::string const& path)
 //----------------------------------------------------------------------------
 std::string cmLocalGenerator::GetIncludeFlags(
                                      const std::vector<std::string> &includes,
-                                     const char* lang, bool forResponseFile)
+                                     const char* lang, bool forResponseFile,
+                                     const char *config)
 {
   if(!lang)
     {
@@ -1285,7 +1286,7 @@ std::string cmLocalGenerator::GetIncludeFlags(
     if(!flagUsed || repeatFlag)
       {
       if(sysIncludeFlag &&
-         this->Makefile->IsSystemIncludeDirectory(i->c_str()))
+         this->Makefile->IsSystemIncludeDirectory(i->c_str(), config))
         {
         includeFlags << sysIncludeFlag;
         }
@@ -1329,7 +1330,9 @@ std::string cmLocalGenerator::GetIncludeFlags(
 void cmLocalGenerator::GetIncludeDirectories(std::vector<std::string>& dirs,
                                              cmGeneratorTarget* target,
                                              const char* lang,
-                                             const char *config)
+                                             const char *config,
+                                             bool stripImplicitInclDirs
+                                            )
 {
   // Need to decide whether to automatically include the source and
   // binary directories at the beginning of the include path.
@@ -1404,6 +1407,7 @@ void cmLocalGenerator::GetIncludeDirectories(std::vector<std::string>& dirs,
     return;
     }
 
+  std::vector<std::string> implicitDirs;
   // Load implicit include directories for this language.
   std::string impDirVar = "CMAKE_";
   impDirVar += lang;
@@ -1416,6 +1420,10 @@ void cmLocalGenerator::GetIncludeDirectories(std::vector<std::string>& dirs,
         i != impDirVec.end(); ++i)
       {
       emitted.insert(*i);
+      if (!stripImplicitInclDirs)
+        {
+        implicitDirs.push_back(*i);
+        }
       }
     }
 
@@ -1453,6 +1461,15 @@ void cmLocalGenerator::GetIncludeDirectories(std::vector<std::string>& dirs,
       i != includes.end(); ++i)
     {
     if(emitted.insert(*i).second)
+      {
+      dirs.push_back(*i);
+      }
+    }
+
+  for(std::vector<std::string>::const_iterator i = implicitDirs.begin();
+      i != implicitDirs.end(); ++i)
+    {
+    if(std::find(includes.begin(), includes.end(), *i) != includes.end())
       {
       dirs.push_back(*i);
       }
@@ -1671,7 +1688,7 @@ void cmLocalGenerator::OutputLinkLibraries(std::string& linkLibraries,
 {
   cmOStringStream fout;
   const char* config = this->Makefile->GetDefinition("CMAKE_BUILD_TYPE");
-  cmComputeLinkInformation* pcli = tgt.GetLinkInformation(config);
+  cmComputeLinkInformation* pcli = tgt.Target->GetLinkInformation(config);
   if(!pcli)
     {
     return;
@@ -1703,7 +1720,7 @@ void cmLocalGenerator::OutputLinkLibraries(std::string& linkLibraries,
   for(std::vector<std::string>::const_iterator fdi = fwDirs.begin();
       fdi != fwDirs.end(); ++fdi)
     {
-    frameworkPath = " -F";
+    frameworkPath += "-F";
     frameworkPath += this->Convert(fdi->c_str(), NONE, SHELL, false);
     frameworkPath += " ";
     }
@@ -1875,6 +1892,14 @@ bool cmLocalGenerator::GetRealDependency(const char* inName,
   // modify the name so stripping down to just the file name should
   // produce the target name in this case.
   std::string name = cmSystemTools::GetFilenameName(inName);
+
+  // If the input name is the empty string, there is no real
+  // dependency. Short-circuit the other checks:
+  if(name == "")
+    {
+    return false;
+    }
+
   if(cmSystemTools::GetFilenameLastExtension(name) == ".exe")
     {
     name = cmSystemTools::GetFilenameWithoutLastExtension(name);
@@ -1971,7 +1996,8 @@ void cmLocalGenerator::AddSharedFlags(std::string& flags,
 
 //----------------------------------------------------------------------------
 void cmLocalGenerator::AddCMP0018Flags(std::string &flags, cmTarget* target,
-                                       std::string const& lang)
+                                       std::string const& lang,
+                                       const char *config)
 {
   int targetType = target->GetType();
 
@@ -1984,8 +2010,18 @@ void cmLocalGenerator::AddCMP0018Flags(std::string &flags, cmTarget* target,
     }
   else
     {
-    // Add position independendent flags, if needed.
-    if (target->GetPropertyAsBool("POSITION_INDEPENDENT_CODE"))
+    if (target->GetType() == cmTarget::OBJECT_LIBRARY)
+    {
+      if (target->GetPropertyAsBool("POSITION_INDEPENDENT_CODE"))
+        {
+        this->AddPositionIndependentFlags(flags, lang, targetType);
+        }
+      return;
+    }
+
+    if (target->GetLinkInterfaceDependentBoolProperty(
+                                                "POSITION_INDEPENDENT_CODE",
+                                                config))
       {
       this->AddPositionIndependentFlags(flags, lang, targetType);
       }

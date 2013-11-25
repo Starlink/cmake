@@ -79,6 +79,20 @@ cmGlobalGenerator::~cmGlobalGenerator()
   this->ClearGeneratorTargets();
 }
 
+bool cmGlobalGenerator::SetGeneratorToolset(std::string const& ts)
+{
+  cmOStringStream e;
+  e <<
+    "Generator\n"
+    "  " << this->GetName() << "\n"
+    "does not support toolset specification, but toolset\n"
+    "  " << ts << "\n"
+    "was specified.";
+  this->CMakeInstance->IssueMessage(cmake::FATAL_ERROR, e.str(),
+                                    cmListFileBacktrace());
+  return false;
+}
+
 void cmGlobalGenerator::ResolveLanguageCompiler(const std::string &lang,
                                                 cmMakefile *mf,
                                                 bool optional)
@@ -938,6 +952,11 @@ void cmGlobalGenerator::Generate()
       (*targets)[tit->first] = tit->second;
       (*targets)[tit->first].SetMakefile(mf);
       }
+
+    for ( tit = targets->begin(); tit != targets->end(); ++ tit )
+      {
+        tit->second.AppendBuildInterfaceIncludes();
+      }
     }
 
   // Add generator specific helper commands
@@ -975,6 +994,7 @@ void cmGlobalGenerator::Generate()
   // Generate project files
   for (i = 0; i < this->LocalGenerators.size(); ++i)
     {
+    this->LocalGenerators[i]->GetMakefile()->SetGeneratingBuildSystem();
     this->SetCurrentLocalGenerator(this->LocalGenerators[i]);
     this->LocalGenerators[i]->Generate();
     this->LocalGenerators[i]->GenerateInstallRules();
@@ -1047,6 +1067,8 @@ bool cmGlobalGenerator::CheckTargets()
 void cmGlobalGenerator::CreateAutomocTargets()
 {
 #ifdef CMAKE_BUILD_WITH_CMAKE
+  typedef std::vector<std::pair<cmQtAutomoc, cmTarget*> > Automocs;
+  Automocs automocs;
   for(unsigned int i=0; i < this->LocalGenerators.size(); ++i)
     {
     cmTargets& targets =
@@ -1058,15 +1080,24 @@ void cmGlobalGenerator::CreateAutomocTargets()
       if(target.GetType() == cmTarget::EXECUTABLE ||
          target.GetType() == cmTarget::STATIC_LIBRARY ||
          target.GetType() == cmTarget::SHARED_LIBRARY ||
-         target.GetType() == cmTarget::MODULE_LIBRARY)
+         target.GetType() == cmTarget::MODULE_LIBRARY ||
+         target.GetType() == cmTarget::OBJECT_LIBRARY)
         {
         if(target.GetPropertyAsBool("AUTOMOC") && !target.IsImported())
           {
           cmQtAutomoc automoc;
-          automoc.SetupAutomocTarget(&target);
+          if(automoc.InitializeMocSourceFile(&target))
+            {
+            automocs.push_back(std::make_pair(automoc, &target));
+            }
           }
         }
       }
+    }
+  for (Automocs::iterator it = automocs.begin(); it != automocs.end();
+       ++it)
+    {
+    it->first.SetupAutomocTarget(it->second);
     }
 #endif
 }
@@ -1554,14 +1585,6 @@ void cmGlobalGenerator::SetConfiguredFilesPath(cmGlobalGenerator* gen)
     this->ConfiguredFilesPath = gen->CMakeInstance->GetHomeOutputDirectory();
     this->ConfiguredFilesPath += cmake::GetCMakeFilesDirectory();
     }
-}
-
-//----------------------------------------------------------------------------
-void cmGlobalGenerator::GetDocumentation(cmDocumentationEntry& entry) const
-{
-  entry.Name = this->GetName();
-  entry.Brief = "";
-  entry.Full = "";
 }
 
 bool cmGlobalGenerator::IsExcluded(cmLocalGenerator* root,
@@ -2055,9 +2078,41 @@ bool cmGlobalGenerator::UseFolderProperty()
     }
 
   // By default, this feature is OFF, since it is not supported in the
-  // Visual Studio Express editions:
+  // Visual Studio Express editions until VS11:
   //
   return false;
+}
+
+//----------------------------------------------------------------------------
+void cmGlobalGenerator::EnableMinGWLanguage(cmMakefile *mf)
+{
+  this->FindMakeProgram(mf);
+  std::string makeProgram = mf->GetRequiredDefinition("CMAKE_MAKE_PROGRAM");
+  std::vector<std::string> locations;
+  locations.push_back(cmSystemTools::GetProgramPath(makeProgram.c_str()));
+  locations.push_back("/mingw/bin");
+  locations.push_back("c:/mingw/bin");
+  std::string tgcc = cmSystemTools::FindProgram("gcc", locations);
+  std::string gcc = "gcc.exe";
+  if(tgcc.size())
+    {
+    gcc = tgcc;
+    }
+  std::string tgxx = cmSystemTools::FindProgram("g++", locations);
+  std::string gxx = "g++.exe";
+  if(tgxx.size())
+    {
+    gxx = tgxx;
+    }
+  std::string trc = cmSystemTools::FindProgram("windres", locations);
+  std::string rc = "windres.exe";
+  if(trc.size())
+    {
+    rc = trc;
+    }
+  mf->AddDefinition("CMAKE_GENERATOR_CC", gcc.c_str());
+  mf->AddDefinition("CMAKE_GENERATOR_CXX", gxx.c_str());
+  mf->AddDefinition("CMAKE_GENERATOR_RC", rc.c_str());
 }
 
 //----------------------------------------------------------------------------
