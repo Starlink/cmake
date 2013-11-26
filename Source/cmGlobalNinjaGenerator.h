@@ -14,7 +14,10 @@
 #  define cmGlobalNinjaGenerator_h
 
 #  include "cmGlobalGenerator.h"
+#  include "cmGlobalGeneratorFactory.h"
 #  include "cmNinjaTypes.h"
+
+//#define NINJA_GEN_VERBOSE_FILES
 
 class cmLocalGenerator;
 class cmGeneratedFileStream;
@@ -74,25 +77,27 @@ public:
    * It also writes the variables bound to this build statement.
    * @warning no escaping of any kind is done here.
    */
-  static void WriteBuild(std::ostream& os,
-                         const std::string& comment,
-                         const std::string& rule,
-                         const cmNinjaDeps& outputs,
-                         const cmNinjaDeps& explicitDeps,
-                         const cmNinjaDeps& implicitDeps,
-                         const cmNinjaDeps& orderOnlyDeps,
-                         const cmNinjaVars& variables);
+  void WriteBuild(std::ostream& os,
+                  const std::string& comment,
+                  const std::string& rule,
+                  const cmNinjaDeps& outputs,
+                  const cmNinjaDeps& explicitDeps,
+                  const cmNinjaDeps& implicitDeps,
+                  const cmNinjaDeps& orderOnlyDeps,
+                  const cmNinjaVars& variables,
+                  const std::string& rspfile = std::string(),
+                  int cmdLineLimit = -1);
 
   /**
    * Helper to write a build statement with the special 'phony' rule.
    */
-  static void WritePhonyBuild(std::ostream& os,
-                              const std::string& comment,
-                              const cmNinjaDeps& outputs,
-                              const cmNinjaDeps& explicitDeps,
-                              const cmNinjaDeps& implicitDeps = cmNinjaDeps(),
-                              const cmNinjaDeps& orderOnlyDeps = cmNinjaDeps(),
-                              const cmNinjaVars& variables = cmNinjaVars());
+  void WritePhonyBuild(std::ostream& os,
+                       const std::string& comment,
+                       const cmNinjaDeps& outputs,
+                       const cmNinjaDeps& explicitDeps,
+                       const cmNinjaDeps& implicitDeps = cmNinjaDeps(),
+                       const cmNinjaDeps& orderOnlyDeps = cmNinjaDeps(),
+                       const cmNinjaVars& variables = cmNinjaVars());
 
   void WriteCustomCommandBuild(const std::string& command,
                                const std::string& description,
@@ -100,6 +105,8 @@ public:
                                const cmNinjaDeps& outputs,
                                const cmNinjaDeps& deps = cmNinjaDeps(),
                              const cmNinjaDeps& orderOnlyDeps = cmNinjaDeps());
+  void WriteMacOSXContentBuild(const std::string& input,
+                               const std::string& output);
 
   /**
    * Write a rule statement named @a name to @a os with the @a comment,
@@ -111,10 +118,12 @@ public:
                         const std::string& name,
                         const std::string& command,
                         const std::string& description,
-                        const std::string& comment = "",
-                        const std::string& depfile = "",
-                        bool restat = false,
-                        bool generator = false);
+                        const std::string& comment,
+                        const std::string& depfile,
+                        const std::string& rspfile,
+                        const std::string& rspcontent,
+                        bool restat,
+                        bool generator);
 
   /**
    * Write a variable named @a name to @a os with value @a value and an
@@ -143,13 +152,17 @@ public:
                            const cmNinjaDeps& targets,
                            const std::string& comment = "");
 
+
+  static bool IsMinGW() { return UsingMinGW; }
+
+
 public:
   /// Default constructor.
   cmGlobalNinjaGenerator();
 
   /// Convenience method for creating an instance of this class.
-  static cmGlobalGenerator* New() {
-    return new cmGlobalNinjaGenerator; }
+  static cmGlobalGeneratorFactory* NewFactory() {
+    return new cmGlobalGeneratorSimpleFactory<cmGlobalNinjaGenerator>(); }
 
   /// Destructor.
   virtual ~cmGlobalNinjaGenerator() { }
@@ -165,7 +178,7 @@ public:
   static const char* GetActualName() { return "Ninja"; }
 
   /// Overloaded methods. @see cmGlobalGenerator::GetDocumentation()
-  virtual void GetDocumentation(cmDocumentationEntry& entry) const;
+  static void GetDocumentation(cmDocumentationEntry& entry);
 
   /// Overloaded methods. @see cmGlobalGenerator::Generate()
   virtual void Generate();
@@ -178,6 +191,7 @@ public:
   /// Overloaded methods. @see cmGlobalGenerator::GenerateBuildCommand()
   virtual std::string GenerateBuildCommand(const char* makeProgram,
                                            const char* projectName,
+                                           const char* projectDir,
                                            const char* additionalOptions,
                                            const char* targetName,
                                            const char* config,
@@ -206,12 +220,15 @@ public:
   }
   virtual const char* GetCleanTargetName()         const { return "clean"; }
 
-public:
-  cmGeneratedFileStream* GetBuildFileStream() const
-  { return this->BuildFileStream; }
 
-  cmGeneratedFileStream* GetRulesFileStream() const
-  { return this->RulesFileStream; }
+  cmGeneratedFileStream* GetBuildFileStream() const {
+    return this->BuildFileStream; }
+
+  cmGeneratedFileStream* GetRulesFileStream() const {
+    return this->RulesFileStream; }
+
+  void AddCXXCompileCommand(const std::string &commandLine,
+                            const std::string &sourceFile);
 
   /**
    * Add a rule to the generated build system.
@@ -221,58 +238,22 @@ public:
   void AddRule(const std::string& name,
                const std::string& command,
                const std::string& description,
-               const std::string& comment = "",
+               const std::string& comment,
                const std::string& depfile = "",
+               const std::string& rspfile = "",
+               const std::string& rspcontent = "",
                bool restat = false,
                bool generator = false);
 
   bool HasRule(const std::string& name);
 
   void AddCustomCommandRule();
+  void AddMacOSXContentRule();
 
-protected:
-
-  /// Overloaded methods.
-  /// @see cmGlobalGenerator::CheckALLOW_DUPLICATE_CUSTOM_TARGETS()
-  virtual bool CheckALLOW_DUPLICATE_CUSTOM_TARGETS() { return true; }
-
-private:
-
-  /// @see cmGlobalGenerator::ComputeTargetObjects
-  virtual void ComputeTargetObjects(cmGeneratorTarget* gt) const;
-
-private:
-  // In order to access the AddDependencyToAll() functions and co.
-  friend class cmLocalNinjaGenerator;
-
-  // In order to access the SeenCustomCommand() function.
-  friend class cmNinjaTargetGenerator;
-  friend class cmNinjaNormalTargetGenerator;
-  friend class cmNinjaUtilityTargetGenerator;
-
-private:
-  void OpenBuildFileStream();
-  void CloseBuildFileStream();
-
-  void OpenRulesFileStream();
-  void CloseRulesFileStream();
-
-  /// Write the common disclaimer text at the top of each build file.
-  void WriteDisclaimer(std::ostream& os);
-
-  void AddDependencyToAll(cmTarget* target);
-
-  void WriteAssumedSourceDependencies();
-
-  void AppendTargetOutputs(cmTarget* target, cmNinjaDeps& outputs);
-  void AppendTargetDepends(cmTarget* target, cmNinjaDeps& outputs);
-
-  void AddTargetAlias(const std::string& alias, cmTarget* target);
-  void WriteTargetAliases(std::ostream& os);
-
-  void WriteBuiltinTargets(std::ostream& os);
-  void WriteTargetAll(std::ostream& os);
-  void WriteTargetRebuildManifest(std::ostream& os);
+  bool HasCustomCommandOutput(const std::string &output) {
+    return this->CustomCommandOutputs.find(output) !=
+           this->CustomCommandOutputs.end();
+  }
 
   /// Called when we have seen the given custom command.  Returns true
   /// if we has seen it before.
@@ -288,11 +269,6 @@ private:
     this->AssumedSourceDependencies.erase(output);
   }
 
-  bool HasCustomCommandOutput(const std::string &output) {
-    return this->CustomCommandOutputs.find(output) !=
-           this->CustomCommandOutputs.end();
-  }
-
   void AddAssumedSourceDependencies(const std::string &source,
                                     const cmNinjaDeps &deps) {
     std::set<std::string> &ASD = this->AssumedSourceDependencies[source];
@@ -302,13 +278,67 @@ private:
     ASD.insert(deps.begin(), deps.end());
   }
 
+  void AppendTargetOutputs(cmTarget* target, cmNinjaDeps& outputs);
+  void AppendTargetDepends(cmTarget* target, cmNinjaDeps& outputs);
+  void AddDependencyToAll(cmTarget* target);
+  void AddDependencyToAll(const std::string& input);
+
+  const std::vector<cmLocalGenerator*>& GetLocalGenerators() const {
+    return LocalGenerators; }
+
+  bool IsExcluded(cmLocalGenerator* root, cmTarget& target) {
+    return cmGlobalGenerator::IsExcluded(root, target); }
+
+  int GetRuleCmdLength(const std::string& name) {
+    return RuleCmdLength[name]; }
+
+  void AddTargetAlias(const std::string& alias, cmTarget* target);
+
+
+protected:
+
+  /// Overloaded methods.
+  /// @see cmGlobalGenerator::CheckALLOW_DUPLICATE_CUSTOM_TARGETS()
+  virtual bool CheckALLOW_DUPLICATE_CUSTOM_TARGETS() { return true; }
+
+
 private:
+
+  /// @see cmGlobalGenerator::ComputeTargetObjects
+  virtual void ComputeTargetObjects(cmGeneratorTarget* gt) const;
+
+  void OpenBuildFileStream();
+  void CloseBuildFileStream();
+
+  void CloseCompileCommandsStream();
+
+  void OpenRulesFileStream();
+  void CloseRulesFileStream();
+
+  /// Write the common disclaimer text at the top of each build file.
+  void WriteDisclaimer(std::ostream& os);
+
+  void WriteAssumedSourceDependencies();
+
+  void WriteTargetAliases(std::ostream& os);
+  void WriteUnknownExplicitDependencies(std::ostream& os);
+
+  void WriteBuiltinTargets(std::ostream& os);
+  void WriteTargetAll(std::ostream& os);
+  void WriteTargetRebuildManifest(std::ostream& os);
+  void WriteTargetClean(std::ostream& os);
+  void WriteTargetHelp(std::ostream& os);
+
+  std::string ninjaCmd() const;
+
+
   /// The file containing the build statement. (the relation ship of the
   /// compilation DAG).
   cmGeneratedFileStream* BuildFileStream;
   /// The file containing the rule statements. (The action attached to each
   /// edge of the compilation DAG).
   cmGeneratedFileStream* RulesFileStream;
+  cmGeneratedFileStream* CompileCommandsStream;
 
   /// The type used to store the set of rules added to the generated build
   /// system.
@@ -316,6 +346,9 @@ private:
 
   /// The set of rules added to the generated build system.
   RulesSetType Rules;
+
+  /// Length of rule command, used by rsp file evaluation
+  std::map<std::string, int> RuleCmdLength;
 
   /// The set of dependencies to add to the "all" target.
   cmNinjaDeps AllDependencies;
@@ -326,6 +359,12 @@ private:
   /// The set of custom command outputs we have seen.
   std::set<std::string> CustomCommandOutputs;
 
+  //The combined explicit dependencies of all build commands that the global
+  //generator has issued. When combined with CombinedBuildOutputs it allows
+  //us to detect the set of explicit dependencies that have
+  std::set<std::string> CombinedBuildExplicitDependencies;
+  std::set<std::string> CombinedBuildOutputs;
+
   /// The mapping from source file to assumed dependencies.
   std::map<std::string, std::set<std::string> > AssumedSourceDependencies;
 
@@ -333,6 +372,9 @@ private:
   TargetAliasMap TargetAliases;
 
   static cmLocalGenerator* LocalGenerator;
+
+  static bool UsingMinGW;
+
 };
 
 #endif // ! cmGlobalNinjaGenerator_h

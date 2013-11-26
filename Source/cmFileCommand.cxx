@@ -10,17 +10,21 @@
   See the License for more information.
 ============================================================================*/
 #include "cmFileCommand.h"
+#include "cmCryptoHash.h"
 #include "cmake.h"
 #include "cmHexFileConverter.h"
 #include "cmInstallType.h"
 #include "cmFileTimeComparison.h"
 #include "cmCryptoHash.h"
 
+#include "cmTimestamp.h"
+
 #if defined(CMAKE_BUILD_WITH_CMAKE)
 #include "cm_curl.h"
 #endif
 
 #undef GetCurrentDirectory
+#include <assert.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 
@@ -159,6 +163,14 @@ bool cmFileCommand
     {
     return this->HandleCMakePathCommand(args, true);
     }
+  else if ( subCommand == "TIMESTAMP" )
+    {
+    return this->HandleTimestampCommand(args);
+    }
+  else if ( subCommand == "GENERATE" )
+    {
+    return this->HandleGenerateCommand(args);
+    }
 
   std::string e = "does not recognize sub-command "+subCommand;
   this->SetError(e.c_str());
@@ -271,7 +283,7 @@ bool cmFileCommand::HandleReadCommand(std::vector<std::string> const& args)
 
   // Open the specified file.
 #if defined(_WIN32) || defined(__CYGWIN__)
-  std::ifstream file(fileName.c_str(), std::ios::in | 
+  std::ifstream file(fileName.c_str(), std::ios::in |
                (hexOutputArg.IsEnabled() ? std::ios::binary : std::ios::in));
 #else
   std::ifstream file(fileName.c_str(), std::ios::in);
@@ -300,7 +312,7 @@ bool cmFileCommand::HandleReadCommand(std::vector<std::string> const& args)
     offset = atoi(offsetArg.GetCString());
     }
 
-  file.seekg(offset);
+  file.seekg(offset, std::ios::beg); // explicit ios::beg for IBM VisualAge 6
 
   std::string output;
 
@@ -704,11 +716,8 @@ bool cmFileCommand::HandleStringsCommand(std::vector<std::string> const& args)
 bool cmFileCommand::HandleGlobCommand(std::vector<std::string> const& args,
   bool recurse)
 {
-  if ( args.size() < 2 )
-    {
-    this->SetError("GLOB requires at least a variable name");
-    return false;
-    }
+  // File commands has at least one argument
+  assert(args.size() > 1);
 
   std::vector<std::string>::const_iterator i = args.begin();
 
@@ -842,11 +851,8 @@ bool cmFileCommand::HandleGlobCommand(std::vector<std::string> const& args,
 bool cmFileCommand::HandleMakeDirectoryCommand(
   std::vector<std::string> const& args)
 {
-  if(args.size() < 2 )
-    {
-    this->SetError("called with incorrect number of arguments");
-    return false;
-    }
+  // File command has at least one argument
+  assert(args.size() > 1);
 
   std::vector<std::string>::const_iterator i = args.begin();
 
@@ -1003,7 +1009,9 @@ protected:
     // Match rules are case-insensitive on some platforms.
 #if defined(_WIN32) || defined(__APPLE__) || defined(__CYGWIN__)
     std::string lower = cmSystemTools::LowerCase(file);
-    file = lower.c_str();
+    const char* file_to_match = lower.c_str();
+#else
+    const char* file_to_match = file;
 #endif
 
     // Collect properties from all matching rules.
@@ -1012,7 +1020,7 @@ protected:
     for(std::vector<MatchRule>::iterator mr = this->MatchRules.begin();
         mr != this->MatchRules.end(); ++mr)
       {
-      if(mr->Regex.find(file))
+      if(mr->Regex.find(file_to_match))
         {
         matched = true;
         result.Exclude |= mr->Properties.Exclude;
@@ -1966,7 +1974,7 @@ bool cmFileInstaller
   else
     {
     cmOStringStream e;
-    e << "Option TYPE given uknown value \"" << stype << "\".";
+    e << "Option TYPE given unknown value \"" << stype << "\".";
     this->FileCommand->SetError(e.str().c_str());
     return false;
     }
@@ -1981,7 +1989,7 @@ bool cmFileInstaller::HandleInstallDestination()
   // allow for / to be a valid destination
   if ( destination.size() < 2 && destination != "/" )
     {
-    this->FileCommand->SetError("called with inapropriate arguments. "
+    this->FileCommand->SetError("called with inappropriate arguments. "
         "No DESTINATION provided or .");
     return false;
     }
@@ -2405,7 +2413,8 @@ bool cmFileCommand::HandleRemove(std::vector<std::string> const& args,
       fileName += "/" + *i;
       }
 
-    if(cmSystemTools::FileIsDirectory(fileName.c_str()) && recurse)
+    if(cmSystemTools::FileIsDirectory(fileName.c_str()) &&
+       !cmSystemTools::FileIsSymlink(fileName.c_str()) && recurse)
       {
       cmSystemTools::RemoveADirectory(fileName.c_str());
       }
@@ -2480,7 +2489,7 @@ namespace {
   cmWriteToFileCallback(void *ptr, size_t size, size_t nmemb,
                         void *data)
     {
-    register int realsize = (int)(size * nmemb);
+    int realsize = (int)(size * nmemb);
     std::ofstream* fout = static_cast<std::ofstream*>(data);
     const char* chPtr = static_cast<char*>(ptr);
     fout->write(chPtr, realsize);
@@ -2492,7 +2501,7 @@ namespace {
   cmWriteToMemoryCallback(void *ptr, size_t size, size_t nmemb,
                           void *data)
     {
-    register int realsize = (int)(size * nmemb);
+    int realsize = (int)(size * nmemb);
     cmFileCommandVectorOfChar *vec
       = static_cast<cmFileCommandVectorOfChar*>(data);
     const char* chPtr = static_cast<char*>(ptr);
@@ -2619,17 +2628,17 @@ namespace {
           ::curl_easy_cleanup(this->Easy);
           }
       }
-    
-    inline void release(void) 
+
+    inline void release(void)
       {
         this->Easy = 0;
         return;
       }
-    
+
   private:
     ::CURL * Easy;
   };
-  
+
 }
 #endif
 
@@ -2664,7 +2673,11 @@ cmFileCommand::HandleDownloadCommand(std::vector<std::string> const& args)
   long inactivity_timeout = 0;
   std::string verboseLog;
   std::string statusVar;
-  std::string expectedMD5sum;
+  bool tls_verify = this->Makefile->IsOn("CMAKE_TLS_VERIFY");
+  const char* cainfo = this->Makefile->GetDefinition("CMAKE_TLS_CAINFO");
+  std::string expectedHash;
+  std::string hashMatchMSG;
+  cmsys::auto_ptr<cmCryptoHash> hash;
   bool showProgress = false;
 
   while(i != args.end())
@@ -2715,6 +2728,32 @@ cmFileCommand::HandleDownloadCommand(std::vector<std::string> const& args)
         }
       statusVar = *i;
       }
+    else if(*i == "TLS_VERIFY")
+      {
+      ++i;
+      if(i != args.end())
+        {
+        tls_verify = cmSystemTools::IsOn(i->c_str());
+        }
+      else
+        {
+        this->SetError("TLS_VERIFY missing bool value.");
+        return false;
+        }
+      }
+    else if(*i == "TLS_CAINFO")
+      {
+      ++i;
+      if(i != args.end())
+        {
+        cainfo = i->c_str();
+        }
+      else
+        {
+        this->SetError("TLS_CAFILE missing file value.");
+        return false;
+        }
+      }
     else if(*i == "EXPECTED_MD5")
       {
       ++i;
@@ -2723,48 +2762,68 @@ cmFileCommand::HandleDownloadCommand(std::vector<std::string> const& args)
         this->SetError("DOWNLOAD missing sum value for EXPECTED_MD5.");
         return false;
         }
-      expectedMD5sum = cmSystemTools::LowerCase(*i);
+      hash = cmsys::auto_ptr<cmCryptoHash>(cmCryptoHash::New("MD5"));
+      hashMatchMSG = "MD5 sum";
+      expectedHash = cmSystemTools::LowerCase(*i);
       }
     else if(*i == "SHOW_PROGRESS")
       {
       showProgress = true;
       }
+    else if(*i == "EXPECTED_HASH")
+      {
+      ++i;
+      if(i == args.end())
+        {
+        this->SetError("DOWNLOAD missing ALGO=value for EXPECTED_HASH.");
+        return false;
+        }
+      std::string::size_type pos = i->find("=");
+      if(pos == std::string::npos)
+        {
+        std::string err =
+          "DOWNLOAD EXPECTED_HASH expects ALGO=value but got: ";
+        err += *i;
+        this->SetError(err.c_str());
+        return false;
+        }
+      std::string algo = i->substr(0, pos);
+      expectedHash = cmSystemTools::LowerCase(i->substr(pos+1));
+      hash = cmsys::auto_ptr<cmCryptoHash>(cmCryptoHash::New(algo.c_str()));
+      if(!hash.get())
+        {
+        std::string err = "DOWNLOAD EXPECTED_HASH given unknown ALGO: ";
+        err += algo;
+        this->SetError(err.c_str());
+        return false;
+        }
+      hashMatchMSG = algo + " hash";
+      }
     ++i;
     }
-
-  // If file exists already, and caller specified an expected md5 sum,
-  // and the existing file already has the expected md5 sum, then simply
+  // If file exists already, and caller specified an expected md5 or sha,
+  // and the existing file already has the expected hash, then simply
   // return.
   //
-  if(cmSystemTools::FileExists(file.c_str()) &&
-    !expectedMD5sum.empty())
+  if(cmSystemTools::FileExists(file.c_str()) && hash.get())
     {
-    char computedMD5[32];
-
-    if (!cmSystemTools::ComputeFileMD5(file.c_str(), computedMD5))
+    std::string msg;
+    std::string actualHash = hash->HashFile(file.c_str());
+    if(actualHash == expectedHash)
       {
-      this->SetError("DOWNLOAD cannot compute MD5 sum on pre-existing file");
-      return false;
-      }
-
-    std::string actualMD5sum = cmSystemTools::LowerCase(
-      std::string(computedMD5, 32));
-
-    if (expectedMD5sum == actualMD5sum)
-      {
+      msg = "returning early; file already exists with expected ";
+      msg += hashMatchMSG;
+      msg += "\"";
       if(statusVar.size())
         {
         cmOStringStream result;
-        result << (int)0 << ";\""
-          "returning early: file already exists with expected MD5 sum\"";
+        result << (int)0 << ";\"" << msg;
         this->Makefile->AddDefinition(statusVar.c_str(),
                                       result.str().c_str());
         }
-
       return true;
       }
     }
-
   // Make sure parent directory exists so we can write to the file
   // as we receive downloaded bits from curl...
   //
@@ -2796,13 +2855,15 @@ cmFileCommand::HandleDownloadCommand(std::vector<std::string> const& args)
     }
 
   cURLEasyGuard g_curl(curl);
-
   ::CURLcode res = ::curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
   check_curl_result(res, "DOWNLOAD cannot set url: ");
 
   // enable HTTP ERROR parsing
   res = ::curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1);
   check_curl_result(res, "DOWNLOAD cannot set http failure option: ");
+
+  res = ::curl_easy_setopt(curl, CURLOPT_USERAGENT, "curl/" LIBCURL_VERSION);
+  check_curl_result(res, "DOWNLOAD cannot set user agent option: ");
 
   res = ::curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION,
                            cmWriteToFileCallback);
@@ -2811,6 +2872,25 @@ cmFileCommand::HandleDownloadCommand(std::vector<std::string> const& args)
   res = ::curl_easy_setopt(curl, CURLOPT_DEBUGFUNCTION,
                            cmFileCommandCurlDebugCallback);
   check_curl_result(res, "DOWNLOAD cannot set debug function: ");
+
+  // check to see if TLS verification is requested
+  if(tls_verify)
+    {
+    res = ::curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1);
+    check_curl_result(res, "Unable to set TLS/SSL Verify on: ");
+    }
+  else
+    {
+    res = ::curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0);
+    check_curl_result(res, "Unable to set TLS/SSL Verify off: ");
+    }
+  // check to see if a CAINFO file has been specified
+  // command arg comes first
+  if(cainfo && *cainfo)
+    {
+    res = ::curl_easy_setopt(curl, CURLOPT_CAINFO, cainfo);
+    check_curl_result(res, "Unable to set TLS/SSL Verify CAINFO: ");
+    }
 
   cmFileCommandVectorOfChar chunkDebug;
 
@@ -2886,26 +2966,22 @@ cmFileCommand::HandleDownloadCommand(std::vector<std::string> const& args)
 
   // Verify MD5 sum if requested:
   //
-  if (!expectedMD5sum.empty())
+  if (hash.get())
     {
-    char computedMD5[32];
-
-    if (!cmSystemTools::ComputeFileMD5(file.c_str(), computedMD5))
+    std::string actualHash = hash->HashFile(file.c_str());
+    if (actualHash.size() == 0)
       {
-      this->SetError("DOWNLOAD cannot compute MD5 sum on downloaded file");
+      this->SetError("DOWNLOAD cannot compute hash on downloaded file");
       return false;
       }
 
-    std::string actualMD5sum = cmSystemTools::LowerCase(
-      std::string(computedMD5, 32));
-
-    if (expectedMD5sum != actualMD5sum)
+    if (expectedHash != actualHash)
       {
       cmOStringStream oss;
-      oss << "DOWNLOAD MD5 mismatch" << std::endl
+      oss << "DOWNLOAD HASH mismatch" << std::endl
         << "  for file: [" << file << "]" << std::endl
-        << "    expected MD5 sum: [" << expectedMD5sum << "]" << std::endl
-        << "      actual MD5 sum: [" << actualMD5sum << "]" << std::endl
+        << "    expected hash: [" << expectedHash << "]" << std::endl
+        << "      actual hash: [" << actualHash << "]" << std::endl
         ;
       this->SetError(oss.str().c_str());
       return false;
@@ -3175,4 +3251,129 @@ cmFileCommand::HandleUploadCommand(std::vector<std::string> const& args)
   this->SetError("UPLOAD not supported by bootstrap cmake.");
   return false;
 #endif
+}
+
+//----------------------------------------------------------------------------
+void cmFileCommand::AddEvaluationFile(const std::string &inputName,
+                                      const std::string &outputExpr,
+                                      const std::string &condition,
+                                      bool inputIsContent
+                                     )
+{
+  cmListFileBacktrace lfbt;
+  this->Makefile->GetBacktrace(lfbt);
+
+  cmGeneratorExpression outputGe(lfbt);
+  cmsys::auto_ptr<cmCompiledGeneratorExpression> outputCge
+                                                = outputGe.Parse(outputExpr);
+
+  cmGeneratorExpression conditionGe(lfbt);
+  cmsys::auto_ptr<cmCompiledGeneratorExpression> conditionCge
+                                              = conditionGe.Parse(condition);
+
+  this->Makefile->GetLocalGenerator()
+                ->GetGlobalGenerator()->AddEvaluationFile(inputName,
+                                                          outputCge,
+                                                          this->Makefile,
+                                                          conditionCge,
+                                                          inputIsContent);
+}
+
+//----------------------------------------------------------------------------
+bool cmFileCommand::HandleGenerateCommand(
+  std::vector<std::string> const& args)
+{
+  if (args.size() < 5)
+    {
+    this->SetError("Incorrect arguments to GENERATE subcommand.");
+    return false;
+    }
+  if (args[1] != "OUTPUT")
+    {
+    this->SetError("Incorrect arguments to GENERATE subcommand.");
+    return false;
+    }
+  std::string condition;
+  if (args.size() > 5)
+    {
+    if (args[5] != "CONDITION")
+      {
+      this->SetError("Incorrect arguments to GENERATE subcommand.");
+      return false;
+      }
+    if (args.size() != 7)
+      {
+      this->SetError("Incorrect arguments to GENERATE subcommand.");
+      return false;
+      }
+    condition = args[6];
+    if (condition.empty())
+      {
+      this->SetError("CONDITION of sub-command GENERATE must not be empty if "
+        "specified.");
+      return false;
+      }
+    }
+  std::string output = args[2];
+  const bool inputIsContent = args[3] != "INPUT";
+  if (inputIsContent && args[3] != "CONTENT")
+    {
+    this->SetError("Incorrect arguments to GENERATE subcommand.");
+    return false;
+    }
+  std::string input = args[4];
+
+  this->AddEvaluationFile(input, output, condition, inputIsContent);
+  return true;
+}
+
+//----------------------------------------------------------------------------
+bool cmFileCommand::HandleTimestampCommand(
+  std::vector<std::string> const& args)
+{
+  if(args.size() < 3)
+    {
+    this->SetError("sub-command TIMESTAMP requires at least two arguments.");
+    return false;
+    }
+  else if(args.size() > 5)
+    {
+    this->SetError("sub-command TIMESTAMP takes at most four arguments.");
+    return false;
+    }
+
+  unsigned int argsIndex = 1;
+
+  const std::string& filename = args[argsIndex++];
+
+  const std::string& outputVariable = args[argsIndex++];
+
+  std::string formatString;
+  if(args.size() > argsIndex && args[argsIndex] != "UTC")
+    {
+    formatString = args[argsIndex++];
+    }
+
+  bool utcFlag = false;
+  if(args.size() > argsIndex)
+    {
+    if(args[argsIndex] == "UTC")
+      {
+      utcFlag = true;
+      }
+    else
+      {
+      std::string e = " TIMESTAMP sub-command does not recognize option " +
+          args[argsIndex] + ".";
+      this->SetError(e.c_str());
+      return false;
+      }
+    }
+
+  cmTimestamp timestamp;
+  std::string result = timestamp.FileModificationTime(
+    filename.c_str(), formatString, utcFlag);
+  this->Makefile->AddDefinition(outputVariable.c_str(), result.c_str());
+
+  return true;
 }

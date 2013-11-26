@@ -26,7 +26,7 @@ public:
   /**
    * This is a virtual constructor for the command.
    */
-  virtual cmCommand* Clone() 
+  virtual cmCommand* Clone()
     {
     return new cmAddLibraryCommand;
     }
@@ -50,7 +50,7 @@ public:
     {
     return "Add a library to the project using the specified source files.";
     }
-  
+
   /**
    * More documentation.
    */
@@ -78,7 +78,9 @@ public:
       "functionality.  "
       "If no type is given explicitly the type is STATIC or SHARED based "
       "on whether the current value of the variable BUILD_SHARED_LIBS is "
-      "true."
+      "true.  "
+      "For SHARED and MODULE libraries the POSITION_INDEPENDENT_CODE "
+      "target property is set to TRUE automatically."
       "\n"
       "By default the library file will be created in the build tree "
       "directory corresponding to the source tree directory in which "
@@ -132,9 +134,26 @@ public:
       "They may contain custom commands generating such sources, but not "
       "PRE_BUILD, PRE_LINK, or POST_BUILD commands.  "
       "Object libraries cannot be imported, exported, installed, or linked."
+      "  "
+      "Some native build systems may not like targets that have only "
+      "object files, so consider adding at least one real source file "
+      "to any target that references $<TARGET_OBJECTS:objlib>."
+      "\n"
+      "The signature\n"
+      "  add_library(<name> ALIAS <target>)\n"
+      "creates an alias, such that <name> can be used to refer to <target> "
+      "in subsequent commands.  The <name> does not appear in the generated "
+      "buildsystem as a make target.  The <target> may not be an IMPORTED "
+      "target or an ALIAS.  Alias targets can be used as linkable targets, "
+      "targets to read properties from.  They can also be tested for "
+      "existance with the "
+      "regular if(TARGET) subcommand.  The <name> may not be used to modify "
+      "properties of <target>, that is, it may not be used as the operand of "
+      "set_property, set_target_properties, target_link_libraries etc.  An "
+      "ALIAS target may not be installed of exported."
       ;
     }
-  
+
   cmTypeMacro(cmAddLibraryCommand, cmCommand);
 };
 

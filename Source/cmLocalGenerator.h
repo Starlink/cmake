@@ -16,6 +16,7 @@
 
 class cmMakefile;
 class cmGlobalGenerator;
+class cmGeneratorTarget;
 class cmTarget;
 class cmTargetManifest;
 class cmSourceFile;
@@ -48,29 +49,29 @@ public:
   /**
    * Calls TraceVSDependencies() on all targets of this generator.
    */
-  virtual void TraceDependencies();
+  void TraceDependencies();
 
   virtual void AddHelperCommands() {}
 
   /**
    * Perform any final calculations prior to generation
    */
-  virtual void ConfigureFinalPass();
+  void ConfigureFinalPass();
 
   /**
    * Generate the install rules files in this directory.
    */
-  virtual void GenerateInstallRules();
+  void GenerateInstallRules();
 
   /**
    * Generate the test files for tests.
    */
-  virtual void GenerateTestFiles();
+  void GenerateTestFiles();
 
   /**
    * Generate a manifest of target files that will be built.
    */
-  virtual void GenerateTargetManifest();
+  void GenerateTargetManifest();
 
   ///! Get the makefile for this generator
   cmMakefile *GetMakefile() {
@@ -135,26 +136,46 @@ public:
   std::vector<cmLocalGenerator*>& GetChildren() { return this->Children; };
 
 
-  void AddArchitectureFlags(std::string& flags, cmTarget* target,
+  void AddArchitectureFlags(std::string& flags, cmGeneratorTarget* target,
                             const char *lang, const char* config);
 
   void AddLanguageFlags(std::string& flags, const char* lang,
                         const char* config);
-  void AddSharedFlags(std::string& flags, const char* lang, bool shared);
+  void AddCMP0018Flags(std::string &flags, cmTarget* target,
+                       std::string const& lang, const char *config);
+  void AddVisibilityPresetFlags(std::string &flags, cmTarget* target,
+                                const char *lang);
   void AddConfigVariableFlags(std::string& flags, const char* var,
                               const char* config);
   ///! Append flags to a string.
   virtual void AppendFlags(std::string& flags, const char* newFlags);
+  virtual void AppendFlagEscape(std::string& flags, const char* rawFlag);
   ///! Get the include flags for the current makefile and language
   std::string GetIncludeFlags(const std::vector<std::string> &includes,
-                              const char* lang, bool forResponseFile = false);
+                              cmGeneratorTarget* target,
+                              const char* lang, bool forResponseFile = false,
+                              const char *config = 0);
 
   /**
    * Encode a list of preprocessor definitions for the compiler
    * command line.
    */
-  void AppendDefines(std::string& defines, const char* defines_list,
-                     const char* lang);
+  void AppendDefines(std::set<std::string>& defines,
+                     const char* defines_list);
+  void AppendDefines(std::set<std::string>& defines,
+                     std::string defines_list)
+  {
+    this->AppendDefines(defines, defines_list.c_str());
+  }
+  void AppendDefines(std::set<std::string>& defines,
+                     const std::vector<std::string> &defines_vec);
+
+  /**
+   * Join a set of defines into a definesString with a space separator.
+   */
+  void JoinDefines(const std::set<std::string>& defines,
+                   std::string &definesString,
+                   const char* lang);
 
   /** Lookup and append options associated with a particular feature.  */
   void AppendFeatureOptions(std::string& flags, const char* lang,
@@ -198,11 +219,20 @@ public:
 
   /** Get the include flags for the current makefile and language.  */
   void GetIncludeDirectories(std::vector<std::string>& dirs,
-                             cmTarget* target,
-                             const char* lang = "C");
+                             cmGeneratorTarget* target,
+                             const char* lang = "C", const char *config = 0,
+                             bool stripImplicitInclDirs = true);
+  void AddCompileOptions(std::string& flags, cmTarget* target,
+                         const char* lang, const char* config);
+  void AddCompileDefinitions(std::set<std::string>& defines, cmTarget* target,
+                         const char* config);
 
   /** Compute the language used to compile the given source file.  */
   const char* GetSourceFileLanguage(const cmSourceFile& source);
+
+  // Fill the vector with the target names for the object files,
+  // preprocessed files and assembly files.
+  virtual void GetIndividualFileTargets(std::vector<std::string>&) {}
 
   // Create a struct to hold the varibles passed into
   // ExpandRuleVariables
@@ -228,12 +258,14 @@ public:
     const char* ObjectDir;
     const char* Flags;
     const char* ObjectsQuoted;
+    const char* SONameFlag;
     const char* TargetSOName;
     const char* TargetInstallNameDir;
     const char* LinkFlags;
     const char* LanguageCompileFlags;
     const char* Defines;
     const char* RuleLauncher;
+    const char* DependencyFile;
   };
 
   /** Set whether to treat conversions to SHELL as a link script shell.  */
@@ -316,16 +348,27 @@ public:
                                              std::string const& dir_max,
                                              bool* hasSourceExtension = 0);
 
+  /** Fill out the static linker flags for the given target.  */
+  void GetStaticLibraryFlags(std::string& flags,
+                             std::string const& config,
+                             cmTarget* target);
+
   /** Fill out these strings for the given target.  Libraries to link,
    *  flags, and linkflags. */
   void GetTargetFlags(std::string& linkLibs,
                       std::string& flags,
                       std::string& linkFlags,
-                      cmTarget&target);
+                      std::string& frameworkPath,
+                      std::string& linkPath,
+                      cmGeneratorTarget* target);
 
 protected:
   ///! put all the libraries for a target on into the given stream
-  virtual void OutputLinkLibraries(std::ostream&, cmTarget&, bool relink);
+  virtual void OutputLinkLibraries(std::string& linkLibraries,
+                                   std::string& frameworkPath,
+                                   std::string& linkPath,
+                                   cmGeneratorTarget &,
+                                   bool relink);
 
   // Expand rule variables in CMake of the type found in language rules
   void ExpandRuleVariables(std::string& string,
@@ -341,12 +384,12 @@ protected:
 
   /** Convert a target to a utility target for unsupported
    *  languages of a generator */
-  void AddBuildTargetRule(const char* llang, cmTarget& target);
+  void AddBuildTargetRule(const char* llang, cmGeneratorTarget& target);
   ///! add a custom command to build a .o file that is part of a target
   void AddCustomCommandToCreateObject(const char* ofname,
                                       const char* lang,
                                       cmSourceFile& source,
-                                      cmTarget& target);
+                                      cmGeneratorTarget& target);
   // Create Custom Targets and commands for unsupported languages
   // The set passed in should contain the languages supported by the
   // generator directly.  Any targets containing files that are not
@@ -403,8 +446,6 @@ protected:
   bool IgnoreLibPrefix;
   bool Configured;
   bool EmitUniversalBinaryFlags;
-  // A type flag is not nice. It's used only in TraceDependencies().
-  bool IsMakefileGenerator;
   // Hack for ExpandRuleVariable until object-oriented version is
   // committed.
   std::string TargetImplib;
@@ -424,6 +465,11 @@ protected:
 private:
   std::string ConvertToOutputForExistingCommon(const char* remote,
                                                std::string const& result);
+
+  void AddSharedFlags(std::string& flags, const char* lang, bool shared);
+  bool GetShouldUseOldFlags(bool shared, const std::string &lang) const;
+  void AddPositionIndependentFlags(std::string& flags, std::string const& l,
+                                   int targetType);
 };
 
 #endif

@@ -26,6 +26,12 @@ class cmGeneratorTarget
 public:
   cmGeneratorTarget(cmTarget*);
 
+  int GetType() const;
+  const char *GetName() const;
+  const char *GetProperty(const char *prop);
+  bool GetPropertyAsBool(const char *prop);
+  std::vector<cmSourceFile*> const& GetSourceFiles();
+
   cmTarget* Target;
   cmMakefile* Makefile;
   cmLocalGenerator* LocalGenerator;
@@ -37,12 +43,15 @@ public:
   std::vector<cmSourceFile*> HeaderSources;
   std::vector<cmSourceFile*> ObjectSources;
   std::vector<cmSourceFile*> ExternalObjects;
-  std::vector<cmSourceFile*> OSXContent;
   std::vector<cmSourceFile*> IDLSources;
+  std::vector<cmSourceFile*> ResxSources;
+
   std::string ModuleDefinitionFile;
 
   std::map<cmSourceFile const*, std::string> Objects;
   std::set<cmSourceFile const*> ExplicitObjectName;
+
+  std::set<std::string> ExpectedResxHeaders;
 
   /** Full path with trailing slash to the top-level directory
       holding object files for this target.  Includes the build
@@ -53,12 +62,28 @@ public:
 
   void UseObjectLibraries(std::vector<std::string>& objs);
 
+  void GetAppleArchs(const char* config,
+                     std::vector<std::string>& archVec);
+
+  ///! Return the rule variable used to create this type of target,
+  //  need to add CMAKE_(LANG) for full name.
+  const char* GetCreateRuleVariable();
+
+  /** Get the include directories for this target.  */
+  std::vector<std::string> GetIncludeDirectories(const char *config);
+
+  bool IsSystemIncludeDirectory(const char *dir, const char *config);
+
 private:
   void ClassifySources();
   void LookupObjectLibraries();
 
+  std::map<std::string, std::vector<std::string> > SystemIncludesCache;
+
   cmGeneratorTarget(cmGeneratorTarget const&);
   void operator=(cmGeneratorTarget const&);
 };
+
+typedef std::map<cmTarget*, cmGeneratorTarget*> cmGeneratorTargetsType;
 
 #endif

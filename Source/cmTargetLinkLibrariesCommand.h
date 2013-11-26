@@ -13,6 +13,7 @@
 #define cmTargetLinkLibrariesCommand_h
 
 #include "cmCommand.h"
+#include "cmDocumentGeneratorExpressions.h"
 
 /** \class cmTargetLinkLibrariesCommand
  * \brief Specify a list of libraries to link into executables.
@@ -64,7 +65,8 @@ public:
       "Specify libraries or flags to use when linking a given target.  "
       "The named <target> must have been created in the current directory "
       "by a command such as add_executable or add_library.  "
-      "The remaining arguments specify library names or flags."
+      "The remaining arguments specify library names or flags.  "
+      "Repeated calls for the same <target> append items in the order called."
       "\n"
       "If a library name matches that of another target in the project "
       "a dependency will automatically be added in the build system to make "
@@ -86,24 +88,64 @@ public:
       "See the IMPORTED mode of the add_library command for more "
       "information.  "
       "\n"
-      "Library dependencies are transitive by default.  "
+      "Library dependencies are transitive by default with this signature.  "
       "When this target is linked into another target then the libraries "
       "linked to this target will appear on the link line for the other "
       "target too.  "
-      "See the LINK_INTERFACE_LIBRARIES target property to override the "
-      "set of transitive link dependencies for a target."
+      "This transitive \"link interface\" is stored in the "
+      "INTERFACE_LINK_LIBRARIES target property when policy CMP0022 is set "
+      "to NEW and may be overridden by setting the property directly. "
+      "("
+      "When CMP0022 is not set to NEW, transitive linking is builtin "
+      "but may be overridden by the LINK_INTERFACE_LIBRARIES property.  "
+      "Calls to other signatures of this command may set the property "
+      "making any libraries linked exclusively by this signature private."
+      ")"
+      "\n"
+      "CMake will also propagate \"usage requirements\" from linked library "
+      "targets.  "
+      "Usage requirements affect compilation of sources in the <target>.  "
+      "They are specified by properties defined on linked targets.  "
+      "During generation of the build system, CMake integrates "
+      "usage requirement property values with the corresponding "
+      "build properties for <target>:\n"
+      " INTERFACE_COMPILE_DEFINITONS: Appends to COMPILE_DEFINITONS\n"
+      " INTERFACE_INCLUDE_DIRECTORIES: Appends to INCLUDE_DIRECTORIES\n"
+      " INTERFACE_POSITION_INDEPENDENT_CODE: Sets POSITION_INDEPENDENT_CODE\n"
+      "   or checked for consistency with existing value\n"
+      "\n"
+      "If an <item> is a library in a Mac OX framework, the Headers "
+      "directory of the framework will also be processed as a \"usage "
+      "requirement\".  This has the same effect as passing the framework "
+      "directory as an include directory."
+      "  target_link_libraries(<target>\n"
+      "                      <PRIVATE|PUBLIC|INTERFACE> <lib> ...\n"
+      "                      [<PRIVATE|PUBLIC|INTERFACE> <lib> ... ] ...])\n"
+      "The PUBLIC, PRIVATE and INTERFACE keywords can be used to specify "
+      "both the link dependencies and the link interface in one command.  "
+      "Libraries and targets following PUBLIC are linked to, and are "
+      "made part of the link interface.  Libraries and targets "
+      "following PRIVATE are linked to, but are not made part of the "
+      "link interface.  Libraries following INTERFACE are appended "
+      "to the link interface and are not used for linking <target>."
       "\n"
       "  target_link_libraries(<target> LINK_INTERFACE_LIBRARIES\n"
       "                        [[debug|optimized|general] <lib>] ...)\n"
       "The LINK_INTERFACE_LIBRARIES mode appends the libraries "
-      "to the LINK_INTERFACE_LIBRARIES and its per-configuration equivalent "
-      "target properties instead of using them for linking.  "
-      "Libraries specified as \"debug\" are appended to the "
-      "the LINK_INTERFACE_LIBRARIES_DEBUG property (or to the properties "
+      "to the INTERFACE_LINK_LIBRARIES target property instead of using them "
+      "for linking.  If policy CMP0022 is not NEW, then this mode also "
+      "appends libraries to the LINK_INTERFACE_LIBRARIES and its "
+      "per-configuration equivalent.  This signature "
+      "is for compatibility only. Prefer the INTERFACE mode instead.  "
+      "Libraries specified as \"debug\" are wrapped in a generator "
+      "expression to correspond to debug builds.  If policy CMP0022 is not "
+      "NEW, the libraries are also appended to the "
+      "LINK_INTERFACE_LIBRARIES_DEBUG property (or to the properties "
       "corresponding to configurations listed in the DEBUG_CONFIGURATIONS "
       "global property if it is set).  "
       "Libraries specified as \"optimized\" are appended to the "
-      "the LINK_INTERFACE_LIBRARIES property.  "
+      "INTERFACE_LINK_LIBRARIES property.  If policy CMP0022 is not NEW, "
+      "they are also appended to the LINK_INTERFACE_LIBRARIES property.  "
       "Libraries specified as \"general\" (or without any keyword) are "
       "treated as if specified for both \"debug\" and \"optimized\"."
       "\n"
@@ -113,11 +155,15 @@ public:
       "                        [<LINK_PRIVATE|LINK_PUBLIC>\n"
       "                          [[debug|optimized|general] <lib>] ...])\n"
       "The LINK_PUBLIC and LINK_PRIVATE modes can be used to specify both "
-      "the link dependencies and the link interface in one command.  "
+      "the link dependencies and the link interface in one command.  This "
+      "signature is for compatibility only. Prefer the PUBLIC or PRIVATE "
+      "keywords instead.  "
       "Libraries and targets following LINK_PUBLIC are linked to, and are "
-      "made part of the LINK_INTERFACE_LIBRARIES. Libraries and targets "
-      "following LINK_PRIVATE are linked to, but are not made part of the "
-      "LINK_INTERFACE_LIBRARIES.  "
+      "made part of the INTERFACE_LINK_LIBRARIES.  If policy CMP0022 is not "
+      "NEW, they are also made part of the LINK_INTERFACE_LIBRARIES.  "
+      "Libraries and targets following LINK_PRIVATE are linked to, but are "
+      "not made part of the INTERFACE_LINK_LIBRARIES (or "
+      "LINK_INTERFACE_LIBRARIES)."
       "\n"
       "The library dependency graph is normally acyclic (a DAG), but in the "
       "case of mutually-dependent STATIC libraries CMake allows the graph "
@@ -140,6 +186,12 @@ public:
       "However, if two archives are really so interdependent they should "
       "probably be combined into a single archive."
       ")"
+      "\n"
+      "Arguments to target_link_libraries may use \"generator expressions\" "
+      "with the syntax \"$<...>\".  Note however, that generator expressions "
+      "will not be used in OLD handling of CMP0003 or CMP0004."
+      "\n"
+      CM_DOCUMENT_COMMAND_GENERATOR_EXPRESSIONS
       ;
     }
 
@@ -151,14 +203,17 @@ private:
   cmTarget* Target;
   enum ProcessingState {
     ProcessingLinkLibraries,
-    ProcessingLinkInterface,
-    ProcessingPublicInterface,
-    ProcessingPrivateInterface
+    ProcessingPlainLinkInterface,
+    ProcessingKeywordLinkInterface,
+    ProcessingPlainPublicInterface,
+    ProcessingKeywordPublicInterface,
+    ProcessingPlainPrivateInterface,
+    ProcessingKeywordPrivateInterface
   };
 
   ProcessingState CurrentProcessingState;
 
-  void HandleLibrary(const char* lib, cmTarget::LinkLibraryType llt);
+  bool HandleLibrary(const char* lib, cmTarget::LinkLibraryType llt);
 };
 
 

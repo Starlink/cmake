@@ -43,8 +43,7 @@ static CatToErrorType cmCTestMemCheckBoundsChecker[] = {
   {0,0}
 };
 
-// parse the xml file storing the installed version of Xcode on
-// the machine
+// parse the xml file containing the results of last BoundsChecker run
 class cmBoundsCheckerParser : public cmXMLParser
 {
 public:
@@ -84,7 +83,7 @@ public:
     }
 
   const char* GetAttribute(const char* name, const char** atts)
-    { 
+    {
       int i = 0;
       for(; atts[i] != 0; ++i)
         {
@@ -117,9 +116,9 @@ public:
         }
       if(ptr->ErrorCategory)
         {
-        this->Errors.push_back(cmCTestMemCheckHandler::ABW); // do not know 
+        this->Errors.push_back(cmCTestMemCheckHandler::ABW); // do not know
         cmCTestLog(this->CTest, ERROR_MESSAGE,
-                   "Found unknown Bounds Checker error " 
+                   "Found unknown Bounds Checker error "
                    << ptr->ErrorCategory << std::endl);
         }
     }
@@ -201,6 +200,7 @@ void cmCTestMemCheckHandler::Initialize()
   this->CustomMaximumPassedTestOutputSize = 0;
   this->CustomMaximumFailedTestOutputSize = 0;
   this->MemoryTester = "";
+  this->MemoryTesterDynamicOptions.clear();
   this->MemoryTesterOptions.clear();
   this->MemoryTesterStyle = UNKNOWN;
   this->MemoryTesterOutputFile = "";
@@ -243,11 +243,28 @@ int cmCTestMemCheckHandler::PostProcessHandler()
 
 //----------------------------------------------------------------------
 void cmCTestMemCheckHandler::GenerateTestCommand(
-  std::vector<std::string>& args)
+  std::vector<std::string>& args, int test)
 {
   std::vector<cmStdString>::size_type pp;
-  std::string memcheckcommand = "";
-  memcheckcommand = this->MemoryTester;
+  cmStdString index;
+  cmOStringStream stream;
+  std::string memcheckcommand
+    = cmSystemTools::ConvertToOutputPath(this->MemoryTester.c_str());
+  stream << test;
+  index = stream.str();
+  for ( pp = 0; pp < this->MemoryTesterDynamicOptions.size(); pp ++ )
+    {
+    cmStdString arg = this->MemoryTesterDynamicOptions[pp];
+    cmStdString::size_type pos = arg.find("??");
+    if (pos != cmStdString::npos)
+      {
+      arg.replace(pos, 2, index);
+      }
+    args.push_back(arg);
+    memcheckcommand += " \"";
+    memcheckcommand += arg;
+    memcheckcommand += "\"";
+    }
   for ( pp = 0; pp < this->MemoryTesterOptions.size(); pp ++ )
     {
     args.push_back(this->MemoryTesterOptions[pp]);
@@ -358,7 +375,7 @@ void cmCTestMemCheckHandler::GenerateDartOutput(std::ostream& os)
 
     os
       << "\t\t</Results>\n"
-      << logTag << memcheckstr << std::endl
+      << logTag << cmXMLSafe(memcheckstr) << std::endl
       << "\t</Log>\n";
     this->WriteTestResultFooter(os, result);
     if ( current < cc )
@@ -410,29 +427,46 @@ bool cmCTestMemCheckHandler::InitializeMemoryChecking()
         "MemoryCheckCommand").c_str()) )
     {
     this->MemoryTester
-      = cmSystemTools::ConvertToOutputPath(this->CTest->GetCTestConfiguration(
-          "MemoryCheckCommand").c_str());
+      = this->CTest->GetCTestConfiguration("MemoryCheckCommand").c_str();
+
+    // determine the checker type
+    if ( this->MemoryTester.find("valgrind") != std::string::npos )
+      {
+        this->MemoryTesterStyle = cmCTestMemCheckHandler::VALGRIND;
+      }
+    else if ( this->MemoryTester.find("purify") != std::string::npos )
+      {
+      this->MemoryTesterStyle = cmCTestMemCheckHandler::PURIFY;
+      }
+    else if ( this->MemoryTester.find("BC") != std::string::npos )
+      {
+      this->MemoryTesterStyle = cmCTestMemCheckHandler::BOUNDS_CHECKER;
+      }
+    else
+      {
+      this->MemoryTesterStyle = cmCTestMemCheckHandler::UNKNOWN;
+      }
     }
   else if ( cmSystemTools::FileExists(this->CTest->GetCTestConfiguration(
         "PurifyCommand").c_str()) )
     {
     this->MemoryTester
-      = cmSystemTools::ConvertToOutputPath(this->CTest->GetCTestConfiguration(
-          "PurifyCommand").c_str());
+      = this->CTest->GetCTestConfiguration("PurifyCommand").c_str();
+    this->MemoryTesterStyle = cmCTestMemCheckHandler::PURIFY;
     }
   else if ( cmSystemTools::FileExists(this->CTest->GetCTestConfiguration(
         "ValgrindCommand").c_str()) )
     {
     this->MemoryTester
-      = cmSystemTools::ConvertToOutputPath(this->CTest->GetCTestConfiguration(
-          "ValgrindCommand").c_str());
+      = this->CTest->GetCTestConfiguration("ValgrindCommand").c_str();
+    this->MemoryTesterStyle = cmCTestMemCheckHandler::VALGRIND;
     }
   else if ( cmSystemTools::FileExists(this->CTest->GetCTestConfiguration(
         "BoundsCheckerCommand").c_str()) )
     {
     this->MemoryTester
-      = cmSystemTools::ConvertToOutputPath(this->CTest->GetCTestConfiguration(
-          "BoundsCheckerCommand").c_str());
+      = this->CTest->GetCTestConfiguration("BoundsCheckerCommand").c_str();
+    this->MemoryTesterStyle = cmCTestMemCheckHandler::BOUNDS_CHECKER;
     }
   else
     {
@@ -441,13 +475,6 @@ bool cmCTestMemCheckHandler::InitializeMemoryChecking()
       "not set, or cannot find the specified program."
       << std::endl);
     return false;
-    }
-
-  if ( this->MemoryTester[0] == '\"' &&
-    this->MemoryTester[this->MemoryTester.size()-1] == '\"' )
-    {
-    this->MemoryTester
-      = this->MemoryTester.substr(1, this->MemoryTester.size()-2);
     }
 
   // Setup the options
@@ -468,84 +495,88 @@ bool cmCTestMemCheckHandler::InitializeMemoryChecking()
     = cmSystemTools::ParseArguments(memoryTesterOptions.c_str());
 
   this->MemoryTesterOutputFile
-    = this->CTest->GetBinaryDir() + "/Testing/Temporary/MemoryChecker.log";
+    = this->CTest->GetBinaryDir()
+    + "/Testing/Temporary/MemoryChecker.??.log";
 
-  if ( this->MemoryTester.find("valgrind") != std::string::npos )
+  switch ( this->MemoryTesterStyle )
     {
-    this->MemoryTesterStyle = cmCTestMemCheckHandler::VALGRIND;
-    if ( this->MemoryTesterOptions.empty() )
+    case cmCTestMemCheckHandler::VALGRIND:
       {
-      this->MemoryTesterOptions.push_back("-q");
-      this->MemoryTesterOptions.push_back("--tool=memcheck");
-      this->MemoryTesterOptions.push_back("--leak-check=yes");
-      this->MemoryTesterOptions.push_back("--show-reachable=yes");
-      this->MemoryTesterOptions.push_back("--workaround-gcc296-bugs=yes");
-      this->MemoryTesterOptions.push_back("--num-callers=50");
-      }
-    if ( this->CTest->GetCTestConfiguration(
-        "MemoryCheckSuppressionFile").size() )
-      {
-      if ( !cmSystemTools::FileExists(this->CTest->GetCTestConfiguration(
-            "MemoryCheckSuppressionFile").c_str()) )
+      if ( this->MemoryTesterOptions.empty() )
         {
-        cmCTestLog(this->CTest, ERROR_MESSAGE,
-          "Cannot find memory checker suppression file: "
-          << this->CTest->GetCTestConfiguration(
-            "MemoryCheckSuppressionFile").c_str() << std::endl);
-        return false;
+        this->MemoryTesterOptions.push_back("-q");
+        this->MemoryTesterOptions.push_back("--tool=memcheck");
+        this->MemoryTesterOptions.push_back("--leak-check=yes");
+        this->MemoryTesterOptions.push_back("--show-reachable=yes");
+        this->MemoryTesterOptions.push_back("--num-callers=50");
         }
-      std::string suppressions = "--suppressions="
-        + this->CTest->GetCTestConfiguration("MemoryCheckSuppressionFile");
-      this->MemoryTesterOptions.push_back(suppressions);
-      }
-    }
-  else if ( this->MemoryTester.find("purify") != std::string::npos )
-    {
-    this->MemoryTesterStyle = cmCTestMemCheckHandler::PURIFY;
-    std::string outputFile;
-#ifdef _WIN32
-    if( this->CTest->GetCTestConfiguration(
+      if ( this->CTest->GetCTestConfiguration(
           "MemoryCheckSuppressionFile").size() )
-      {
-      if( !cmSystemTools::FileExists(this->CTest->GetCTestConfiguration(
-                                       "MemoryCheckSuppressionFile").c_str()) )
         {
-        cmCTestLog(this->CTest, ERROR_MESSAGE,
-                   "Cannot find memory checker suppression file: "
-                   << this->CTest->GetCTestConfiguration(
-                     "MemoryCheckSuppressionFile").c_str() << std::endl);
-        return false;
+        if ( !cmSystemTools::FileExists(this->CTest->GetCTestConfiguration(
+              "MemoryCheckSuppressionFile").c_str()) )
+          {
+          cmCTestLog(this->CTest, ERROR_MESSAGE,
+            "Cannot find memory checker suppression file: "
+            << this->CTest->GetCTestConfiguration(
+              "MemoryCheckSuppressionFile").c_str() << std::endl);
+          return false;
+          }
+        std::string suppressions = "--suppressions="
+          + this->CTest->GetCTestConfiguration("MemoryCheckSuppressionFile");
+        this->MemoryTesterOptions.push_back(suppressions);
         }
-      std::string filterFiles = "/FilterFiles="
-        + this->CTest->GetCTestConfiguration("MemoryCheckSuppressionFile");
-      this->MemoryTesterOptions.push_back(filterFiles);
+      std::string outputFile = "--log-file="
+        + this->MemoryTesterOutputFile;
+      this->MemoryTesterDynamicOptions.push_back(outputFile);
+      break;
       }
-    outputFile = "/SAVETEXTDATA=";
+    case cmCTestMemCheckHandler::PURIFY:
+      {
+      std::string outputFile;
+#ifdef _WIN32
+      if( this->CTest->GetCTestConfiguration(
+            "MemoryCheckSuppressionFile").size() )
+        {
+        if( !cmSystemTools::FileExists(this->CTest->GetCTestConfiguration(
+                                       "MemoryCheckSuppressionFile").c_str()) )
+          {
+          cmCTestLog(this->CTest, ERROR_MESSAGE,
+                     "Cannot find memory checker suppression file: "
+                     << this->CTest->GetCTestConfiguration(
+                       "MemoryCheckSuppressionFile").c_str() << std::endl);
+          return false;
+          }
+        std::string filterFiles = "/FilterFiles="
+          + this->CTest->GetCTestConfiguration("MemoryCheckSuppressionFile");
+        this->MemoryTesterOptions.push_back(filterFiles);
+        }
+      outputFile = "/SAVETEXTDATA=";
 #else
-    outputFile = "-log-file=";
+      outputFile = "-log-file=";
 #endif
-    outputFile += this->MemoryTesterOutputFile;
-    this->MemoryTesterOptions.push_back(outputFile);
-    }
-  else if ( this->MemoryTester.find("BC") != std::string::npos )
-    { 
-    this->BoundsCheckerXMLFile = this->MemoryTesterOutputFile;
-    std::string dpbdFile = this->CTest->GetBinaryDir()
-      + "/Testing/Temporary/MemoryChecker.DPbd";
-    this->BoundsCheckerDPBDFile = dpbdFile;
-    this->MemoryTesterStyle = cmCTestMemCheckHandler::BOUNDS_CHECKER;
-    this->MemoryTesterOptions.push_back("/B");
-    this->MemoryTesterOptions.push_back(dpbdFile);
-    this->MemoryTesterOptions.push_back("/X");
-    this->MemoryTesterOptions.push_back(this->MemoryTesterOutputFile);
-    this->MemoryTesterOptions.push_back("/M");
-    }
-  else
-    {
-    cmCTestLog(this->CTest, ERROR_MESSAGE,
-      "Do not understand memory checker: " << this->MemoryTester.c_str()
-      << std::endl);
-    return false;
+      outputFile += this->MemoryTesterOutputFile;
+      this->MemoryTesterDynamicOptions.push_back(outputFile);
+      break;
+      }
+    case cmCTestMemCheckHandler::BOUNDS_CHECKER:
+      {
+      this->BoundsCheckerXMLFile = this->MemoryTesterOutputFile;
+      std::string dpbdFile = this->CTest->GetBinaryDir()
+        + "/Testing/Temporary/MemoryChecker.??.DPbd";
+      this->BoundsCheckerDPBDFile = dpbdFile;
+      this->MemoryTesterDynamicOptions.push_back("/B");
+      this->MemoryTesterDynamicOptions.push_back(dpbdFile);
+      this->MemoryTesterDynamicOptions.push_back("/X");
+      this->MemoryTesterDynamicOptions.push_back(this->MemoryTesterOutputFile);
+      this->MemoryTesterOptions.push_back("/M");
+      break;
+      }
+    default:
+      cmCTestLog(this->CTest, ERROR_MESSAGE,
+        "Do not understand memory checker: " << this->MemoryTester.c_str()
+        << std::endl);
+      return false;
     }
 
   std::vector<cmStdString>::size_type cc;
@@ -594,9 +625,9 @@ bool cmCTestMemCheckHandler::ProcessMemCheckOutput(const std::string& str,
 bool cmCTestMemCheckHandler::ProcessMemCheckPurifyOutput(
   const std::string& str, std::string& log,
   int* results)
-{ 
+{
   std::vector<cmStdString> lines;
-  cmSystemTools::Split(str.c_str(), lines); 
+  cmSystemTools::Split(str.c_str(), lines);
   cmOStringStream ostr;
   log = "";
 
@@ -604,7 +635,7 @@ bool cmCTestMemCheckHandler::ProcessMemCheckPurifyOutput(
 
   int defects = 0;
 
-  for( std::vector<cmStdString>::iterator i = lines.begin(); 
+  for( std::vector<cmStdString>::iterator i = lines.begin();
        i != lines.end(); ++i)
     {
     int failure = cmCTestMemCheckHandler::NO_MEMORY_FAULT;
@@ -657,7 +688,7 @@ bool cmCTestMemCheckHandler::ProcessMemCheckValgrindOutput(
     {
     unlimitedOutput = true;
     }
-  
+
   std::string::size_type cc;
 
   cmOStringStream ostr;
@@ -782,7 +813,7 @@ bool cmCTestMemCheckHandler::ProcessMemCheckValgrindOutput(
         }
       totalOutputSize += lines[cc].size();
       ostr << cmXMLSafe(lines[cc]) << std::endl;
-      } 
+      }
     else
       {
       nonValGrindOutput.push_back(cc);
@@ -791,7 +822,7 @@ bool cmCTestMemCheckHandler::ProcessMemCheckValgrindOutput(
   // Now put all all the non valgrind output into the test output
   if(!outputFull)
     {
-    for(std::vector<std::string::size_type>::iterator i = 
+    for(std::vector<std::string::size_type>::iterator i =
           nonValGrindOutput.begin(); i != nonValGrindOutput.end(); ++i)
       {
       totalOutputSize += lines[*i].size();
@@ -801,7 +832,7 @@ bool cmCTestMemCheckHandler::ProcessMemCheckValgrindOutput(
                  <<  cmXMLSafe(lines[*i]) << std::endl);
 
       ostr << cmXMLSafe(lines[*i]) << std::endl;
-      if(!unlimitedOutput && totalOutputSize > 
+      if(!unlimitedOutput && totalOutputSize >
          static_cast<size_t>(this->CustomMaximumFailedTestOutputSize))
         {
         outputFull = true;
@@ -833,7 +864,7 @@ bool cmCTestMemCheckHandler::ProcessMemCheckBoundsCheckerOutput(
   log = "";
   double sttime = cmSystemTools::GetTime();
   std::vector<cmStdString> lines;
-  cmSystemTools::Split(str.c_str(), lines); 
+  cmSystemTools::Split(str.c_str(), lines);
   cmCTestLog(this->CTest, DEBUG, "Start test: " << lines.size() << std::endl);
   std::vector<cmStdString>::size_type cc;
   for ( cc = 0; cc < lines.size(); cc ++ )
@@ -885,39 +916,37 @@ bool cmCTestMemCheckHandler::ProcessMemCheckBoundsCheckerOutput(
 // This method puts the bounds checker output file into the output
 // for the test
 void
-cmCTestMemCheckHandler::PostProcessBoundsCheckerTest(cmCTestTestResult& res)
-{ 
-  cmCTestLog(this->CTest, HANDLER_VERBOSE_OUTPUT, 
+cmCTestMemCheckHandler::PostProcessBoundsCheckerTest(cmCTestTestResult& res,
+                                                     int test)
+{
+  cmCTestLog(this->CTest, HANDLER_VERBOSE_OUTPUT,
              "PostProcessBoundsCheckerTest for : "
              << res.Name.c_str() << std::endl);
-  if ( !cmSystemTools::FileExists(this->MemoryTesterOutputFile.c_str()) )
+  cmStdString ofile = testOutputFileName(test);
+  if ( ofile.empty() )
     {
-    std::string log = "Cannot find memory tester output file: "
-      + this->MemoryTesterOutputFile;
-    cmCTestLog(this->CTest, ERROR_MESSAGE, log.c_str() << std::endl);
     return;
     }
   // put a scope around this to close ifs so the file can be removed
   {
-  std::ifstream ifs(this->MemoryTesterOutputFile.c_str());
+  std::ifstream ifs(ofile.c_str());
   if ( !ifs )
     {
-    std::string log = "Cannot read memory tester output file: " 
-      + this->MemoryTesterOutputFile;
+    std::string log = "Cannot read memory tester output file: " + ofile;
     cmCTestLog(this->CTest, ERROR_MESSAGE, log.c_str() << std::endl);
     return;
-    } 
+    }
   res.Output += BOUNDS_CHECKER_MARKER;
   res.Output += "\n";
   std::string line;
   while ( cmSystemTools::GetLineFromStream(ifs, line) )
     {
-    res.Output += line; 
+    res.Output += line;
     res.Output += "\n";
     }
   }
   cmSystemTools::Delay(1000);
-  cmSystemTools::RemoveFile(this->BoundsCheckerDPBDFile.c_str()); 
+  cmSystemTools::RemoveFile(this->BoundsCheckerDPBDFile.c_str());
   cmCTestLog(this->CTest, HANDLER_VERBOSE_OUTPUT, "Remove: "
     << this->BoundsCheckerDPBDFile.c_str() << std::endl);
   cmSystemTools::RemoveFile(this->BoundsCheckerXMLFile.c_str());
@@ -926,30 +955,68 @@ cmCTestMemCheckHandler::PostProcessBoundsCheckerTest(cmCTestTestResult& res)
 }
 
 void
-cmCTestMemCheckHandler::PostProcessPurifyTest(cmCTestTestResult& res)
+cmCTestMemCheckHandler::PostProcessPurifyTest(cmCTestTestResult& res,
+                                              int test)
 {
-  cmCTestLog(this->CTest, HANDLER_VERBOSE_OUTPUT, 
+  cmCTestLog(this->CTest, HANDLER_VERBOSE_OUTPUT,
              "PostProcessPurifyTest for : "
              << res.Name.c_str() << std::endl);
-  if ( !cmSystemTools::FileExists(this->MemoryTesterOutputFile.c_str()) )
+  appendMemTesterOutput(res, test);
+}
+
+void
+cmCTestMemCheckHandler::PostProcessValgrindTest(cmCTestTestResult& res,
+                                                int test)
+{
+  cmCTestLog(this->CTest, HANDLER_VERBOSE_OUTPUT,
+             "PostProcessValgrindTest for : "
+             << res.Name.c_str() << std::endl);
+  appendMemTesterOutput(res, test);
+}
+
+void
+cmCTestMemCheckHandler::appendMemTesterOutput(cmCTestTestResult& res,
+                                              int test)
+{
+  cmStdString ofile = testOutputFileName(test);
+
+  if ( ofile.empty() )
     {
-    std::string log = "Cannot find memory tester output file: "
-      + this->MemoryTesterOutputFile;
+    return;
+    }
+  std::ifstream ifs(ofile.c_str());
+  if ( !ifs )
+    {
+    std::string log = "Cannot read memory tester output file: " + ofile;
     cmCTestLog(this->CTest, ERROR_MESSAGE, log.c_str() << std::endl);
     return;
     }
-  std::ifstream ifs(this->MemoryTesterOutputFile.c_str());
-  if ( !ifs )
-    {
-    std::string log = "Cannot read memory tester output file: "
-      + this->MemoryTesterOutputFile;
-    cmCTestLog(this->CTest, ERROR_MESSAGE, log.c_str() << std::endl);
-    return;
-    } 
   std::string line;
   while ( cmSystemTools::GetLineFromStream(ifs, line) )
     {
     res.Output += line;
     res.Output += "\n";
     }
+}
+
+cmStdString
+cmCTestMemCheckHandler::testOutputFileName(int test)
+{
+  cmStdString index;
+  cmOStringStream stream;
+  stream << test;
+  index = stream.str();
+  cmStdString ofile = this->MemoryTesterOutputFile;
+  cmStdString::size_type pos = ofile.find("??");
+  ofile.replace(pos, 2, index);
+
+  if ( !cmSystemTools::FileExists(ofile.c_str()) )
+    {
+    std::string log = "Cannot find memory tester output file: "
+      + ofile;
+    cmCTestLog(this->CTest, ERROR_MESSAGE, log.c_str() << std::endl);
+    ofile = "";
+    }
+
+  return ofile;
 }

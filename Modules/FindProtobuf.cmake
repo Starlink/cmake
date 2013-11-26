@@ -78,7 +78,7 @@ function(PROTOBUF_GENERATE_CPP SRCS HDRS)
   if(NOT ARGN)
     message(SEND_ERROR "Error: PROTOBUF_GENERATE_CPP() called without any proto files")
     return()
-  endif(NOT ARGN)
+  endif()
 
   if(PROTOBUF_GENERATE_CPP_APPEND_PATH)
     # Create an include path for each file specified
@@ -109,7 +109,7 @@ function(PROTOBUF_GENERATE_CPP SRCS HDRS)
   foreach(FIL ${ARGN})
     get_filename_component(ABS_FIL ${FIL} ABSOLUTE)
     get_filename_component(FIL_WE ${FIL} NAME_WE)
-    
+
     list(APPEND ${SRCS} "${CMAKE_CURRENT_BINARY_DIR}/${FIL_WE}.pb.cc")
     list(APPEND ${HDRS} "${CMAKE_CURRENT_BINARY_DIR}/${FIL_WE}.pb.h")
 
@@ -156,6 +156,16 @@ function(_protobuf_find_libraries name filename)
    endif()
 endfunction()
 
+# Internal function: find threads library
+function(_protobuf_find_threads)
+    set(CMAKE_THREAD_PREFER_PTHREAD TRUE)
+    find_package(Threads)
+    if(Threads_FOUND)
+        list(APPEND PROTOBUF_LIBRARIES ${CMAKE_THREAD_LIBS_INIT})
+        set(PROTOBUF_LIBRARIES "${PROTOBUF_LIBRARIES}" PARENT_SCOPE)
+    endif()
+endfunction()
+
 #
 # Main.
 #
@@ -190,6 +200,9 @@ if(MSVC)
     set(CMAKE_FIND_LIBRARY_PREFIXES "${PROTOBUF_ORIG_FIND_LIBRARY_PREFIXES}")
 endif()
 
+if(UNIX)
+    _protobuf_find_threads()
+endif()
 
 # Find the include directory
 find_path(PROTOBUF_INCLUDE_DIR

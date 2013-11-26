@@ -20,6 +20,7 @@
 #include "cmSystemTools.h"
 #include "cmTarget.h"
 #include "cmNewLineStyle.h"
+#include "cmGeneratorTarget.h"
 #include "cmake.h"
 
 #if defined(CMAKE_BUILD_WITH_CMAKE)
@@ -28,6 +29,9 @@
 
 #include <cmsys/auto_ptr.hxx>
 #include <cmsys/RegularExpression.hxx>
+#if defined(CMAKE_BUILD_WITH_CMAKE)
+# include <cmsys/hash_map.hxx>
+#endif
 
 class cmFunctionBlocker;
 class cmCommand;
@@ -128,6 +132,8 @@ public:
                  const std::vector<std::string> *cmakeArgs,
                  std::string *output);
 
+  bool GetIsSourceFileTryCompile() const;
+
   /**
    * Specify the makefile generator. This is platform/compiler
    * dependent, although the interface is through a generic
@@ -175,20 +181,22 @@ public:
                                 cmTarget::CustomCommandType type,
                                 const char* comment, const char* workingDir,
                                 bool escapeOldStyle = true);
-  void AddCustomCommandToOutput(const std::vector<std::string>& outputs,
-                                const std::vector<std::string>& depends,
-                                const char* main_dependency,
-                                const cmCustomCommandLines& commandLines,
-                                const char* comment, const char* workingDir,
-                                bool replace = false,
-                                bool escapeOldStyle = true);
-  void AddCustomCommandToOutput(const char* output,
-                                const std::vector<std::string>& depends,
-                                const char* main_dependency,
-                                const cmCustomCommandLines& commandLines,
-                                const char* comment, const char* workingDir,
-                                bool replace = false,
-                                bool escapeOldStyle = true);
+  cmSourceFile* AddCustomCommandToOutput(
+    const std::vector<std::string>& outputs,
+    const std::vector<std::string>& depends,
+    const char* main_dependency,
+    const cmCustomCommandLines& commandLines,
+    const char* comment, const char* workingDir,
+    bool replace = false,
+    bool escapeOldStyle = true);
+  cmSourceFile* AddCustomCommandToOutput(
+    const char* output,
+    const std::vector<std::string>& depends,
+    const char* main_dependency,
+    const cmCustomCommandLines& commandLines,
+    const char* comment, const char* workingDir,
+    bool replace = false,
+    bool escapeOldStyle = true);
   void AddCustomCommandOldStyle(const char* target,
                                 const std::vector<std::string>& outputs,
                                 const std::vector<std::string>& depends,
@@ -201,6 +209,7 @@ public:
    */
   void AddDefineFlag(const char* definition);
   void RemoveDefineFlag(const char* definition);
+  void AddCompileOption(const char* option);
 
   /** Create a new imported target with the name and type given.  */
   cmTarget* AddImportedTarget(const char* name, cmTarget::TargetType type,
@@ -281,7 +290,8 @@ public:
   /**
    * Add an include directory to the build.
    */
-  void AddIncludeDirectory(const char*, bool before = false);
+  void AddIncludeDirectories(const std::vector<std::string> &incs,
+                             bool before = false);
 
   /**
    * Add a variable definition to the build. This variable
@@ -330,6 +340,7 @@ public:
   cmTarget* AddLibrary(const char *libname, cmTarget::TargetType type,
                   const std::vector<std::string> &srcs,
                   bool excludeFromAll = false);
+  void AddAlias(const char *libname, cmTarget *tgt);
 
 #if defined(CMAKE_BUILD_WITH_CMAKE)
   /**
@@ -514,18 +525,34 @@ public:
    * Get the list of targets, const version
    */
   const cmTargets &GetTargets() const { return this->Targets; }
+  const std::vector<cmTarget*> &GetOwnedImportedTargets() const
+    {
+      return this->ImportedTargetsOwned;
+    }
 
-  cmTarget* FindTarget(const char* name);
+  const cmGeneratorTargetsType &GetGeneratorTargets() const
+    {
+      return this->GeneratorTargets;
+    }
+
+  void SetGeneratorTargets(const cmGeneratorTargetsType &targets)
+    {
+      this->GeneratorTargets = targets;
+    }
+
+  cmTarget* FindTarget(const char* name, bool excludeAliases = false);
 
   /** Find a target to use in place of the given name.  The target
       returned may be imported or built within the project.  */
-  cmTarget* FindTargetToUse(const char* name);
+  cmTarget* FindTargetToUse(const char* name, bool excludeAliases = false);
+  bool IsAlias(const char *name);
+  cmGeneratorTarget* FindGeneratorTargetToUse(const char* name);
 
   /**
    * Mark include directories as system directories.
    */
-  void AddSystemIncludeDirectory(const char* dir);
-  bool IsSystemIncludeDirectory(const char* dir);
+  void AddSystemIncludeDirectories(const std::set<cmStdString> &incs);
+  bool IsSystemIncludeDirectory(const char* dir, const char *config);
 
   /** Expand out any arguements in the vector that have ; separated
    *  strings into multiple arguements.  A new vector is created
@@ -593,6 +620,9 @@ public:
   /** Return whether the target platform is 64-bit.  */
   bool PlatformIs64Bit() const;
 
+  /** Retrieve soname flag for the specified language if supported */
+  const char* GetSONameFlag(const char* language) const;
+
   /**
    * Get a list of preprocessor define flags.
    */
@@ -623,7 +653,7 @@ public:
   const std::vector<std::string>& GetListFiles() const
     { return this->ListFiles; }
   ///! When the file changes cmake will be re-run from the build system.
-  void AddCMakeDependFile(const char* file)
+  void AddCMakeDependFile(const std::string& file)
     { this->ListFiles.push_back(file);}
 
     /**
@@ -641,7 +671,7 @@ public:
    */
   const std::vector<std::string>& GetOutputFiles() const
     { return this->OutputFiles; }
-  void AddCMakeOutputFile(const char* file)
+  void AddCMakeOutputFile(const std::string& file)
     { this->OutputFiles.push_back(file);}
 
   /**
@@ -670,7 +700,7 @@ public:
   /**
    * Expand variables in the makefiles ivars such as link directories etc
    */
-  void ExpandVariables();
+  void ExpandVariablesCMP0019();
 
   /**
    * Replace variables and #cmakedefine lines in the given string.
@@ -694,6 +724,11 @@ public:
   cmSourceGroup& FindSourceGroup(const char* source,
                                  std::vector<cmSourceGroup> &groups);
 #endif
+
+  /**
+   * Print a command's invocation
+   */
+  void PrintCommandTrace(const cmListFileFunction& lff);
 
   /**
    * Execute a single CMake command.  Returns true if the command
@@ -833,6 +868,25 @@ public:
   /** Set whether or not to report a CMP0000 violation.  */
   void SetCheckCMP0000(bool b) { this->CheckCMP0000 = b; }
 
+  std::vector<cmValueWithOrigin> GetIncludeDirectoriesEntries() const
+  {
+    return this->IncludeDirectoriesEntries;
+  }
+  std::vector<cmValueWithOrigin> GetCompileOptionsEntries() const
+  {
+    return this->CompileOptionsEntries;
+  }
+  std::vector<cmValueWithOrigin> GetCompileDefinitionsEntries() const
+  {
+    return this->CompileDefinitionsEntries;
+  }
+
+  bool IsGeneratingBuildSystem(){ return this->GeneratingBuildSystem; }
+  void SetGeneratingBuildSystem(){ this->GeneratingBuildSystem = true; }
+
+  std::set<cmStdString> const & GetSystemIncludeDirectories() const
+    { return this->SystemIncludeDirectories; }
+
 protected:
   // add link libraries and directories to the target
   void AddGlobalLinkInformation(const char* name, cmTarget& target);
@@ -853,6 +907,8 @@ protected:
 
   // libraries, classes, and executables
   cmTargets Targets;
+  std::map<std::string, cmTarget*> AliasTargets;
+  cmGeneratorTargetsType GeneratorTargets;
   std::vector<cmSourceFile*> SourceFiles;
 
   // Tests
@@ -879,6 +935,10 @@ protected:
   std::vector<std::string> SourceFileExtensions;
   std::vector<std::string> HeaderFileExtensions;
   std::string DefineFlags;
+
+  std::vector<cmValueWithOrigin> IncludeDirectoriesEntries;
+  std::vector<cmValueWithOrigin> CompileOptionsEntries;
+  std::vector<cmValueWithOrigin> CompileDefinitionsEntries;
 
   // Track the value of the computed DEFINITIONS property.
   void AddDefineFlag(const char*, std::string&);
@@ -979,6 +1039,29 @@ private:
 
   // Enforce rules about CMakeLists.txt files.
   void EnforceDirectoryLevelRules();
+
+  bool GeneratingBuildSystem;
+
+  /**
+   * Old version of GetSourceFileWithOutput(const char*) kept for
+   * backward-compatibility. It implements a linear search and support
+   * relative file paths. It is used as a fall back by
+   * GetSourceFileWithOutput(const char*).
+   */
+  cmSourceFile *LinearGetSourceFileWithOutput(const char *cname);
+
+  // A map for fast output to input look up.
+#if defined(CMAKE_BUILD_WITH_CMAKE)
+  typedef cmsys::hash_map<std::string, cmSourceFile*> OutputToSourceMap;
+#else
+  typedef std::map<std::string, cmSourceFile*> OutputToSourceMap;
+#endif
+  OutputToSourceMap OutputToSource;
+
+  void UpdateOutputToSourceMap(std::vector<std::string> const& outputs,
+                               cmSourceFile* source);
+  void UpdateOutputToSourceMap(std::string const& output,
+                               cmSourceFile* source);
 };
 
 //----------------------------------------------------------------------------

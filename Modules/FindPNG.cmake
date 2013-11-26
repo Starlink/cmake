@@ -30,7 +30,7 @@
 
 if(PNG_FIND_QUIETLY)
   set(_FIND_ZLIB_ARG QUIET)
-endif(PNG_FIND_QUIETLY)
+endif()
 find_package(ZLIB ${_FIND_ZLIB_ARG})
 
 if(ZLIB_FOUND)
@@ -38,32 +38,66 @@ if(ZLIB_FOUND)
   /usr/local/include/libpng             # OpenBSD
   )
 
-  set(PNG_NAMES ${PNG_NAMES} png libpng png15 libpng15 png15d libpng15d png14 libpng14 png14d libpng14d png12 libpng12 png12d libpng12d)
-  find_library(PNG_LIBRARY NAMES ${PNG_NAMES} )
+  list(APPEND PNG_NAMES png libpng)
+  unset(PNG_NAMES_DEBUG)
+  set(_PNG_VERSION_SUFFIXES 17 16 15 14 12)
+  if (PNG_FIND_VERSION MATCHES "^[0-9]+\\.[0-9]+(\\..*)?$")
+    string(REGEX REPLACE
+        "^([0-9]+)\\.([0-9]+).*" "\\1\\2"
+        _PNG_VERSION_SUFFIX_MIN "${PNG_FIND_VERSION}")
+    if (PNG_FIND_VERSION_EXACT)
+      set(_PNG_VERSION_SUFFIXES ${_PNG_VERSION_SUFFIX_MIN})
+    else ()
+      string(REGEX REPLACE
+          "${_PNG_VERSION_SUFFIX_MIN}.*" "${_PNG_VERSION_SUFFIX_MIN}"
+          _PNG_VERSION_SUFFIXES "${_PNG_VERSION_SUFFIXES}")
+    endif ()
+    unset(_PNG_VERSION_SUFFIX_MIN)
+  endif ()
+  foreach(v IN LISTS _PNG_VERSION_SUFFIXES)
+    list(APPEND PNG_NAMES png${v} libpng${v})
+    list(APPEND PNG_NAMES_DEBUG png${v}d libpng${v}d)
+  endforeach()
+  unset(_PNG_VERSION_SUFFIXES)
+  # For compatiblity with versions prior to this multi-config search, honor
+  # any PNG_LIBRARY that is already specified and skip the search.
+  if(NOT PNG_LIBRARY)
+    find_library(PNG_LIBRARY_RELEASE NAMES ${PNG_NAMES})
+    find_library(PNG_LIBRARY_DEBUG NAMES ${PNG_NAMES_DEBUG})
+    include(${CMAKE_CURRENT_LIST_DIR}/SelectLibraryConfigurations.cmake)
+    select_library_configurations(PNG)
+    mark_as_advanced(PNG_LIBRARY_RELEASE PNG_LIBRARY_DEBUG)
+  endif()
+  unset(PNG_NAMES)
+  unset(PNG_NAMES_DEBUG)
+
+  # Set by select_library_configurations(), but we want the one from
+  # find_package_handle_standard_args() below.
+  unset(PNG_FOUND)
 
   if (PNG_LIBRARY AND PNG_PNG_INCLUDE_DIR)
       # png.h includes zlib.h. Sigh.
-      SET(PNG_INCLUDE_DIRS ${PNG_PNG_INCLUDE_DIR} ${ZLIB_INCLUDE_DIR} )
-      SET(PNG_INCLUDE_DIR ${PNG_INCLUDE_DIRS} ) # for backward compatiblity
-      SET(PNG_LIBRARIES ${PNG_LIBRARY} ${ZLIB_LIBRARY})
+      set(PNG_INCLUDE_DIRS ${PNG_PNG_INCLUDE_DIR} ${ZLIB_INCLUDE_DIR} )
+      set(PNG_INCLUDE_DIR ${PNG_INCLUDE_DIRS} ) # for backward compatiblity
+      set(PNG_LIBRARIES ${PNG_LIBRARY} ${ZLIB_LIBRARY})
 
       if (CYGWIN)
         if(BUILD_SHARED_LIBS)
            # No need to define PNG_USE_DLL here, because it's default for Cygwin.
-        else(BUILD_SHARED_LIBS)
-          SET (PNG_DEFINITIONS -DPNG_STATIC)
-        endif(BUILD_SHARED_LIBS)
-      endif (CYGWIN)
+        else()
+          set (PNG_DEFINITIONS -DPNG_STATIC)
+        endif()
+      endif ()
 
-  endif (PNG_LIBRARY AND PNG_PNG_INCLUDE_DIR)
+  endif ()
 
   if (PNG_PNG_INCLUDE_DIR AND EXISTS "${PNG_PNG_INCLUDE_DIR}/png.h")
       file(STRINGS "${PNG_PNG_INCLUDE_DIR}/png.h" png_version_str REGEX "^#define[ \t]+PNG_LIBPNG_VER_STRING[ \t]+\".+\"")
 
       string(REGEX REPLACE "^#define[ \t]+PNG_LIBPNG_VER_STRING[ \t]+\"([^\"]+)\".*" "\\1" PNG_VERSION_STRING "${png_version_str}")
       unset(png_version_str)
-  endif (PNG_PNG_INCLUDE_DIR AND EXISTS "${PNG_PNG_INCLUDE_DIR}/png.h")
-endif(ZLIB_FOUND)
+  endif ()
+endif()
 
 # handle the QUIETLY and REQUIRED arguments and set PNG_FOUND to TRUE if
 # all listed variables are TRUE

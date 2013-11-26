@@ -74,6 +74,13 @@ IsFunctionBlocked(const cmListFileFunction& lff,
           {
           this->IsBlocking = this->HasRun;
           this->HasRun = true;
+
+          // if trace is enabled, print a (trivially) evaluated "else"
+          // statement
+          if(!this->IsBlocking && mf.GetCMakeInstance()->GetTrace())
+            {
+            mf.PrintCommandTrace(this->Functions[c]);
+            }
           }
         else if (scopeDepth == 0 && !cmSystemTools::Strucmp
                  (this->Functions[c].Name.c_str(),"elseif"))
@@ -87,6 +94,12 @@ IsFunctionBlocked(const cmListFileFunction& lff,
             // Place this call on the call stack.
             cmMakefileCall stack_manager(&mf, this->Functions[c], status);
             static_cast<void>(stack_manager);
+
+            // if trace is enabled, print the evaluated "elseif" statement
+            if(mf.GetCMakeInstance()->GetTrace())
+              {
+              mf.PrintCommandTrace(this->Functions[c]);
+              }
 
             std::string errorString;
 
@@ -393,34 +406,6 @@ namespace
   }
 
   //=========================================================================
-  enum Op { OpLess, OpEqual, OpGreater };
-  bool HandleVersionCompare(Op op, const char* lhs_str, const char* rhs_str)
-  {
-  // Parse out up to 4 components.
-  unsigned int lhs[4] = {0,0,0,0};
-  unsigned int rhs[4] = {0,0,0,0};
-  sscanf(lhs_str, "%u.%u.%u.%u", &lhs[0], &lhs[1], &lhs[2], &lhs[3]);
-  sscanf(rhs_str, "%u.%u.%u.%u", &rhs[0], &rhs[1], &rhs[2], &rhs[3]);
-
-  // Do component-wise comparison.
-  for(unsigned int i=0; i < 4; ++i)
-    {
-    if(lhs[i] < rhs[i])
-      {
-      // lhs < rhs, so true if operation is LESS
-      return op == OpLess;
-      }
-    else if(lhs[i] > rhs[i])
-      {
-      // lhs > rhs, so true if operation is GREATER
-      return op == OpGreater;
-      }
-    }
-  // lhs == rhs, so true if operation is EQUAL
-  return op == OpEqual;
-  }
-
-  //=========================================================================
   // level 0 processes parenthetical expressions
   bool HandleLevel0(std::list<std::string> &newArgs,
                     cmMakefile *makefile,
@@ -706,16 +691,16 @@ namespace
         {
         def = cmIfCommand::GetVariableOrString(arg->c_str(), makefile);
         def2 = cmIfCommand::GetVariableOrString((argP2)->c_str(), makefile);
-        Op op = OpEqual;
+        cmSystemTools::CompareOp op = cmSystemTools::OP_EQUAL;
         if(*argP1 == "VERSION_LESS")
           {
-          op = OpLess;
+          op = cmSystemTools::OP_LESS;
           }
         else if(*argP1 == "VERSION_GREATER")
           {
-          op = OpGreater;
+          op = cmSystemTools::OP_GREATER;
           }
-        bool result = HandleVersionCompare(op, def, def2);
+        bool result = cmSystemTools::VersionCompare(op, def, def2);
         HandleBinaryOp(result,
           reducible, arg, newArgs, argP1, argP2);
         }

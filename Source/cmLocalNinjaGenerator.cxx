@@ -27,7 +27,6 @@ cmLocalNinjaGenerator::cmLocalNinjaGenerator()
   , ConfigName("")
   , HomeRelativeOutputPath("")
 {
-  this->IsMakefileGenerator = true;
 #ifdef _WIN32
   this->WindowsShell = true;
 #endif
@@ -46,7 +45,9 @@ void cmLocalNinjaGenerator::Generate()
   this->SetConfigName();
 
   this->WriteProcessedMakefile(this->GetBuildFileStream());
+#ifdef NINJA_GEN_VERBOSE_FILES
   this->WriteProcessedMakefile(this->GetRulesFileStream());
+#endif
 
   this->WriteBuildFileTop();
 
@@ -59,7 +60,7 @@ void cmLocalNinjaGenerator::Generate()
       tg->Generate();
       // Add the target to "all" if required.
       if (!this->GetGlobalNinjaGenerator()->IsExcluded(
-            this->GetGlobalNinjaGenerator()->LocalGenerators[0],
+            this->GetGlobalNinjaGenerator()->GetLocalGenerators()[0],
             t->second))
         this->GetGlobalNinjaGenerator()->AddDependencyToAll(&t->second);
       delete tg;
@@ -270,21 +271,21 @@ std::string cmLocalNinjaGenerator::BuildCommandLine(
   // don't use POST_BUILD.
   if (cmdLines.empty())
 #ifdef _WIN32
-    return "cd.";
+    return "cd .";
 #else
     return ":";
 #endif
 
-  // TODO: This will work only on Unix platforms. I don't
-  // want to use a link.txt file because I will lose the benefit of the
-  // $in variables. A discussion about dealing with multiple commands in
-  // a rule is started here:
-  // groups.google.com/group/ninja-build/browse_thread/thread/d515f23a78986008
-  std::ostringstream cmd;
+  cmOStringStream cmd;
   for (std::vector<std::string>::const_iterator li = cmdLines.begin();
        li != cmdLines.end(); ++li) {
-    if (li != cmdLines.begin())
+    if (li != cmdLines.begin()) {
       cmd << " && ";
+#ifdef _WIN32
+    } else if (cmdLines.size() > 1) {
+      cmd << "cmd.exe /c ";
+#endif
+    }
     cmd << *li;
   }
   return cmd.str();
@@ -299,8 +300,13 @@ void cmLocalNinjaGenerator::AppendCustomCommandLines(const cmCustomCommand *cc,
     if (!wd)
       wd = this->GetMakefile()->GetStartOutputDirectory();
 
-    std::ostringstream cdCmd;
-    cdCmd << "cd " << this->ConvertToOutputFormat(wd, SHELL);
+    cmOStringStream cdCmd;
+#ifdef _WIN32
+        std::string cdStr = "cd /D ";
+#else
+        std::string cdStr = "cd ";
+#endif
+    cdCmd << cdStr << this->ConvertToOutputFormat(wd, SHELL);
     cmdLines.push_back(cdCmd.str());
   }
   for (unsigned i = 0; i != ccg.GetNumberOfCommands(); ++i) {
@@ -333,14 +339,15 @@ cmLocalNinjaGenerator::WriteCustomCommandBuildStatement(
   this->AppendCustomCommandLines(cc, cmdLines);
 
   if (cmdLines.empty()) {
-    cmGlobalNinjaGenerator::WritePhonyBuild(this->GetBuildFileStream(),
-                                            "Phony custom command for " +
-                                              ninjaOutputs[0],
-                                            ninjaOutputs,
-                                            ninjaDeps,
-                                            cmNinjaDeps(),
-                                            orderOnlyDeps,
-                                            cmNinjaVars());
+    this->GetGlobalNinjaGenerator()->WritePhonyBuild(
+      this->GetBuildFileStream(),
+      "Phony custom command for " +
+      ninjaOutputs[0],
+      ninjaOutputs,
+      ninjaDeps,
+      cmNinjaDeps(),
+      orderOnlyDeps,
+      cmNinjaVars());
   } else {
     this->GetGlobalNinjaGenerator()->WriteCustomCommandBuild(
       this->BuildCommandLine(cmdLines),

@@ -61,9 +61,9 @@ cmLocalGenerator *cmGlobalUnixMakefileGenerator3::CreateLocalGenerator()
 
 //----------------------------------------------------------------------------
 void cmGlobalUnixMakefileGenerator3
-::GetDocumentation(cmDocumentationEntry& entry) const
+::GetDocumentation(cmDocumentationEntry& entry)
 {
-  entry.Name = this->GetName();
+  entry.Name = cmGlobalUnixMakefileGenerator3::GetActualName();
   entry.Brief = "Generates standard UNIX makefiles.";
   entry.Full =
     "A hierarchy of UNIX makefiles is generated into the build tree.  Any "
@@ -101,18 +101,6 @@ cmGlobalUnixMakefileGenerator3
     gt->Objects[sf] = objectName;
     lg->AddLocalObjectFile(target, sf, objectName, hasSourceExtension);
     }
-}
-
-//----------------------------------------------------------------------------
-std::string EscapeJSON(const std::string& s) {
-  std::string result;
-  for (std::string::size_type i = 0; i < s.size(); ++i) {
-    if (s[i] == '"' || s[i] == '\\') {
-      result += '\\';
-    }
-    result += s[i];
-  }
-  return result;
 }
 
 void cmGlobalUnixMakefileGenerator3::Generate()
@@ -179,11 +167,14 @@ void cmGlobalUnixMakefileGenerator3::AddCXXCompileCommand(
     *this->CommandDatabase << "," << std::endl;
     }
   *this->CommandDatabase << "{" << std::endl
-      << "  \"directory\": \"" << EscapeJSON(workingDirectory) << "\","
+      << "  \"directory\": \""
+      << cmGlobalGenerator::EscapeJSON(workingDirectory) << "\","
       << std::endl
-      << "  \"command\": \"" << EscapeJSON(compileCommand) << "\","
+      << "  \"command\": \"" <<
+      cmGlobalGenerator::EscapeJSON(compileCommand) << "\","
       << std::endl
-      << "  \"file\": \"" << EscapeJSON(sourceFile) << "\""
+      << "  \"file\": \"" <<
+      cmGlobalGenerator::EscapeJSON(sourceFile) << "\""
       << std::endl << "}";
 }
 
@@ -526,11 +517,13 @@ cmGlobalUnixMakefileGenerator3
 
 std::string cmGlobalUnixMakefileGenerator3
 ::GenerateBuildCommand(const char* makeProgram, const char *projectName,
-                       const char* additionalOptions, const char *targetName,
-                       const char* config, bool ignoreErrors, bool fast)
+                       const char *projectDir, const char* additionalOptions,
+                       const char *targetName, const char* config,
+                       bool ignoreErrors, bool fast)
 {
-  // Project name and config are not used yet.
+  // Project name & dir and config are not used yet.
   (void)projectName;
+  (void)projectDir;
   (void)config;
 
   std::string makeCommand =

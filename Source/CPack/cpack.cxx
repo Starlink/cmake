@@ -27,7 +27,6 @@
 
 #include <cmsys/CommandLineArguments.hxx>
 #include <cmsys/SystemTools.hxx>
-#include <memory> // auto_ptr
 
 //----------------------------------------------------------------------------
 static const char * cmDocumentationName[][3] =
@@ -181,7 +180,6 @@ int main (int argc, char *argv[])
 {
   cmSystemTools::FindExecutableDirectory(argv[0]);
   cmCPackLog log;
-  int nocwd = 0;
 
   log.SetErrorPrefix("CPack Error: ");
   log.SetWarningPrefix("CPack Warning: ");
@@ -194,7 +192,7 @@ int main (int argc, char *argv[])
     {
     cmCPack_Log(&log, cmCPackLog::LOG_ERROR,
       "Current working directory cannot be established." << std::endl);
-    nocwd = 1;
+    return 1;
     }
 
   std::string generator;
@@ -207,8 +205,7 @@ int main (int argc, char *argv[])
   std::string helpHTML;
 
   std::string cpackProjectName;
-  std::string cpackProjectDirectory
-    = cmsys::SystemTools::GetCurrentWorkingDirectory();
+  std::string cpackProjectDirectory;
   std::string cpackBuildConfig;
   std::string cpackProjectVersion;
   std::string cpackProjectPatch;
@@ -277,7 +274,7 @@ int main (int argc, char *argv[])
   cminst.RemoveUnscriptableCommands();
   cmGlobalGenerator cmgg;
   cmgg.SetCMakeInstance(&cminst);
-  std::auto_ptr<cmLocalGenerator> cmlg(cmgg.CreateLocalGenerator());
+  cmsys::auto_ptr<cmLocalGenerator> cmlg(cmgg.CreateLocalGenerator());
   cmMakefile* globalMF = cmlg->GetMakefile();
 
   bool cpackConfigFileSpecified = true;
@@ -294,8 +291,12 @@ int main (int argc, char *argv[])
 
   cmDocumentation doc;
   doc.addCPackStandardDocSections();
-  /* Were we invoked to display doc or to do some work ? */
-  if(doc.CheckOptions(argc, argv,"-G") || nocwd)
+  /* Were we invoked to display doc or to do some work ?
+   * Unlike cmake launching cpack with zero argument
+   * should launch cpack using "cpackConfigFile" if it exists
+   * in the current directory.
+   */
+  if((doc.CheckOptions(argc, argv,"-G")) && !(argc==1))
     {
       help = true;
     }
@@ -370,10 +371,24 @@ int main (int argc, char *argv[])
       globalMF->AddDefinition("CPACK_PACKAGE_VENDOR",
         cpackProjectVendor.c_str());
       }
+    // if this is not empty it has been set on the command line
+    // go for it. Command line override values set in config file.
     if ( !cpackProjectDirectory.empty() )
       {
       globalMF->AddDefinition("CPACK_PACKAGE_DIRECTORY",
-        cpackProjectDirectory.c_str());
+                              cpackProjectDirectory.c_str());
+      }
+    // The value has not been set on the command line
+    else
+      {
+      // get a default value (current working directory)
+      cpackProjectDirectory = cmsys::SystemTools::GetCurrentWorkingDirectory();
+      // use default value iff no value has been provided by the config file
+      if (!globalMF->IsSet("CPACK_PACKAGE_DIRECTORY"))
+        {
+        globalMF->AddDefinition("CPACK_PACKAGE_DIRECTORY",
+                                cpackProjectDirectory.c_str());
+        }
       }
     if ( !cpackBuildConfig.empty() )
       {

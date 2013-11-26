@@ -47,12 +47,12 @@ public:
   ~cmWin32ProcessExecution();
   ///! If true windows will be created hidden.
   void SetHideWindows(bool v) { this->HideWindows = v;  }
-  
+
   /**
    * Initialize the process execution datastructure. Do not call while
    * running the process.
    */
-  void Initialize() 
+  void Initialize()
     {
     this->ProcessHandle = 0;
     this->ExitValue    = -1;
@@ -65,11 +65,11 @@ public:
     this->pStdOut =  -1;
     this->pStdErr =  -1;
     }
-  
+
   /**
    * Start the process in the directory path. Make sure that the
    * executable is either in the path or specify the full path. The
-   * argument verbose specifies wether or not to display output while
+   * argument verbose specifies whether or not to display output while
    * it is being generated.
    */
   bool StartProcess(const char*, const char* path, bool verbose);
@@ -129,10 +129,10 @@ public:
    * process. Every time there is something availabe for reading, we
    * will display it in our app. Consequently, we check for input in
    * our app and send it off to the write end of the stdin pipe.
-   */ 
-  static bool BorlandRunCommand(const char* command, 
-                                const char* dir, 
-                                std::string& output, int& retVal, 
+   */
+  static bool BorlandRunCommand(const char* command,
+                                const char* dir,
+                                std::string& output, int& retVal,
                                 bool verbose,
                                 int timeout, bool hideWindows);
 
@@ -151,8 +151,8 @@ private:
   HANDLE hChildStdinWrDup;
   HANDLE hChildStdoutRdDup;
   HANDLE hChildStderrRdDup;
-  
-  
+
+
   int pStdIn;
   int pStdOut;
   int pStdErr;

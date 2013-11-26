@@ -4,6 +4,10 @@ include(${Import_BINARY_DIR}/../Export/ExportBuildTree.cmake)
 # Import targets from the exported install tree.
 include(${CMAKE_INSTALL_PREFIX}/lib/exp/exp.cmake)
 
+# Import two exports, where the Depends one depends on an exported target from the Required one:
+include(${CMAKE_INSTALL_PREFIX}/lib/cmake/testLibRequired/testLibRequiredTargets.cmake)
+include(${CMAKE_INSTALL_PREFIX}/lib/cmake/testLibDepends/testLibDependsTargets.cmake)
+
 # Try referencing an executable imported from the install tree.
 add_custom_command(
   OUTPUT ${Import_BINARY_DIR}/exp_generated.c
@@ -64,6 +68,16 @@ target_link_libraries(imp_testExe1b
   bld_testLibCycleA
   )
 
+add_executable(cmp0022OLD_test cmp0022OLD_test_vs6_1.cpp)
+target_link_libraries(cmp0022OLD_test bld_cmp0022OLD)
+add_executable(cmp0022NEW_test cmp0022NEW_test_vs6_1.cpp)
+target_link_libraries(cmp0022NEW_test bld_cmp0022NEW)
+
+add_executable(cmp0022OLD_exp_test cmp0022OLD_test_vs6_2.cpp)
+target_link_libraries(cmp0022OLD_exp_test exp_cmp0022OLD)
+add_executable(cmp0022NEW_exp_test cmp0022NEW_test_vs6_2.cpp)
+target_link_libraries(cmp0022NEW_exp_test exp_cmp0022NEW)
+
 # Try building a plugin to an executable imported from the build tree.
 add_library(imp_mod1b MODULE imp_mod1.c)
 target_link_libraries(imp_mod1b bld_testExe2)
@@ -73,7 +87,7 @@ target_link_libraries(imp_mod1b bld_testExe2)
 foreach(c DEBUG RELWITHDEBINFO)
   set_property(TARGET imp_testExe1 PROPERTY COMPILE_DEFINITIONS_${c} EXE_DBG)
   set_property(TARGET imp_testExe1b PROPERTY COMPILE_DEFINITIONS_${c} EXE_DBG)
-endforeach(c)
+endforeach()
 
 #-----------------------------------------------------------------------------
 # Create a custom target to generate a header for the libraries below.
@@ -148,3 +162,106 @@ check_function_exists(testLib1 HAVE_TESTLIB1_FUNCTION)
 if (NOT HAVE_TESTLIB1_FUNCTION)
   message(SEND_ERROR "Using imported target testLib2 in check_function_exists() failed !")
 endif()
+
+#-----------------------------------------------------------------------------
+# Test that dependent imported targets have usable
+# INTERFACE_COMPILE_DEFINITIONS and INTERFACE_INCLUDE_DIRECTORIES
+
+add_executable(deps_iface deps_iface.c)
+target_link_libraries(deps_iface testLibDepends)
+
+add_executable(deps_shared_iface deps_shared_iface.cpp)
+target_link_libraries(deps_shared_iface testSharedLibDepends)
+target_compile_definitions(deps_shared_iface
+  PRIVATE
+    $<$<BOOL:$<TARGET_PROPERTY:POSITION_INDEPENDENT_CODE>>:PIC_PROPERTY_IS_ON>
+    $<$<BOOL:$<TARGET_PROPERTY:CUSTOM_PROP>>:CUSTOM_PROPERTY_IS_ON>
+    $<$<STREQUAL:$<TARGET_PROPERTY:CUSTOM_STRING>,testcontent>:CUSTOM_STRING_IS_MATCH>
+)
+
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+  target_compile_definitions(deps_shared_iface
+    PRIVATE
+      "DO_GNU_TESTS"
+  )
+endif()
+
+if (APPLE OR CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+  include(CheckCXXCompilerFlag)
+  check_cxx_compiler_flag(-fPIE run_pic_test)
+else()
+  if (CMAKE_CXX_COMPILER_ID MATCHES "PGI"
+      OR CMAKE_CXX_COMPILER_ID MATCHES "PathScale"
+      OR CMAKE_SYSTEM_NAME MATCHES "IRIX64"
+      OR CMAKE_CXX_COMPILER_ID MATCHES "Intel")
+    set(run_pic_test 0)
+  else()
+    set(run_pic_test 1)
+  endif()
+endif()
+
+add_executable(exp_renamed_test renamed_test.cpp)
+target_link_libraries(exp_renamed_test exp_renamed)
+
+add_executable(bld_renamed_test renamed_test.cpp)
+target_link_libraries(bld_renamed_test bld_renamed)
+
+if (run_pic_test)
+  target_compile_definitions(deps_shared_iface PRIVATE CHECK_PIC_WORKS)
+endif()
+
+if(APPLE)
+  add_subdirectory(framework_interface)
+endif()
+
+#-----------------------------------------------------------------------------
+# Test that targets imported from the build tree have their dependencies
+# evaluated correctly. The above already tests the same for the install tree.
+
+add_executable(deps_shared_iface2 deps_shared_iface.cpp)
+target_link_libraries(deps_shared_iface2 bld_testSharedLibDepends bld_subdirlib)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+  target_compile_definitions(deps_shared_iface2
+    PRIVATE
+      "DO_GNU_TESTS"
+  )
+endif()
+target_compile_definitions(deps_shared_iface2
+  PRIVATE TEST_SUBDIR_LIB
+  $<$<BOOL:$<TARGET_PROPERTY:POSITION_INDEPENDENT_CODE>>:PIC_PROPERTY_IS_ON>
+  $<$<BOOL:$<TARGET_PROPERTY:CUSTOM_PROP>>:CUSTOM_PROPERTY_IS_ON>
+  $<$<STREQUAL:$<TARGET_PROPERTY:CUSTOM_STRING>,testcontent>:CUSTOM_STRING_IS_MATCH>
+)
+
+add_subdirectory(excludedFromAll)
+
+add_executable(iface_test_bld iface_test.cpp)
+target_link_libraries(iface_test_bld bld_testSharedLibDepends)
+
+set_property(TARGET bld_testSharedLibRequired APPEND PROPERTY
+    LINK_INTERFACE_LIBRARIES
+        excludedFromAll
+)
+get_target_property(_configs bld_testSharedLibRequired IMPORTED_CONFIGURATIONS)
+foreach(_config ${_configs})
+    set_property(TARGET bld_testSharedLibRequired APPEND PROPERTY
+        IMPORTED_LINK_INTERFACE_LIBRARIES_${_config}
+        excludedFromAll
+    )
+endforeach()
+unset(_configs)
+add_executable(iface_test_exp iface_test.cpp)
+target_link_libraries(iface_test_exp testSharedLibDepends)
+
+set_property(TARGET testSharedLibDepends APPEND PROPERTY
+    LINK_INTERFACE_LIBRARIES
+        excludedFromAll
+)
+get_target_property(_configs testSharedLibDepends IMPORTED_CONFIGURATIONS)
+foreach(_config ${_configs})
+    set_property(TARGET testSharedLibDepends APPEND PROPERTY
+        IMPORTED_LINK_INTERFACE_LIBRARIES_${_config}
+        excludedFromAll
+    )
+endforeach()
+unset(_configs)

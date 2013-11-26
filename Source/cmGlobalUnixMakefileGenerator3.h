@@ -13,6 +13,7 @@
 #define cmGlobalUnixMakefileGenerator3_h
 
 #include "cmGlobalGenerator.h"
+#include "cmGlobalGeneratorFactory.h"
 
 class cmGeneratedFileStream;
 class cmMakefileTargetGenerator;
@@ -54,8 +55,9 @@ class cmGlobalUnixMakefileGenerator3 : public cmGlobalGenerator
 {
 public:
   cmGlobalUnixMakefileGenerator3();
-  static cmGlobalGenerator* New() {
-    return new cmGlobalUnixMakefileGenerator3; }
+  static cmGlobalGeneratorFactory* NewFactory() {
+    return new cmGlobalGeneratorSimpleFactory
+      <cmGlobalUnixMakefileGenerator3>(); }
 
   ///! Get the name for the generator.
   virtual const char* GetName() const {
@@ -63,7 +65,7 @@ public:
   static const char* GetActualName() {return "Unix Makefiles";}
 
   /** Get the documentation entry for this generator.  */
-  virtual void GetDocumentation(cmDocumentationEntry& entry) const;
+  static void GetDocumentation(cmDocumentationEntry& entry);
 
   ///! Create a local generator appropriate to this Global Generator3
   virtual cmLocalGenerator *CreateLocalGenerator();
@@ -105,7 +107,8 @@ public:
   // change the build command for speed
   virtual std::string GenerateBuildCommand
   (const char* makeProgram,
-   const char *projectName, const char* additionalOptions,
+   const char *projectName, const char *projectDir,
+   const char* additionalOptions,
    const char *targetName,
    const char* config, bool ignoreErrors, bool fast);
 

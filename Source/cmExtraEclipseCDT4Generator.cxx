@@ -34,9 +34,12 @@ cmExtraEclipseCDT4Generator
   this->SupportedGlobalGenerators.push_back("MinGW Makefiles");
 //  this->SupportedGlobalGenerators.push_back("MSYS Makefiles");
 #endif
+  this->SupportedGlobalGenerators.push_back("Ninja");
   this->SupportedGlobalGenerators.push_back("Unix Makefiles");
 
   this->SupportsVirtualFolders = true;
+  this->GenerateLinkedResources = true;
+  this->SupportsGmakeErrorParser = true;
 }
 
 //----------------------------------------------------------------------------
@@ -48,7 +51,7 @@ void cmExtraEclipseCDT4Generator
   entry.Full =
     "Project files for Eclipse will be created in the top directory. "
     "In out of source builds, a linked resource to the top level source "
-    "directory will be created."
+    "directory will be created. "
     "Additionally a hierarchy of makefiles is generated into the "
     "build tree. The appropriate make program can build the project through "
     "the default make target. A \"make install\" target is also provided.";
@@ -75,12 +78,19 @@ void cmExtraEclipseCDT4Generator::Generate()
         {
         this->SupportsVirtualFolders = false;
         }
+      if (version < 3007) // 3.7 is Indigo
+        {
+        this->SupportsGmakeErrorParser = false;
+        }
       }
     }
 
   // TODO: Decide if these are local or member variables
   this->HomeDirectory       = mf->GetHomeDirectory();
   this->HomeOutputDirectory = mf->GetHomeOutputDirectory();
+
+  this->GenerateLinkedResources = mf->IsOn(
+                                    "CMAKE_ECLIPSE_GENERATE_LINKED_RESOURCES");
 
   this->IsOutOfSourceBuild = (this->HomeDirectory!=this->HomeOutputDirectory);
 
@@ -286,6 +296,9 @@ void cmExtraEclipseCDT4Generator::CreateProjectFile()
 
   // set the make command
   std::string make = mf->GetRequiredDefinition("CMAKE_MAKE_PROGRAM");
+  const std::string makeArgs = mf->GetSafeDefinition(
+                                               "CMAKE_ECLIPSE_MAKE_ARGUMENTS");
+
   fout <<
     "\t\t\t\t<dictionary>\n"
     "\t\t\t\t\t<key>org.eclipse.cdt.make.core.enabledIncrementalBuild</key>\n"
@@ -293,7 +306,7 @@ void cmExtraEclipseCDT4Generator::CreateProjectFile()
     "\t\t\t\t</dictionary>\n"
     "\t\t\t\t<dictionary>\n"
     "\t\t\t\t\t<key>org.eclipse.cdt.make.core.build.command</key>\n"
-    "\t\t\t\t\t<value>" + this->GetEclipsePath(make) + "</value>\n"
+    "\t\t\t\t\t<value>" << this->GetEclipsePath(make) << "</value>\n"
     "\t\t\t\t</dictionary>\n"
     "\t\t\t\t<dictionary>\n"
     "\t\t\t\t\t<key>org.eclipse.cdt.make.core.contents</key>\n"
@@ -305,7 +318,7 @@ void cmExtraEclipseCDT4Generator::CreateProjectFile()
     "\t\t\t\t</dictionary>\n"
     "\t\t\t\t<dictionary>\n"
     "\t\t\t\t\t<key>org.eclipse.cdt.make.core.build.arguments</key>\n"
-    "\t\t\t\t\t<value></value>\n"
+    "\t\t\t\t\t<value>" << makeArgs << "</value>\n"
     "\t\t\t\t</dictionary>\n"
     "\t\t\t\t<dictionary>\n"
     "\t\t\t\t\t<key>org.eclipse.cdt.make.core.buildLocation</key>\n"
@@ -395,8 +408,17 @@ void cmExtraEclipseCDT4Generator::CreateProjectFile()
     {
     fout << "org.eclipse.cdt.core.ICCErrorParser;";
     }
+
+  if (this->SupportsGmakeErrorParser)
+    {
+    fout << "org.eclipse.cdt.core.GmakeErrorParser;";
+    }
+  else
+    {
+    fout << "org.eclipse.cdt.core.MakeErrorParser;";
+    }
+
   fout <<
-    "org.eclipse.cdt.core.MakeErrorParser;"
     "org.eclipse.cdt.core.GCCErrorParser;"
     "org.eclipse.cdt.core.GASErrorParser;"
     "org.eclipse.cdt.core.GLDErrorParser;"
@@ -458,18 +480,6 @@ void cmExtraEclipseCDT4Generator::CreateProjectFile()
     this->CreateLinksForTargets(fout);
     }
 
-  // I'm not sure this makes too much sense. There can be different
-  // output directories in different subdirs, so we would need more of them.
-
-  // for EXECUTABLE_OUTPUT_PATH when not in binary dir
-  this->AppendOutLinkedResource(fout,
-    mf->GetSafeDefinition("CMAKE_RUNTIME_OUTPUT_DIRECTORY"),
-    mf->GetSafeDefinition("EXECUTABLE_OUTPUT_PATH"));
-  // for LIBRARY_OUTPUT_PATH when not in binary dir
-  this->AppendOutLinkedResource(fout,
-    mf->GetSafeDefinition("CMAKE_LIBRARY_OUTPUT_DIRECTORY"),
-    mf->GetSafeDefinition("LIBRARY_OUTPUT_PATH"));
-
   fout << "\t</linkedResources>\n";
 
   fout << "</projectDescription>\n";
@@ -509,6 +519,10 @@ void cmExtraEclipseCDT4Generator::CreateLinksForTargets(
           linkName2 += ti->first;
           this->AppendLinkedResource(fout, linkName2, "virtual:/virtual",
                                      VirtualFolder);
+          if (!this->GenerateLinkedResources)
+            {
+            break; // skip generating the linked resources to the source files
+            }
           std::vector<cmSourceGroup> sourceGroups=makefile->GetSourceGroups();
           // get the files from the source lists then add them to the groups
           cmTarget* tgt = const_cast<cmTarget*>(&ti->second);
@@ -540,12 +554,15 @@ void cmExtraEclipseCDT4Generator::CreateLinksForTargets(
                 fileIt != sFiles.end();
                 ++fileIt)
               {
-              std::string linkName4 = linkName3;
-              linkName4 += "/";
-              linkName4 +=
-                      cmSystemTools::GetFilenameName((*fileIt)->GetFullPath());
-              this->AppendLinkedResource(fout, linkName4,
-                                         (*fileIt)->GetFullPath(), LinkToFile);
+              std::string fullPath = (*fileIt)->GetFullPath();
+              if (!cmSystemTools::FileIsDirectory(fullPath.c_str()))
+                {
+                std::string linkName4 = linkName3;
+                linkName4 += "/";
+                linkName4 += cmSystemTools::GetFilenameName(fullPath);
+                this->AppendLinkedResource(fout, linkName4,
+                                           fullPath, LinkToFile);
+                }
               }
             }
           }
@@ -563,6 +580,11 @@ void cmExtraEclipseCDT4Generator::CreateLinksForTargets(
 void cmExtraEclipseCDT4Generator::CreateLinksToSubprojects(
                        cmGeneratedFileStream& fout, const std::string& baseDir)
 {
+  if (!this->GenerateLinkedResources)
+    {
+    return;
+    }
+
   // for each sub project create a linked resource to the source dir
   // - only if it is an out-of-source build
   this->AppendLinkedResource(fout, "[Subprojects]",
@@ -587,7 +609,8 @@ void cmExtraEclipseCDT4Generator::CreateLinksToSubprojects(
                                  this->GetEclipsePath(linkSourceDirectory),
                                  LinkToFolder
                                 );
-      this->SrcLinkedResources.push_back(it->first);
+      // Don't add it to the srcLinkedResources, because listing multiple
+      // directories confuses the Eclipse indexer (#13596).
       }
     }
 }
@@ -606,6 +629,16 @@ void cmExtraEclipseCDT4Generator::AppendIncludeDirectories(
     if (!inc->empty())
       {
       std::string dir = cmSystemTools::CollapseFullPath(inc->c_str());
+
+      // handle framework include dirs on OSX, the remainder after the
+      // Frameworks/ part has to be stripped
+      //   /System/Library/Frameworks/GLUT.framework/Headers
+      cmsys::RegularExpression frameworkRx("(.+/Frameworks)/.+\\.framework/");
+      if(frameworkRx.find(dir.c_str()))
+        {
+        dir = frameworkRx.match(1);
+        }
+
       if(emittedDirs.find(dir) == emittedDirs.end())
         {
         emittedDirs.insert(dir);
@@ -728,15 +761,16 @@ void cmExtraEclipseCDT4Generator::CreateCProjectFile() const
 /* I don't know what the pathentry kind="src" are good for, e.g. autocompletion
  * works also without them. Done wrong, the indexer complains, see #12417
  * and #12213.
+ * According to #13596, this entry at least limits the directories the
+ * indexer is searching for files. So now the "src" entry contains only
+ * the linked resource to CMAKE_SOURCE_DIR.
  * The CDT documentation is very terse on that:
  * "CDT_SOURCE: Entry kind constant describing a path entry identifying a
  * folder containing source code to be compiled."
  * Also on the cdt-dev list didn't bring any information:
  * http://web.archiveorange.com/archive/v/B4NlJDNIpYoOS1SbxFNy
- * So I'm disabling them for now, hoping that somebody will report if something
- * is not workging anymore.
  * Alex */
-#ifdef DO_CREATE_SRC_PATH_ENTRIES
+
   for (std::vector<std::string>::const_iterator
        it = this->SrcLinkedResources.begin();
        it != this->SrcLinkedResources.end();
@@ -753,22 +787,10 @@ void cmExtraEclipseCDT4Generator::CreateCProjectFile() const
       excludeFromOut += this->EscapeForXML(*it) + "/|";
       }
     }
-#endif
+
   excludeFromOut += "**/CMakeFiles/";
   fout << "<pathentry excluding=\"" << excludeFromOut
        << "\" kind=\"out\" path=\"\"/>\n";
-  // add output entry for EXECUTABLE_OUTPUT_PATH and LIBRARY_OUTPUT_PATH
-  // - if it is a subdir of homeOutputDirectory, there is no need to add it
-  // - if it is not then create a linked resource and add the linked name
-  //   but check it doesn't conflict with other linked resources names
-  for (std::vector<std::string>::const_iterator
-       it = this->OutLinkedResources.begin();
-       it != this->OutLinkedResources.end();
-       ++it)
-    {
-    fout << "<pathentry kind=\"out\" path=\"" << this->EscapeForXML(*it)
-         << "\"/>\n";
-    }
 
   // add pre-processor definitions to allow eclipse to gray out sections
   emmited.clear();
@@ -894,11 +916,18 @@ void cmExtraEclipseCDT4Generator::CreateCProjectFile() const
        it != this->GlobalGenerator->GetLocalGenerators().end();
        ++it)
     {
-    cmTargets & targets = (*it)->GetMakefile()->GetTargets();
-    for (cmTargets::iterator l = targets.begin(); l != targets.end(); ++l)
+    cmGeneratorTargetsType targets = (*it)->GetMakefile()
+                                        ->GetGeneratorTargets();
+    for (cmGeneratorTargetsType::iterator l = targets.begin();
+         l != targets.end(); ++l)
       {
+      if (l->first->IsImported())
+        {
+        continue;
+        }
       std::vector<std::string> includeDirs;
-      (*it)->GetIncludeDirectories(includeDirs, &l->second);
+      const char *config = mf->GetDefinition("CMAKE_BUILD_TYPE");
+      (*it)->GetIncludeDirectories(includeDirs, l->second, "C", config);
       this->AppendIncludeDirectories(fout, includeDirs, emmited);
       }
     }
@@ -1067,9 +1096,8 @@ void cmExtraEclipseCDT4Generator::CreateCProjectFile() const
       }
 
     //insert rules for compiling, preprocessing and assembling individual files
-    cmLocalUnixMakefileGenerator3* lumg=(cmLocalUnixMakefileGenerator3*)*it;
     std::vector<std::string> objectFileTargets;
-    lumg->GetIndividualFileTargets(objectFileTargets);
+    (*it)->GetIndividualFileTargets(objectFileTargets);
     for(std::vector<std::string>::const_iterator fit=objectFileTargets.begin();
         fit != objectFileTargets.end();
         ++fit)
@@ -1314,51 +1342,3 @@ void cmExtraEclipseCDT4Generator
     "\t\t</link>\n"
     ;
 }
-
-bool cmExtraEclipseCDT4Generator
-::AppendOutLinkedResource(cmGeneratedFileStream& fout,
-                          const std::string&     defname,
-                          const std::string&     altdefname)
-{
-  if (defname.empty() && altdefname.empty())
-    {
-    return false;
-    }
-
-  std::string outputPath = (defname.empty() ? altdefname : defname);
-
-  if (!cmSystemTools::FileIsFullPath(outputPath.c_str()))
-    {
-    outputPath = this->HomeOutputDirectory + "/" + outputPath;
-    }
-  if (cmSystemTools::IsSubDirectory(outputPath.c_str(),
-                                    this->HomeOutputDirectory.c_str()))
-    {
-    return false;
-    }
-
-  std::string name = this->GetPathBasename(outputPath);
-
-  // make sure linked resource name is unique
-  while (this->GlobalGenerator->GetProjectMap().find(name)
-      != this->GlobalGenerator->GetProjectMap().end())
-    {
-    name += "_";
-    }
-
-  if (std::find(this->OutLinkedResources.begin(),
-                this->OutLinkedResources.end(),
-                name)
-      != this->OutLinkedResources.end())
-    {
-    return false;
-    }
-  else
-    {
-    this->AppendLinkedResource(fout, name,
-                               this->GetEclipsePath(outputPath), LinkToFolder);
-    this->OutLinkedResources.push_back(name);
-    return true;
-    }
-}
-

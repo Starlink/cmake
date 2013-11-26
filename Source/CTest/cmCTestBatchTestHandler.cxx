@@ -56,7 +56,7 @@ void cmCTestBatchTestHandler::WriteSrunArgs(int test, std::fstream& fout)
   fout << "srun ";
   //fout << "--jobid=" << test << " ";
   fout << "-J=" << properties->Name << " ";
- 
+
   //Write dependency information
   /*if(this->Tests[test].size() > 0)
     {
@@ -89,7 +89,7 @@ void cmCTestBatchTestHandler::WriteTestCommand(int test, std::fstream& fout)
   command = cmSystemTools::ConvertToOutputPath(command.c_str());
 
   //Prepends memcheck args to our command string if this is a memcheck
-  this->TestHandler->GenerateTestCommand(processArgs);
+  this->TestHandler->GenerateTestCommand(processArgs, test);
   processArgs.push_back(command);
 
   for(std::vector<std::string>::iterator arg = processArgs.begin();

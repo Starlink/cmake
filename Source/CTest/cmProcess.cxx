@@ -175,6 +175,14 @@ int cmProcess::GetNextOutputLine(std::string& line, double timeout)
   // Record exit information.
   this->ExitValue = cmsysProcess_GetExitValue(this->Process);
   this->TotalTime = cmSystemTools::GetTime() - this->StartTime;
+  // Because of a processor clock scew the runtime may become slightly
+  // negative. If someone changed the system clock while the process was
+  // running this may be even more. Make sure not to report a negative
+  // duration here.
+  if (this->TotalTime <= 0.0)
+    {
+    this->TotalTime = 0.0;
+    }
   //  std::cerr << "Time to run: " << this->TotalTime << "\n";
   return cmsysProcess_Pipe_None;
 }
@@ -196,12 +204,12 @@ int cmProcess::ReportStatus()
     {
     case cmsysProcess_State_Starting:
       {
-      std::cerr << "cmProcess: Never started " 
+      std::cerr << "cmProcess: Never started "
            << this->Command << " process.\n";
       } break;
     case cmsysProcess_State_Error:
       {
-      std::cerr << "cmProcess: Error executing " << this->Command 
+      std::cerr << "cmProcess: Error executing " << this->Command
                 << " process: "
                 << cmsysProcess_GetErrorString(this->Process)
                 << "\n";
@@ -241,19 +249,19 @@ int cmProcess::ReportStatus()
       } break;
     case cmsysProcess_State_Executing:
       {
-      std::cerr << "cmProcess: Never terminated " << 
+      std::cerr << "cmProcess: Never terminated " <<
         this->Command << " process.\n";
       } break;
     case cmsysProcess_State_Exited:
       {
       result = cmsysProcess_GetExitValue(this->Process);
-      std::cerr << "cmProcess: " << this->Command 
+      std::cerr << "cmProcess: " << this->Command
                 << " process exited with code "
                 << result << "\n";
       } break;
     case cmsysProcess_State_Expired:
       {
-      std::cerr << "cmProcess: killed " << this->Command 
+      std::cerr << "cmProcess: killed " << this->Command
                 << " process due to timeout.\n";
       } break;
     case cmsysProcess_State_Killed:

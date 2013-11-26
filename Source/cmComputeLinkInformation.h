@@ -29,7 +29,8 @@ class cmOrderDirectories;
 class cmComputeLinkInformation
 {
 public:
-  cmComputeLinkInformation(cmTarget* target, const char* config);
+  cmComputeLinkInformation(cmTarget* target, const char* config,
+                           cmTarget* headTarget);
   ~cmComputeLinkInformation();
   bool Compute();
 
@@ -74,6 +75,7 @@ private:
 
   // Context information.
   cmTarget* Target;
+  cmTarget* HeadTarget;
   cmMakefile* Makefile;
   cmLocalGenerator* LocalGenerator;
   cmGlobalGenerator* GlobalGenerator;
@@ -82,6 +84,7 @@ private:
   // Configuration information.
   const char* Config;
   const char* LinkLanguage;
+  bool LinkDependsNoShared;
 
   // Modes for dealing with dependent shared libraries.
   enum SharedDepMode
@@ -131,7 +134,8 @@ private:
   bool OpenBSD;
   void AddLinkPrefix(const char* p);
   void AddLinkExtension(const char* e, LinkType type);
-  std::string CreateExtensionRegex(std::vector<std::string> const& exts);
+  std::string CreateExtensionRegex(std::vector<std::string> const& exts,
+                                   LinkType type);
   std::string NoCaseExpression(const char* str);
 
   // Handling of link items.

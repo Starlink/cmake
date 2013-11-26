@@ -16,6 +16,8 @@
 #include "cmLocalGenerator.h"
 #include "cmGlobalGenerator.h"
 #include "cmSourceFile.h"
+#include "cmGeneratorExpression.h"
+#include "cmGeneratorExpressionDAGChecker.h"
 
 //----------------------------------------------------------------------------
 cmGeneratorTarget::cmGeneratorTarget(cmTarget* t): Target(t)
@@ -25,6 +27,87 @@ cmGeneratorTarget::cmGeneratorTarget(cmTarget* t): Target(t)
   this->GlobalGenerator = this->LocalGenerator->GetGlobalGenerator();
   this->ClassifySources();
   this->LookupObjectLibraries();
+}
+
+//----------------------------------------------------------------------------
+int cmGeneratorTarget::GetType() const
+{
+  return this->Target->GetType();
+}
+
+//----------------------------------------------------------------------------
+const char *cmGeneratorTarget::GetName() const
+{
+  return this->Target->GetName();
+}
+
+//----------------------------------------------------------------------------
+const char *cmGeneratorTarget::GetProperty(const char *prop)
+{
+  return this->Target->GetProperty(prop);
+}
+
+//----------------------------------------------------------------------------
+bool cmGeneratorTarget::IsSystemIncludeDirectory(const char *dir,
+                                                 const char *config)
+{
+  std::string config_upper;
+  if(config && *config)
+    {
+    config_upper = cmSystemTools::UpperCase(config);
+    }
+
+  typedef std::map<std::string, std::vector<std::string> > IncludeCacheType;
+  IncludeCacheType::iterator iter =
+      this->SystemIncludesCache.find(config_upper);
+
+  if (iter == this->SystemIncludesCache.end())
+    {
+    std::vector<std::string> result;
+    for (std::set<cmStdString>::const_iterator
+        it = this->Target->GetSystemIncludeDirectories().begin();
+        it != this->Target->GetSystemIncludeDirectories().end(); ++it)
+      {
+      cmListFileBacktrace lfbt;
+      cmGeneratorExpression ge(lfbt);
+
+      cmGeneratorExpressionDAGChecker dagChecker(lfbt,
+                                                this->GetName(),
+                                "INTERFACE_SYSTEM_INCLUDE_DIRECTORIES", 0, 0);
+
+      cmSystemTools::ExpandListArgument(ge.Parse(*it)
+                                        ->Evaluate(this->Makefile,
+                                        config, false, this->Target,
+                                        &dagChecker), result);
+      }
+    for(std::vector<std::string>::iterator li = result.begin();
+        li != result.end(); ++li)
+      {
+      cmSystemTools::ConvertToUnixSlashes(*li);
+      }
+
+    IncludeCacheType::value_type entry(config_upper, result);
+    iter = this->SystemIncludesCache.insert(entry).first;
+    }
+
+  if (std::find(iter->second.begin(),
+                iter->second.end(), dir) != iter->second.end())
+    {
+    return true;
+    }
+  return false;
+}
+
+//----------------------------------------------------------------------------
+bool cmGeneratorTarget::GetPropertyAsBool(const char *prop)
+{
+  return this->Target->GetPropertyAsBool(prop);
+}
+
+//----------------------------------------------------------------------------
+std::vector<cmSourceFile*> const& cmGeneratorTarget::GetSourceFiles()
+{
+  return this->Target->GetSourceFiles();
 }
 
 //----------------------------------------------------------------------------
@@ -39,16 +122,9 @@ void cmGeneratorTarget::ClassifySources()
     {
     cmSourceFile* sf = *si;
     std::string ext = cmSystemTools::LowerCase(sf->GetExtension());
-    cmTarget::SourceFileFlags tsFlags =
-      this->Target->GetTargetSourceFileFlags(sf);
     if(sf->GetCustomCommand())
       {
       this->CustomCommands.push_back(sf);
-      }
-    else if(tsFlags.Type != cmTarget::SourceFileTypeNormal)
-      {
-      this->OSXContent.push_back(sf);
-      if(isObjLib) { badObjLib.push_back(sf); }
       }
     else if(sf->GetPropertyAsBool("HEADER_FILE_ONLY"))
       {
@@ -72,6 +148,18 @@ void cmGeneratorTarget::ClassifySources()
       {
       this->IDLSources.push_back(sf);
       if(isObjLib) { badObjLib.push_back(sf); }
+      }
+    else if(ext == "resx")
+      {
+      // Build and save the name of the corresponding .h file
+      // This relationship will be used later when building the project files.
+      // Both names would have been auto generated from Visual Studio
+      // where the user supplied the file name and Visual Studio
+      // appended the suffix.
+      std::string resx = sf->GetFullPath();
+      std::string hFileName = resx.substr(0, resx.find_last_of(".")) + ".h";
+      this->ExpectedResxHeaders.insert(hFileName);
+      this->ResxSources.push_back(sf);
       }
     else if(header.find(sf->GetFullPath().c_str()))
       {
@@ -181,4 +269,51 @@ void cmGeneratorTarget::UseObjectLibraries(std::vector<std::string>& objs)
       objs.push_back(obj);
       }
     }
+}
+
+//----------------------------------------------------------------------------
+void cmGeneratorTarget::GetAppleArchs(const char* config,
+                             std::vector<std::string>& archVec)
+{
+  const char* archs = 0;
+  if(config && *config)
+    {
+    std::string defVarName = "OSX_ARCHITECTURES_";
+    defVarName += cmSystemTools::UpperCase(config);
+    archs = this->Target->GetProperty(defVarName.c_str());
+    }
+  if(!archs)
+    {
+    archs = this->Target->GetProperty("OSX_ARCHITECTURES");
+    }
+  if(archs)
+    {
+    cmSystemTools::ExpandListArgument(std::string(archs), archVec);
+    }
+}
+
+//----------------------------------------------------------------------------
+const char* cmGeneratorTarget::GetCreateRuleVariable()
+{
+  switch(this->GetType())
+    {
+    case cmTarget::STATIC_LIBRARY:
+      return "_CREATE_STATIC_LIBRARY";
+    case cmTarget::SHARED_LIBRARY:
+      return "_CREATE_SHARED_LIBRARY";
+    case cmTarget::MODULE_LIBRARY:
+      return "_CREATE_SHARED_MODULE";
+    case cmTarget::EXECUTABLE:
+      return "_LINK_EXECUTABLE";
+    default:
+      break;
+    }
+  return "";
+}
+
+//----------------------------------------------------------------------------
+std::vector<std::string> cmGeneratorTarget::GetIncludeDirectories(
+                                                          const char *config)
+{
+  return this->Target->GetIncludeDirectories(config);
 }

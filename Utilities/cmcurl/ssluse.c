@@ -442,7 +442,7 @@ int cert_stuff(struct connectdata *conn,
             failf(data, "no key set to load from crypto engine\n");
             return 0;
           }
-          /* the typecast below was added to please mingw32 */
+          /* the typecast below was added to please MinGW32 */
           priv_key = (EVP_PKEY *)
             ENGINE_load_private_key(conn->data->state.engine,key_file,
 #ifdef HAVE_ENGINE_LOAD_FOUR_ARGS
@@ -1285,8 +1285,13 @@ Curl_ossl_connect_step1(struct connectdata *conn,
     req_method = TLSv1_client_method();
     break;
   case CURL_SSLVERSION_SSLv2:
+#ifdef OPENSSL_NO_SSL2
+    failf(data, "OpenSSL was built without SSLv2 support");
+    return CURLE_NOT_BUILT_IN;
+#else
     req_method = SSLv2_client_method();
     break;
+#endif
   case CURL_SSLVERSION_SSLv3:
     req_method = SSLv3_client_method();
     break;

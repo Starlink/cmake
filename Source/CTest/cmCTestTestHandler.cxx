@@ -32,7 +32,6 @@
 #include <math.h>
 #include <float.h>
 
-#include <memory> // auto_ptr
 #include <set>
 
 //----------------------------------------------------------------------
@@ -83,7 +82,6 @@ bool cmCTestSubdirCommand
   std::string cwd = cmSystemTools::GetCurrentWorkingDirectory();
   for ( it = args.begin(); it != args.end(); ++ it )
     {
-    cmSystemTools::ChangeDirectory(cwd.c_str());
     std::string fname;
 
     if(cmSystemTools::FileIsFullPath(it->c_str()))
@@ -117,7 +115,6 @@ bool cmCTestSubdirCommand
     else
       {
       // No CTestTestfile? Who cares...
-      cmSystemTools::ChangeDirectory(cwd.c_str());
       continue;
       }
     fname += "/";
@@ -134,6 +131,7 @@ bool cmCTestSubdirCommand
       return false;
       }
     }
+  cmSystemTools::ChangeDirectory(cwd.c_str());
   return true;
 }
 
@@ -1109,7 +1107,7 @@ void cmCTestTestHandler::ProcessDirectory(std::vector<cmStdString> &passed,
 }
 
 //----------------------------------------------------------------------
-void cmCTestTestHandler::GenerateTestCommand(std::vector<std::string>&)
+void cmCTestTestHandler::GenerateTestCommand(std::vector<std::string>&, int)
 {
 }
 
@@ -1363,7 +1361,7 @@ void cmCTestTestHandler
     tempPath += filename;
     attempted.push_back(tempPath);
     attemptedConfigs.push_back(ctest->GetConfigType());
-    // If the file is an OSX bundle then the configtyp
+    // If the file is an OSX bundle then the configtype
     // will be at the start of the path
     tempPath = ctest->GetConfigType();
     tempPath += "/";
@@ -1374,7 +1372,7 @@ void cmCTestTestHandler
     }
   else
     {
-    // no config specified to try some options
+    // no config specified - try some options...
     tempPath = filepath;
     tempPath += "Release/";
     tempPath += filename;
@@ -1546,7 +1544,7 @@ void cmCTestTestHandler::GetListOfTests()
   cmake cm;
   cmGlobalGenerator gg;
   gg.SetCMakeInstance(&cm);
-  std::auto_ptr<cmLocalGenerator> lg(gg.CreateLocalGenerator());
+  cmsys::auto_ptr<cmLocalGenerator> lg(gg.CreateLocalGenerator());
   cmMakefile *mf = lg->GetMakefile();
   mf->AddDefinition("CTEST_CONFIGURATION_TYPE",
     this->CTest->GetConfigType().c_str());

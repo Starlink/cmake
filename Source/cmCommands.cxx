@@ -11,8 +11,10 @@
 ============================================================================*/
 #include "cmCommands.h"
 #if defined(CMAKE_BUILD_WITH_CMAKE)
+#include "cmAddCompileOptionsCommand.cxx"
 #include "cmAuxSourceDirectoryCommand.cxx"
 #include "cmBuildNameCommand.cxx"
+#include "cmCMakeHostSystemInformationCommand.cxx"
 #include "cmElseIfCommand.cxx"
 #include "cmExportCommand.cxx"
 #include "cmExportLibraryDependencies.cxx"
@@ -28,6 +30,10 @@
 #include "cmRemoveDefinitionsCommand.cxx"
 #include "cmSourceGroupCommand.cxx"
 #include "cmSubdirDependsCommand.cxx"
+#include "cmTargetCompileDefinitionsCommand.cxx"
+#include "cmTargetCompileOptionsCommand.cxx"
+#include "cmTargetIncludeDirectoriesCommand.cxx"
+#include "cmTargetPropCommandBase.cxx"
 #include "cmUseMangledMesaCommand.cxx"
 #include "cmUtilitySourceCommand.cxx"
 #include "cmVariableRequiresCommand.cxx"
@@ -48,8 +54,10 @@ void GetPredefinedCommands(std::list<cmCommand*>&
   )
 {
 #if defined(CMAKE_BUILD_WITH_CMAKE)
+  commands.push_back(new cmAddCompileOptionsCommand);
   commands.push_back(new cmAuxSourceDirectoryCommand);
   commands.push_back(new cmBuildNameCommand);
+  commands.push_back(new cmCMakeHostSystemInformationCommand);
   commands.push_back(new cmElseIfCommand);
   commands.push_back(new cmExportCommand);
   commands.push_back(new cmExportLibraryDependenciesCommand);
@@ -66,6 +74,9 @@ void GetPredefinedCommands(std::list<cmCommand*>&
   commands.push_back(new cmRemoveDefinitionsCommand);
   commands.push_back(new cmSourceGroupCommand);
   commands.push_back(new cmSubdirDependsCommand);
+  commands.push_back(new cmTargetIncludeDirectoriesCommand);
+  commands.push_back(new cmTargetCompileDefinitionsCommand);
+  commands.push_back(new cmTargetCompileOptionsCommand);
   commands.push_back(new cmUseMangledMesaCommand);
   commands.push_back(new cmUtilitySourceCommand);
   commands.push_back(new cmVariableRequiresCommand);

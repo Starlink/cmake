@@ -3,7 +3,7 @@
 #   NAME = name of the package
 #   COMPILER_ID = the CMake compiler ID for which the result is, i.e. GNU/Intel/Clang/MSVC, etc.
 #   LANGUAGE = language for which the result will be used, i.e. C/CXX/Fortan/ASM
-#   MODE = EXIST : only check for existance of the given package
+#   MODE = EXIST : only check for existence of the given package
 #          COMPILE : print the flags needed for compiling an object file which uses the given package
 #          LINK : print the flags needed for linking when using the given package
 #   QUIET = if TRUE, don't print anything
@@ -47,12 +47,14 @@ macro(ENABLE_LANGUAGE)
   # But in --find-package mode, we don't want (and can't) enable any language.
 endmacro()
 
+set(CMAKE_PLATFORM_INFO_DIR ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY})
+
 include(CMakeDetermineSystem)
 
 # short-cut some tests on Darwin, see Darwin-GNU.cmake:
 if("${CMAKE_SYSTEM_NAME}" MATCHES Darwin  AND  "${COMPILER_ID}" MATCHES GNU)
-  set(${CMAKE_${LANGUAGE}_HAS_ISYSROOT} 0 )
-  set(CMAKE_${lang}_OSX_DEPLOYMENT_TARGET_FLAG "")
+  set(CMAKE_${LANGUAGE}_SYSROOT_FLAG "")
+  set(CMAKE_${LANGUAGE}_OSX_DEPLOYMENT_TARGET_FLAG "")
 endif()
 
 # Also load the system specific file, which sets up e.g. the search paths.
@@ -179,7 +181,7 @@ if(${NAME}_FOUND  OR  ${UPPERCASE_NAME}_FOUND)
     set_compile_flags_var(${NAME})
   elseif("${MODE}" STREQUAL "LINK")
     set_link_flags_var(${NAME})
-  else("${MODE}" STREQUAL "LINK")
+  else()
     message(FATAL_ERROR "Invalid mode argument ${MODE} given.")
   endif()
 

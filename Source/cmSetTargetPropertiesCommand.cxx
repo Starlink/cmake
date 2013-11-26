@@ -67,11 +67,16 @@ bool cmSetTargetPropertiesCommand
                     "a PROPERTIES specifier?");
      return false;
     }
-  
+
   // now loop over all the targets
   int i;
   for(i = 0; i < numFiles; ++i)
-    {   
+    {
+    if (this->Makefile->IsAlias(args[i].c_str()))
+      {
+      this->SetError("can not be used on an ALIAS target.");
+      return false;
+      }
     bool ret = cmSetTargetPropertiesCommand::SetOneTarget
       (args[i].c_str(),propertyPairs,this->Makefile);
     if (!ret)
@@ -86,7 +91,7 @@ bool cmSetTargetPropertiesCommand
 }
 
 bool cmSetTargetPropertiesCommand
-::SetOneTarget(const char *tname, 
+::SetOneTarget(const char *tname,
                std::vector<std::string> &propertyPairs,
                cmMakefile *mf)
 {
@@ -103,7 +108,7 @@ bool cmSetTargetPropertiesCommand
     }
   // if file is not already in the makefile, then add it
   else
-    { 
+    {
     return false;
     }
   return true;

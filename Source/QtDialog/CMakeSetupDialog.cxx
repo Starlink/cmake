@@ -28,6 +28,7 @@
 #include <QShortcut>
 #include <QKeySequence>
 #include <QMacInstallDialog.h>
+#include <QInputDialog>
 
 #include "QCMake.h"
 #include "QCMakeCacheView.h"
@@ -122,6 +123,22 @@ CMakeSetupDialog::CMakeSetupDialog()
   QObject::connect(this->InstallForCommandLineAction, SIGNAL(triggered(bool)),
                    this, SLOT(doInstallForCommandLine()));
 #endif
+  ToolsMenu->addSeparator();
+  ToolsMenu->addAction(tr("&Find in Output..."),
+                       this, SLOT(doOutputFindDialog()),
+                       QKeySequence::Find);
+  ToolsMenu->addAction(tr("Find Next"),
+                       this, SLOT(doOutputFindNext()),
+                       QKeySequence::FindNext);
+  ToolsMenu->addAction(tr("Find Previous"),
+                       this, SLOT(doOutputFindPrev()),
+                       QKeySequence::FindPrevious);
+  ToolsMenu->addAction(tr("Goto Next Error"),
+                       this, SLOT(doOutputErrorNext()),
+                       QKeySequence(Qt::Key_F8));  // in Visual Studio
+  new QShortcut(QKeySequence(Qt::CTRL + Qt::Key_Period),
+                       this, SLOT(doOutputErrorNext()));  // in Eclipse
+
   QMenu* OptionsMenu = this->menuBar()->addMenu(tr("&Options"));
   this->SuppressDevWarningsAction =
     OptionsMenu->addAction(tr("&Suppress dev Warnings (-Wno-dev)"));
@@ -154,10 +171,6 @@ CMakeSetupDialog::CMakeSetupDialog()
   QObject::connect(a, SIGNAL(triggered(bool)),
                    this, SLOT(doHelp()));
 
-  QShortcut* filterShortcut = new QShortcut(QKeySequence::Find, this);
-  QObject::connect(filterShortcut, SIGNAL(activated()),
-                   this, SLOT(startSearch()));
-
   this->setAcceptDrops(true);
 
   // get the saved binary directories
@@ -171,6 +184,10 @@ CMakeSetupDialog::CMakeSetupDialog()
   QFont outputFont("Courier");
   this->Output->setFont(outputFont);
   this->ErrorFormat.setForeground(QBrush(Qt::red));
+
+  this->Output->setContextMenuPolicy(Qt::CustomContextMenu);
+  connect(this->Output, SIGNAL(customContextMenuRequested(const QPoint&)),
+          this, SLOT(doOutputContextMenu(const QPoint &)));
 
   // start the cmake worker thread
   this->CMakeThread = new QCMakeThread(this);
@@ -288,7 +305,7 @@ CMakeSetupDialog::~CMakeSetupDialog()
 
   // wait for thread to stop
   this->CMakeThread->quit();
-  this->CMakeThread->wait(2000);
+  this->CMakeThread->wait();
 }
 
 bool CMakeSetupDialog::prepareConfigure()
@@ -299,9 +316,8 @@ bool CMakeSetupDialog::prepareConfigure()
   if(!dir.exists())
     {
     QString msg = tr("Build directory does not exist, "
-                         "should I create it?")
-                      + "\n\n"
-                      + tr("Directory: ");
+                         "should I create it?\n\n"
+                      "Directory: ");
     msg += bindir;
     QString title = tr("Create Directory");
     QMessageBox::StandardButton btn;
@@ -490,9 +506,9 @@ void CMakeSetupDialog::closeEvent(QCloseEvent* e)
   // don't close if we're busy, unless the user really wants to
   if(this->CurrentState == Configuring)
     {
-    QString msg = "You are in the middle of a Configure.\n"
+    QString msg = tr("You are in the middle of a Configure.\n"
                    "If you Exit now the configure information will be lost.\n"
-                   "Are you sure you want to Exit?";
+                   "Are you sure you want to Exit?");
     QString title = tr("Confirm Exit");
     QMessageBox::StandardButton btn;
     btn = QMessageBox::critical(this, title, msg,
@@ -638,7 +654,13 @@ void CMakeSetupDialog::showProgress(const QString& /*msg*/, float percent)
 void CMakeSetupDialog::error(const QString& msg)
 {
   this->Output->setCurrentCharFormat(this->ErrorFormat);
-  this->Output->append(msg);
+  //QTextEdit will terminate the msg with a ParagraphSeparator, but it also replaces
+  //all newlines with ParagraphSeparators. By replacing the newlines by ourself, one
+  //error msg will be one paragraph.
+  QString paragraph(msg);
+  paragraph.replace(QLatin1Char('\n'), QChar::LineSeparator);
+  this->Output->append(paragraph);
+
 }
 
 void CMakeSetupDialog::message(const QString& msg)
@@ -715,33 +737,33 @@ bool CMakeSetupDialog::setupFirstConfigure()
 
       QString mode = dialog.getCrossIncludeMode();
       m->insertProperty(QCMakeProperty::STRING, "CMAKE_FIND_ROOT_PATH_MODE_INCLUDE",
-                        "CMake Find Include Mode", mode, false);
+                        tr("CMake Find Include Mode"), mode, false);
       mode = dialog.getCrossLibraryMode();
       m->insertProperty(QCMakeProperty::STRING, "CMAKE_FIND_ROOT_PATH_MODE_LIBRARY",
-                        "CMake Find Library Mode", mode, false);
+                        tr("CMake Find Library Mode"), mode, false);
       mode = dialog.getCrossProgramMode();
       m->insertProperty(QCMakeProperty::STRING, "CMAKE_FIND_ROOT_PATH_MODE_PROGRAM",
-                        "CMake Find Program Mode", mode, false);
+                        tr("CMake Find Program Mode"), mode, false);
 
       QString rootPath = dialog.getCrossRoot();
       m->insertProperty(QCMakeProperty::PATH, "CMAKE_FIND_ROOT_PATH",
-                        "CMake Find Root Path", rootPath, false);
+                        tr("CMake Find Root Path"), rootPath, false);
 
       QString systemName = dialog.getSystemName();
       m->insertProperty(QCMakeProperty::STRING, "CMAKE_SYSTEM_NAME",
-                        "CMake System Name", systemName, false);
+                        tr("CMake System Name"), systemName, false);
       QString cxxCompiler = dialog.getCXXCompiler();
       m->insertProperty(QCMakeProperty::FILEPATH, "CMAKE_CXX_COMPILER",
-                        "CXX compiler.", cxxCompiler, false);
+                        tr("CXX compiler."), cxxCompiler, false);
       QString cCompiler = dialog.getCCompiler();
       m->insertProperty(QCMakeProperty::FILEPATH, "CMAKE_C_COMPILER",
-                        "C compiler.", cCompiler, false);
+                        tr("C compiler."), cCompiler, false);
       }
     else if(dialog.crossCompilerToolChainFile())
       {
       QString toolchainFile = dialog.getCrossCompilerToolChainFile();
       m->insertProperty(QCMakeProperty::FILEPATH, "CMAKE_TOOLCHAIN_FILE",
-                        "Cross Compile ToolChain File", toolchainFile, false);
+                        tr("Cross Compile ToolChain File"), toolchainFile, false);
       }
     return true;
     }
@@ -772,7 +794,7 @@ void CMakeSetupDialog::doReloadCache()
 void CMakeSetupDialog::doDeleteCache()
 {
   QString title = tr("Delete Cache");
-  QString msg = "Are you sure you want to delete the cache?";
+  QString msg = tr("Are you sure you want to delete the cache?");
   QMessageBox::StandardButton btn;
   btn = QMessageBox::information(this, title, msg,
                                  QMessageBox::Yes | QMessageBox::No);
@@ -786,9 +808,9 @@ void CMakeSetupDialog::doDeleteCache()
 
 void CMakeSetupDialog::doAbout()
 {
-  QString msg = "CMake %1\n"
+  QString msg = tr("CMake %1\n"
                 "Using Qt %2\n"
-                "www.cmake.org";
+                "www.cmake.org");
 
   msg = msg.arg(cmVersion::GetCMakeVersion());
   msg = msg.arg(qVersion());
@@ -1150,4 +1172,134 @@ void CMakeSetupDialog::setSearchFilter(const QString& str)
   this->CacheValues->setSearchFilter(str);
 }
 
+void CMakeSetupDialog::doOutputContextMenu(const QPoint &pt)
+{
+  QMenu *menu = this->Output->createStandardContextMenu();
 
+  menu->addSeparator();
+  menu->addAction(tr("Find..."),
+                  this, SLOT(doOutputFindDialog()), QKeySequence::Find);
+  menu->addAction(tr("Find Next"),
+                  this, SLOT(doOutputFindNext()), QKeySequence::FindNext);
+  menu->addAction(tr("Find Previous"),
+                  this, SLOT(doOutputFindPrev()), QKeySequence::FindPrevious);
+  menu->addSeparator();
+  menu->addAction(tr("Goto Next Error"),
+                  this, SLOT(doOutputErrorNext()), QKeySequence(Qt::Key_F8));
+
+  menu->exec(this->Output->mapToGlobal(pt));
+  delete menu;
+}
+
+void CMakeSetupDialog::doOutputFindDialog()
+{
+  QStringList strings(this->FindHistory);
+
+  QString selection = this->Output->textCursor().selectedText();
+  if (!selection.isEmpty() &&
+      !selection.contains(QChar::ParagraphSeparator) &&
+      !selection.contains(QChar::LineSeparator))
+    {
+    strings.push_front(selection);
+    }
+
+  bool ok;
+  QString search = QInputDialog::getItem(this, tr("Find in Output"),
+                                         tr("Find:"), strings, 0, true, &ok);
+  if (ok && !search.isEmpty())
+    {
+    if (!this->FindHistory.contains(search))
+      {
+      this->FindHistory.push_front(search);
+      }
+    doOutputFindNext();
+    }
+}
+
+void CMakeSetupDialog::doOutputFindPrev()
+{
+  doOutputFindNext(false);
+}
+
+void CMakeSetupDialog::doOutputFindNext(bool directionForward)
+{
+  if (this->FindHistory.isEmpty())
+    {
+    doOutputFindDialog(); //will re-call this function again
+    return;
+    }
+
+  QString search = this->FindHistory.front();
+
+  QTextCursor cursor = this->Output->textCursor();
+  QTextDocument* document = this->Output->document();
+  QTextDocument::FindFlags flags;
+  if (!directionForward)
+    {
+    flags |= QTextDocument::FindBackward;
+    }
+
+  cursor = document->find(search, cursor, flags);
+
+  if (cursor.isNull())
+    {
+    // first search found nothing, wrap around and search again
+    cursor = this->Output->textCursor();
+    cursor.movePosition(directionForward ? QTextCursor::Start
+                                         : QTextCursor::End);
+    cursor = document->find(search, cursor, flags);
+    }
+
+  if (cursor.hasSelection())
+    {
+    this->Output->setTextCursor(cursor);
+    }
+}
+
+void CMakeSetupDialog::doOutputErrorNext()
+{
+  QTextCursor cursor = this->Output->textCursor();
+  bool atEnd = false;
+
+  // move cursor out of current error-block
+  if (cursor.blockCharFormat() == this->ErrorFormat)
+    {
+    atEnd = !cursor.movePosition(QTextCursor::NextBlock);
+    }
+
+  // move cursor to next error-block
+  while (cursor.blockCharFormat() != this->ErrorFormat && !atEnd)
+    {
+    atEnd = !cursor.movePosition(QTextCursor::NextBlock);
+    }
+
+  if (atEnd)
+    {
+    // first search found nothing, wrap around and search again
+    atEnd = !cursor.movePosition(QTextCursor::Start);
+
+    // move cursor to next error-block
+    while (cursor.blockCharFormat() != this->ErrorFormat && !atEnd)
+      {
+      atEnd = !cursor.movePosition(QTextCursor::NextBlock);
+      }
+    }
+
+  if (!atEnd)
+    {
+    cursor.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+
+    QTextCharFormat selectionFormat;
+    selectionFormat.setBackground(Qt::yellow);
+    QTextEdit::ExtraSelection extraSelection = {cursor, selectionFormat};
+    this->Output->setExtraSelections(QList<QTextEdit::ExtraSelection>()
+                                     << extraSelection);
+
+    // make the whole error-block visible
+    this->Output->setTextCursor(cursor);
+
+    // remove the selection to see the extraSelection
+    cursor.setPosition(cursor.anchor());
+    this->Output->setTextCursor(cursor);
+    }
+}

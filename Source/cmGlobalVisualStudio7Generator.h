@@ -13,6 +13,7 @@
 #define cmGlobalVisualStudio7Generator_h
 
 #include "cmGlobalVisualStudioGenerator.h"
+#include "cmGlobalGeneratorFactory.h"
 
 class cmTarget;
 struct cmIDEFlagTable;
@@ -25,20 +26,26 @@ struct cmIDEFlagTable;
 class cmGlobalVisualStudio7Generator : public cmGlobalVisualStudioGenerator
 {
 public:
-  cmGlobalVisualStudio7Generator();
-  static cmGlobalGenerator* New() {
-    return new cmGlobalVisualStudio7Generator; }
+  cmGlobalVisualStudio7Generator(const char* platformName = NULL);
+  static cmGlobalGeneratorFactory* NewFactory() {
+    return new cmGlobalGeneratorSimpleFactory
+      <cmGlobalVisualStudio7Generator>(); }
 
   ///! Get the name for the generator.
   virtual const char* GetName() const {
     return cmGlobalVisualStudio7Generator::GetActualName();}
   static const char* GetActualName() {return "Visual Studio 7";}
 
+  ///! Get the name for the platform.
+  const char* GetPlatformName() const { return this->PlatformName.c_str(); }
+
   ///! Create a local generator appropriate to this Global Generator
   virtual cmLocalGenerator *CreateLocalGenerator();
 
+  virtual void AddPlatformDefinitions(cmMakefile* mf);
+
   /** Get the documentation entry for this generator.  */
-  virtual void GetDocumentation(cmDocumentationEntry& entry) const;
+  static void GetDocumentation(cmDocumentationEntry& entry);
 
   /**
    * Try to determine system infomation such as shared library
@@ -53,6 +60,7 @@ public:
    */
   virtual std::string GenerateBuildCommand(const char* makeProgram,
                                            const char *projectName,
+                                           const char *projectDir,
                                            const char* additionalOptions,
                                            const char *targetName,
                                            const char* config,
@@ -105,13 +113,15 @@ protected:
                             const char* name, const char* path, cmTarget &t);
   virtual void WriteProjectDepends(std::ostream& fout,
                            const char* name, const char* path, cmTarget &t);
-  virtual void WriteProjectConfigurations(std::ostream& fout,
-                                          const char* name,
-                                          bool partOfDefaultBuild);
+  virtual void WriteProjectConfigurations(
+    std::ostream& fout, const char* name, cmTarget::TargetType type,
+    const std::set<std::string>& configsPartOfDefaultBuild,
+    const char* platformMapping = NULL);
+  virtual void WriteSLNGlobalSections(std::ostream& fout,
+                                      cmLocalGenerator* root);
   virtual void WriteSLNFooter(std::ostream& fout);
   virtual void WriteSLNHeader(std::ostream& fout);
   virtual std::string WriteUtilityDepend(cmTarget* target);
-  virtual void AddPlatformDefinitions(cmMakefile* mf);
 
   virtual void WriteTargetsToSolution(
     std::ostream& fout,
@@ -130,13 +140,14 @@ protected:
   virtual void WriteExternalProject(std::ostream& fout,
                                     const char* name,
                                     const char* path,
+                                    const char* typeGuid,
                                     const std::set<cmStdString>&
                                     dependencies);
 
   std::string ConvertToSolutionPath(const char* path);
 
-  bool IsPartOfDefaultBuild(const char* project,
-                            cmTarget* target);
+  std::set<std::string> IsPartOfDefaultBuild(const char* project,
+                                             cmTarget* target);
   std::vector<std::string> Configurations;
   std::map<cmStdString, cmStdString> GUIDMap;
 
@@ -147,6 +158,7 @@ protected:
   // Set during OutputSLNFile with the name of the current project.
   // There is one SLN file per project.
   std::string CurrentProject;
+  std::string PlatformName;
 };
 
 #define CMAKE_CHECK_BUILD_SYSTEM_TARGET "ZERO_CHECK"

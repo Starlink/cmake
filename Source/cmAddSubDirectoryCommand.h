@@ -27,7 +27,7 @@ public:
   /**
    * This is a virtual constructor for the command.
    */
-  virtual cmCommand* Clone() 
+  virtual cmCommand* Clone()
     {
     return new cmAddSubDirectoryCommand;
     }
@@ -51,7 +51,7 @@ public:
     {
     return "Add a subdirectory to the build.";
     }
-  
+
   /**
    * More documentation.
    */
@@ -61,7 +61,7 @@ public:
       "  add_subdirectory(source_dir [binary_dir] \n"
       "                   [EXCLUDE_FROM_ALL])\n"
       "Add a subdirectory to the build. The source_dir specifies the "
-      "directory in which the source CmakeLists.txt and code files are "
+      "directory in which the source CMakeLists.txt and code files are "
       "located. If it is a relative "
       "path it will be evaluated with respect to the current "
       "directory (the typical usage), but it may also be an absolute path. "
@@ -90,7 +90,7 @@ public:
       "project build system to satisfy the dependency."
       ;
     }
-  
+
   cmTypeMacro(cmAddSubDirectoryCommand, cmCommand);
 };
 

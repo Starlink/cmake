@@ -21,6 +21,7 @@
 //----------------------------------------------------------------------------
 cmGlobalVisualStudioGenerator::cmGlobalVisualStudioGenerator()
 {
+  this->AdditionalPlatformDefinition = NULL;
 }
 
 //----------------------------------------------------------------------------
@@ -31,9 +32,16 @@ cmGlobalVisualStudioGenerator::~cmGlobalVisualStudioGenerator()
 //----------------------------------------------------------------------------
 std::string cmGlobalVisualStudioGenerator::GetRegistryBase()
 {
+  return cmGlobalVisualStudioGenerator::GetRegistryBase(
+    this->GetIDEVersion());
+}
+
+//----------------------------------------------------------------------------
+std::string cmGlobalVisualStudioGenerator::GetRegistryBase(
+  const char* version)
+{
   std::string key = "HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\VisualStudio\\";
-  key += this->GetIDEVersion();
-  return key;
+  return key + version;
 }
 
 //----------------------------------------------------------------------------
@@ -53,7 +61,7 @@ void cmGlobalVisualStudioGenerator::Generate()
       {
       // Use no actual command lines so that the target itself is not
       // considered always out of date.
-      cmTarget* allBuild = 
+      cmTarget* allBuild =
         gen[0]->GetMakefile()->
         AddUtilityCommand("ALL_BUILD", true, no_working_dir,
                           no_depends, no_commands, false,
@@ -74,7 +82,6 @@ void cmGlobalVisualStudioGenerator::Generate()
 #endif
 
       // Now make all targets depend on the ALL_BUILD target
-      cmTargets targets;
       for(std::vector<cmLocalGenerator*>::iterator i = gen.begin();
           i != gen.end(); ++i)
         {
@@ -441,7 +448,7 @@ void cmGlobalVisualStudioGenerator::ComputeVSTargetDepends(cmTarget& target)
       }
     }
 
-  // Collext explicit util dependencies (add_dependencies).
+  // Collect explicit util dependencies (add_dependencies).
   std::set<cmTarget*> utilDepends;
   for(TargetDependSet::const_iterator di = depends.begin();
       di != depends.end(); ++di)
@@ -485,6 +492,15 @@ void cmGlobalVisualStudioGenerator::ComputeVSTargetDepends(cmTarget& target)
       // Use an intermediate utility target.
       vsTargetDepend.insert(this->GetUtilityDepend(dep));
       }
+    }
+}
+
+//----------------------------------------------------------------------------
+void cmGlobalVisualStudioGenerator::AddPlatformDefinitions(cmMakefile* mf)
+{
+  if(this->AdditionalPlatformDefinition)
+    {
+    mf->AddDefinition(this->AdditionalPlatformDefinition, "TRUE");
     }
 }
 

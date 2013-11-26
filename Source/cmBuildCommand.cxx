@@ -87,6 +87,14 @@ bool cmBuildCommand
 
   const char* makeprogram
     = this->Makefile->GetDefinition("CMAKE_MAKE_PROGRAM");
+  if(!makeprogram)
+    {
+    this->Makefile->IssueMessage(
+      cmake::FATAL_ERROR,
+      "build_command() requires CMAKE_MAKE_PROGRAM to be defined.  "
+      "Call project() or enable_language() first.");
+    return true;
+    }
 
   // If null/empty CONFIGURATION argument, GenerateBuildCommand uses 'Debug'
   // in the currently implemented multi-configuration global generators...
@@ -114,7 +122,7 @@ bool cmBuildCommand
   //
   std::string makecommand = this->Makefile->GetLocalGenerator()
     ->GetGlobalGenerator()->GenerateBuildCommand
-    (makeprogram, project_name, 0, target, configuration, true, false);
+    (makeprogram, project_name, 0, 0, target, configuration, true, false);
 
   this->Makefile->AddDefinition(variable, makecommand.c_str());
 
@@ -145,7 +153,7 @@ bool cmBuildCommand
 
   std::string makecommand = this->Makefile->GetLocalGenerator()
     ->GetGlobalGenerator()->GenerateBuildCommand
-    (makeprogram.c_str(), this->Makefile->GetProjectName(), 0,
+    (makeprogram.c_str(), this->Makefile->GetProjectName(), 0, 0,
      0, configType.c_str(), true, false);
 
   if(cacheValue)

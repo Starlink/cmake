@@ -70,19 +70,6 @@ bool cmCTestHandlerCommand
     this->CTest->SetConfigType(ctestConfigType);
     }
 
-  cmCTestLog(this->CTest, DEBUG, "Initialize handler" << std::endl;);
-  cmCTestGenericHandler* handler = this->InitializeHandler();
-  if ( !handler )
-    {
-    cmCTestLog(this->CTest, ERROR_MESSAGE,
-               "Cannot instantiate test handler " << this->GetName()
-               << std::endl);
-    return false;
-    }
-
-  handler->SetAppendXML(this->AppendXML);
-
-  handler->PopulateCustomVectors(this->Makefile);
   if ( this->Values[ct_BUILD] )
     {
     this->CTest->SetCTestConfiguration("BuildDirectory",
@@ -91,7 +78,7 @@ bool cmCTestHandlerCommand
     }
   else
     {
-    const char* bdir = 
+    const char* bdir =
       this->Makefile->GetSafeDefinition("CTEST_BINARY_DIRECTORY");
     if(bdir)
       {
@@ -119,9 +106,23 @@ bool cmCTestHandlerCommand
       cmSystemTools::CollapseFullPath(
         this->Makefile->GetSafeDefinition("CTEST_SOURCE_DIRECTORY")).c_str());
     }
+
+  cmCTestLog(this->CTest, DEBUG, "Initialize handler" << std::endl;);
+  cmCTestGenericHandler* handler = this->InitializeHandler();
+  if ( !handler )
+    {
+    cmCTestLog(this->CTest, ERROR_MESSAGE,
+               "Cannot instantiate test handler " << this->GetName()
+               << std::endl);
+    return false;
+    }
+
+  handler->SetAppendXML(this->AppendXML);
+
+  handler->PopulateCustomVectors(this->Makefile);
   if ( this->Values[ct_SUBMIT_INDEX] )
     {
-    if ( this->CTest->GetDartVersion() <= 1 )
+    if(!this->CTest->GetDropSiteCDash() && this->CTest->GetDartVersion() <= 1)
       {
       cmCTestLog(this->CTest, ERROR_MESSAGE,
         "Dart before version 2.0 does not support collecting submissions."

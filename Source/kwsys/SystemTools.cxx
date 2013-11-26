@@ -25,6 +25,8 @@
 #include KWSYS_HEADER(ios/fstream)
 #include KWSYS_HEADER(ios/sstream)
 
+#include KWSYS_HEADER(stl/set)
+
 // Work-around CMake dependency scanning limitation.  This must
 // duplicate the above list of headers.
 #if 0
@@ -76,6 +78,10 @@
 #elif defined (__CYGWIN__)
 # include <windows.h>
 # undef _WIN32
+#endif
+
+#if !KWSYS_CXX_HAS_ENVIRON_IN_STDLIB_H
+extern char **environ;
 #endif
 
 #ifdef __CYGWIN__
@@ -151,7 +157,7 @@ public:
 #include <os/storage/Path.h>
 #endif
 
-#if defined(__BEOS__) && !defined(__ZETA__) && !defined(__HAIKU__)
+#if defined(__BEOS__) && !defined(__ZETA__)
 #include <be/kernel/OS.h>
 #include <be/storage/Path.h>
 
@@ -190,18 +196,16 @@ inline int Rmdir(const char* dir)
 }
 inline const char* Getcwd(char* buf, unsigned int len)
 {
-  const char* ret = _getcwd(buf, len);
-  if(!ret)
+  if(const char* ret = _getcwd(buf, len))
     {
-    fprintf(stderr, "No current working directory.\n");
-    abort();
+    // make sure the drive letter is capital
+    if(strlen(buf) > 1 && buf[1] == ':')
+      {
+      buf[0] = toupper(buf[0]);
+      }
+    return ret;
     }
-  // make sure the drive letter is capital
-  if(strlen(buf) > 1 && buf[1] == ':')
-    {
-    buf[0] = toupper(buf[0]);
-    }
-  return ret;
+  return 0;
 }
 inline int Chdir(const char* dir)
 {
@@ -239,13 +243,7 @@ inline int Rmdir(const char* dir)
 }
 inline const char* Getcwd(char* buf, unsigned int len)
 {
-  const char* ret = getcwd(buf, len);
-  if(!ret)
-    {
-    fprintf(stderr, "No current working directory\n");
-    abort();
-    }
-  return ret;
+  return getcwd(buf, len);
 }
 
 inline int Chdir(const char* dir)
@@ -371,37 +369,223 @@ bool SystemTools::GetEnv(const char* key, kwsys_stl::string& result)
     }
 }
 
-#ifdef __INTEL_COMPILER
-#pragma warning disable 444
+//----------------------------------------------------------------------------
+
+#if defined(__CYGWIN__) || defined(__GLIBC__)
+# define KWSYS_PUTENV_NAME  /* putenv("A")  removes A.  */
+#elif defined(_WIN32)
+# define KWSYS_PUTENV_EMPTY /* putenv("A=") removes A. */
 #endif
 
-class kwsysDeletingCharVector : public kwsys_stl::vector<char*>
+#if KWSYS_CXX_HAS_UNSETENV
+/* unsetenv("A") removes A from the environment.
+   On older platforms it returns void instead of int.  */
+static int kwsysUnPutEnv(const char* env)
 {
-public:
-  ~kwsysDeletingCharVector();
+  if(const char* eq = strchr(env, '='))
+    {
+    std::string name(env, eq-env);
+    unsetenv(name.c_str());
+    }
+  else
+    {
+    unsetenv(env);
+    }
+  return 0;
+}
+
+#elif defined(KWSYS_PUTENV_EMPTY) || defined(KWSYS_PUTENV_NAME)
+/* putenv("A=") or putenv("A") removes A from the environment.  */
+static int kwsysUnPutEnv(const char* env)
+{
+  int err = 0;
+  const char* eq = strchr(env, '=');
+  size_t const len = eq? (size_t)(eq-env) : strlen(env);
+# ifdef KWSYS_PUTENV_EMPTY
+  size_t const sz = len + 2;
+# else
+  size_t const sz = len + 1;
+# endif
+  char local_buf[256];
+  char* buf = sz > sizeof(local_buf) ? (char*)malloc(sz) : local_buf;
+  if(!buf)
+    {
+    return -1;
+    }
+  strncpy(buf, env, len);
+# ifdef KWSYS_PUTENV_EMPTY
+  buf[len] = '=';
+  buf[len+1] = 0;
+  if(putenv(buf) < 0)
+    {
+    err = errno;
+    }
+# else
+  buf[len] = 0;
+  if(putenv(buf) < 0 && errno != EINVAL)
+    {
+    err = errno;
+    }
+# endif
+  if(buf != local_buf)
+    {
+    free(buf);
+    }
+  if(err)
+    {
+    errno = err;
+    return -1;
+    }
+  return 0;
+}
+
+#else
+/* Manipulate the "environ" global directly.  */
+static int kwsysUnPutEnv(const char* env)
+{
+  const char* eq = strchr(env, '=');
+  size_t const len = eq? (size_t)(eq-env) : strlen(env);
+  int in = 0;
+  int out = 0;
+  while(environ[in])
+    {
+    if(strlen(environ[in]) > len &&
+       environ[in][len] == '=' &&
+       strncmp(env, environ[in], len) == 0)
+      {
+      ++in;
+      }
+    else
+      {
+      environ[out++] = environ[in++];
+      }
+    }
+  while(out < in)
+    {
+    environ[out++] = 0;
+    }
+  return 0;
+}
+#endif
+
+//----------------------------------------------------------------------------
+
+#if KWSYS_CXX_HAS_SETENV
+
+/* setenv("A", "B", 1) will set A=B in the environment and makes its
+   own copies of the strings.  */
+bool SystemTools::PutEnv(const char* env)
+{
+  if(const char* eq = strchr(env, '='))
+    {
+    std::string name(env, eq-env);
+    return setenv(name.c_str(), eq+1, 1) == 0;
+    }
+  else
+    {
+    return kwsysUnPutEnv(env) == 0;
+    }
+}
+
+bool SystemTools::UnPutEnv(const char* env)
+{
+  return kwsysUnPutEnv(env) == 0;
+}
+
+#else
+
+/* putenv("A=B") will set A=B in the environment.  Most putenv implementations
+   put their argument directly in the environment.  They never free the memory
+   on program exit.  Keep an active set of pointers to memory we allocate and
+   pass to putenv, one per environment key.  At program exit remove any
+   environment values that may still reference memory we allocated.  Then free
+   the memory.  This will not affect any environment values we never set.  */
+
+# ifdef __INTEL_COMPILER
+#  pragma warning disable 444 /* base has non-virtual destructor */
+# endif
+
+/* Order by environment key only (VAR from VAR=VALUE).  */
+struct kwsysEnvCompare
+{
+  bool operator() (const char* l, const char* r) const
+    {
+    const char* leq = strchr(l, '=');
+    const char* req = strchr(r, '=');
+    size_t llen = leq? (leq-l) : strlen(l);
+    size_t rlen = req? (req-r) : strlen(r);
+    if(llen == rlen)
+      {
+      return strncmp(l,r,llen) < 0;
+      }
+    else
+      {
+      return strcmp(l,r) < 0;
+      }
+    }
 };
 
-kwsysDeletingCharVector::~kwsysDeletingCharVector()
+class kwsysEnv: public kwsys_stl::set<const char*, kwsysEnvCompare>
 {
-#ifndef KWSYS_DO_NOT_CLEAN_PUTENV
-  for(kwsys_stl::vector<char*>::iterator i = this->begin();
-      i != this->end(); ++i)
+  class Free
+  {
+    const char* Env;
+  public:
+    Free(const char* env): Env(env) {}
+    ~Free() { free(const_cast<char*>(this->Env)); }
+  };
+public:
+  typedef kwsys_stl::set<const char*, kwsysEnvCompare> derived;
+  ~kwsysEnv()
     {
-    delete []*i;
+    for(derived::iterator i = this->begin(); i != this->end(); ++i)
+      {
+      kwsysUnPutEnv(*i);
+      free(const_cast<char*>(*i));
+      }
     }
-#endif
-}
-bool SystemTools::PutEnv(const char* value)
+  const char* Release(const char* env)
+    {
+    const char* old = 0;
+    derived::iterator i = this->find(env);
+    if(i != this->end())
+      {
+      old = *i;
+      this->erase(i);
+      }
+    return old;
+    }
+  bool Put(const char* env)
+    {
+    Free oldEnv(this->Release(env));
+    static_cast<void>(oldEnv);
+    char* newEnv = strdup(env);
+    this->insert(newEnv);
+    return putenv(newEnv) == 0;
+    }
+  bool UnPut(const char* env)
+    {
+    Free oldEnv(this->Release(env));
+    static_cast<void>(oldEnv);
+    return kwsysUnPutEnv(env) == 0;
+    }
+};
+
+static kwsysEnv kwsysEnvInstance;
+
+bool SystemTools::PutEnv(const char* env)
 {
-  static kwsysDeletingCharVector localEnvironment;
-  char* envVar = new char[strlen(value)+1];
-  strcpy(envVar, value);
-  int ret = putenv(envVar);
-  // save the pointer in the static vector so that it can
-  // be deleted on exit
-  localEnvironment.push_back(envVar);
-  return ret == 0;
+  return kwsysEnvInstance.Put(env);
 }
+
+bool SystemTools::UnPutEnv(const char* env)
+{
+  return kwsysEnvInstance.UnPut(env);
+}
+
+#endif
+
+//----------------------------------------------------------------------------
 
 const char* SystemTools::GetExecutableExtension()
 {
@@ -421,7 +605,7 @@ bool SystemTools::MakeDirectory(const char* path)
     }
   if(SystemTools::FileExists(path))
     {
-    return true;
+    return SystemTools::FileIsDirectory(path);
     }
   kwsys_stl::string dir = path;
   if(dir.size() == 0)
@@ -430,11 +614,7 @@ bool SystemTools::MakeDirectory(const char* path)
     }
   SystemTools::ConvertToUnixSlashes(dir);
 
-  kwsys_stl::string::size_type pos = dir.find(':');
-  if(pos == kwsys_stl::string::npos)
-    {
-    pos = 0;
-    }
+  kwsys_stl::string::size_type pos = 0;
   kwsys_stl::string topdir;
   while((pos = dir.find('/', pos)) != kwsys_stl::string::npos)
     {
@@ -442,14 +622,7 @@ bool SystemTools::MakeDirectory(const char* path)
     Mkdir(topdir.c_str());
     pos++;
     }
-  if(dir[dir.size()-1] == '/')
-    {
-    topdir = dir.substr(0, dir.size());
-    }
-  else
-    {
-    topdir = dir;
-    }
+  topdir = dir;
   if(Mkdir(topdir.c_str()) != 0)
     {
     // There is a bug in the Borland Run time library which makes MKDIR
@@ -522,6 +695,52 @@ void SystemTools::ReplaceString(kwsys_stl::string& source,
 #endif
 
 #if defined(_WIN32) && !defined(__CYGWIN__)
+static bool SystemToolsParseRegistryKey(const char* key,
+                                        HKEY& primaryKey,
+                                        kwsys_stl::string& second,
+                                        kwsys_stl::string& valuename)
+{
+  kwsys_stl::string primary = key;
+
+  size_t start = primary.find("\\");
+  if (start == kwsys_stl::string::npos)
+    {
+    return false;
+    }
+
+  size_t valuenamepos = primary.find(";");
+  if (valuenamepos != kwsys_stl::string::npos)
+    {
+    valuename = primary.substr(valuenamepos+1);
+    }
+
+  second = primary.substr(start+1, valuenamepos-start-1);
+  primary = primary.substr(0, start);
+
+  if (primary == "HKEY_CURRENT_USER")
+    {
+    primaryKey = HKEY_CURRENT_USER;
+    }
+  if (primary == "HKEY_CURRENT_CONFIG")
+    {
+    primaryKey = HKEY_CURRENT_CONFIG;
+    }
+  if (primary == "HKEY_CLASSES_ROOT")
+    {
+    primaryKey = HKEY_CLASSES_ROOT;
+    }
+  if (primary == "HKEY_LOCAL_MACHINE")
+    {
+    primaryKey = HKEY_LOCAL_MACHINE;
+    }
+  if (primary == "HKEY_USERS")
+    {
+    primaryKey = HKEY_USERS;
+    }
+
+  return true;
+}
+
 static DWORD SystemToolsMakeRegistryMode(DWORD mode,
                                          SystemTools::KeyWOW64 view)
 {
@@ -545,6 +764,55 @@ static DWORD SystemToolsMakeRegistryMode(DWORD mode,
 }
 #endif
 
+#if defined(_WIN32) && !defined(__CYGWIN__)
+bool
+SystemTools::GetRegistrySubKeys(const char *key,
+                                kwsys_stl::vector<kwsys_stl::string>& subkeys,
+                                KeyWOW64 view)
+{
+  HKEY primaryKey = HKEY_CURRENT_USER;
+  kwsys_stl::string second;
+  kwsys_stl::string valuename;
+  if (!SystemToolsParseRegistryKey(key, primaryKey, second, valuename))
+    {
+    return false;
+    }
+
+  HKEY hKey;
+  if(RegOpenKeyEx(primaryKey,
+                  second.c_str(),
+                  0,
+                  SystemToolsMakeRegistryMode(KEY_READ, view),
+                  &hKey) != ERROR_SUCCESS)
+    {
+    return false;
+    }
+  else
+    {
+    char name[1024];
+    DWORD dwNameSize = sizeof(name)/sizeof(name[0]);
+
+    DWORD i = 0;
+    while (RegEnumKey(hKey, i, name, dwNameSize) == ERROR_SUCCESS)
+      {
+      subkeys.push_back(name);
+      ++i;
+      }
+
+    RegCloseKey(hKey);
+    }
+
+  return true;
+}
+#else
+bool SystemTools::GetRegistrySubKeys(const char *,
+                                     kwsys_stl::vector<kwsys_stl::string>&,
+                                     KeyWOW64)
+{
+  return false;
+}
+#endif
+
 // Read a registry value.
 // Example :
 //      HKEY_LOCAL_MACHINE\SOFTWARE\Python\PythonCore\2.1\InstallPath
@@ -557,45 +825,12 @@ bool SystemTools::ReadRegistryValue(const char *key, kwsys_stl::string &value,
                                     KeyWOW64 view)
 {
   bool valueset = false;
-  kwsys_stl::string primary = key;
+  HKEY primaryKey = HKEY_CURRENT_USER;
   kwsys_stl::string second;
   kwsys_stl::string valuename;
-
-  size_t start = primary.find("\\");
-  if (start == kwsys_stl::string::npos)
+  if (!SystemToolsParseRegistryKey(key, primaryKey, second, valuename))
     {
     return false;
-    }
-
-  size_t valuenamepos = primary.find(";");
-  if (valuenamepos != kwsys_stl::string::npos)
-    {
-    valuename = primary.substr(valuenamepos+1);
-    }
-
-  second = primary.substr(start+1, valuenamepos-start-1);
-  primary = primary.substr(0, start);
-
-  HKEY primaryKey = HKEY_CURRENT_USER;
-  if (primary == "HKEY_CURRENT_USER")
-    {
-    primaryKey = HKEY_CURRENT_USER;
-    }
-  if (primary == "HKEY_CURRENT_CONFIG")
-    {
-    primaryKey = HKEY_CURRENT_CONFIG;
-    }
-  if (primary == "HKEY_CLASSES_ROOT")
-    {
-    primaryKey = HKEY_CLASSES_ROOT;
-    }
-  if (primary == "HKEY_LOCAL_MACHINE")
-    {
-    primaryKey = HKEY_LOCAL_MACHINE;
-    }
-  if (primary == "HKEY_USERS")
-    {
-    primaryKey = HKEY_USERS;
     }
 
   HKEY hKey;
@@ -661,45 +896,12 @@ bool SystemTools::ReadRegistryValue(const char *, kwsys_stl::string &,
 bool SystemTools::WriteRegistryValue(const char *key, const char *value,
                                      KeyWOW64 view)
 {
-  kwsys_stl::string primary = key;
+  HKEY primaryKey = HKEY_CURRENT_USER;
   kwsys_stl::string second;
   kwsys_stl::string valuename;
-
-  size_t start = primary.find("\\");
-  if (start == kwsys_stl::string::npos)
+  if (!SystemToolsParseRegistryKey(key, primaryKey, second, valuename))
     {
     return false;
-    }
-
-  size_t valuenamepos = primary.find(";");
-  if (valuenamepos != kwsys_stl::string::npos)
-    {
-    valuename = primary.substr(valuenamepos+1);
-    }
-
-  second = primary.substr(start+1, valuenamepos-start-1);
-  primary = primary.substr(0, start);
-
-  HKEY primaryKey = HKEY_CURRENT_USER;
-  if (primary == "HKEY_CURRENT_USER")
-    {
-    primaryKey = HKEY_CURRENT_USER;
-    }
-  if (primary == "HKEY_CURRENT_CONFIG")
-    {
-    primaryKey = HKEY_CURRENT_CONFIG;
-    }
-  if (primary == "HKEY_CLASSES_ROOT")
-    {
-    primaryKey = HKEY_CLASSES_ROOT;
-    }
-  if (primary == "HKEY_LOCAL_MACHINE")
-    {
-    primaryKey = HKEY_LOCAL_MACHINE;
-    }
-  if (primary == "HKEY_USERS")
-    {
-    primaryKey = HKEY_USERS;
     }
 
   HKEY hKey;
@@ -746,45 +948,12 @@ bool SystemTools::WriteRegistryValue(const char *, const char *, KeyWOW64)
 #if defined(_WIN32) && !defined(__CYGWIN__)
 bool SystemTools::DeleteRegistryValue(const char *key, KeyWOW64 view)
 {
-  kwsys_stl::string primary = key;
+  HKEY primaryKey = HKEY_CURRENT_USER;
   kwsys_stl::string second;
   kwsys_stl::string valuename;
-
-  size_t start = primary.find("\\");
-  if (start == kwsys_stl::string::npos)
+  if (!SystemToolsParseRegistryKey(key, primaryKey, second, valuename))
     {
     return false;
-    }
-
-  size_t valuenamepos = primary.find(";");
-  if (valuenamepos != kwsys_stl::string::npos)
-    {
-    valuename = primary.substr(valuenamepos+1);
-    }
-
-  second = primary.substr(start+1, valuenamepos-start-1);
-  primary = primary.substr(0, start);
-
-  HKEY primaryKey = HKEY_CURRENT_USER;
-  if (primary == "HKEY_CURRENT_USER")
-    {
-    primaryKey = HKEY_CURRENT_USER;
-    }
-  if (primary == "HKEY_CURRENT_CONFIG")
-    {
-    primaryKey = HKEY_CURRENT_CONFIG;
-    }
-  if (primary == "HKEY_CLASSES_ROOT")
-    {
-    primaryKey = HKEY_CLASSES_ROOT;
-    }
-  if (primary == "HKEY_LOCAL_MACHINE")
-    {
-    primaryKey = HKEY_LOCAL_MACHINE;
-    }
-  if (primary == "HKEY_USERS")
-    {
-    primaryKey = HKEY_USERS;
     }
 
   HKEY hKey;
@@ -951,22 +1120,58 @@ bool SystemTools::Touch(const char* filename, bool create)
       }
     return false;
     }
-#ifdef _MSC_VER
-#define utime _utime
-#define utimbuf _utimbuf
+#if defined(_WIN32) && !defined(__CYGWIN__)
+  HANDLE h = CreateFile(filename, FILE_WRITE_ATTRIBUTES,
+                        FILE_SHARE_WRITE, 0, OPEN_EXISTING,
+                        FILE_FLAG_BACKUP_SEMANTICS, 0);
+  if(!h)
+    {
+    return false;
+    }
+  FILETIME mtime;
+  GetSystemTimeAsFileTime(&mtime);
+  if(!SetFileTime(h, 0, 0, &mtime))
+    {
+    CloseHandle(h);
+    return false;
+    }
+  CloseHandle(h);
+#elif KWSYS_CXX_HAS_UTIMENSAT
+  struct timespec times[2] = {{0,UTIME_OMIT},{0,UTIME_NOW}};
+  if(utimensat(AT_FDCWD, filename, times, 0) < 0)
+    {
+    return false;
+    }
+#else
+  struct stat st;
+  if(stat(filename, &st) < 0)
+    {
+    return false;
+    }
+  struct timeval mtime;
+  gettimeofday(&mtime, 0);
+# if KWSYS_CXX_HAS_UTIMES
+  struct timeval times[2] =
+    {
+#  if KWSYS_STAT_HAS_ST_MTIM
+      {st.st_atim.tv_sec, st.st_atim.tv_nsec/1000}, /* tv_sec, tv_usec */
+#  else
+      {st.st_atime, 0},
+#  endif
+      mtime
+    };
+  if(utimes(filename, times) < 0)
+    {
+    return false;
+    }
+# else
+  struct utimbuf times = {st.st_atime, mtime.tv_sec};
+  if(utime(filename, &times) < 0)
+    {
+    return false;
+    }
+# endif
 #endif
-  struct stat fromStat;
-  if(stat(filename, &fromStat) < 0)
-    {
-    return false;
-    }
-  struct utimbuf buf;
-  buf.actime = fromStat.st_atime;
-  buf.modtime = static_cast<time_t>(SystemTools::GetTime());
-  if(utime(filename, &buf) < 0)
-    {
-    return false;
-    }
   return true;
 }
 
@@ -1473,7 +1678,7 @@ kwsys_stl::string SystemTools::EscapeChars(
   kwsys_stl::string n;
   if (str)
     {
-    if (!chars_to_escape | !*chars_to_escape)
+    if (!chars_to_escape || !*chars_to_escape)
       {
       n.append(str);
       }
@@ -2562,15 +2767,30 @@ kwsys_stl::string SystemTools::GetRealPath(const char* path)
 
 bool SystemTools::FileIsDirectory(const char* name)
 {
-  // Remove any trailing slash from the name.
-  char buffer[KWSYS_SYSTEMTOOLS_MAXPATH];
-  size_t last = strlen(name)-1;
-  if(last > 0 && (name[last] == '/' || name[last] == '\\')
-    && strcmp(name, "/") !=0)
+  size_t length = strlen(name);
+  if (length == 0)
     {
-    memcpy(buffer, name, last);
-    buffer[last] = 0;
-    name = buffer;
+    return false;
+    }
+
+  // Remove any trailing slash from the name except in a root component.
+  char local_buffer[KWSYS_SYSTEMTOOLS_MAXPATH];
+  std::string string_buffer;
+  size_t last = length-1;
+  if(last > 0 && (name[last] == '/' || name[last] == '\\')
+    && strcmp(name, "/") !=0 && name[last-1] != ':')
+    {
+    if(last < sizeof(local_buffer))
+      {
+      memcpy(local_buffer, name, last);
+      local_buffer[last] = 0;
+      name = local_buffer;
+      }
+    else
+      {
+      string_buffer.append(name, last);
+      name = string_buffer.c_str();
+      }
     }
 
   // Now check the file node type.
@@ -2850,7 +3070,7 @@ void SystemTools::CheckTranslationPath(kwsys_stl::string & path)
   path.erase(path.end()-1, path.end());
 }
 
-void
+static void
 SystemToolsAppendComponents(
   kwsys_stl::vector<kwsys_stl::string>& out_components,
   kwsys_stl::vector<kwsys_stl::string>::const_iterator first,
@@ -2861,7 +3081,7 @@ SystemToolsAppendComponents(
     {
     if(*i == "..")
       {
-      if(out_components.begin() != out_components.end())
+      if(out_components.size() > 1)
         {
         out_components.erase(out_components.end()-1, out_components.end());
         }
@@ -2902,7 +3122,7 @@ kwsys_stl::string SystemTools::CollapseFullPath(const char* in_path,
         }
       else
         {
-        // ??
+        base_components.push_back("");
         }
       }
 
@@ -3823,7 +4043,7 @@ void SystemTools::SplitProgramFromArgs(const char* path,
       args = dir.substr(spacePos, dir.size()-spacePos);
       return;
       }
-    // Now try and find the the program in the path
+    // Now try and find the program in the path
     findProg = SystemTools::FindProgram(tryProg.c_str(), e);
     if(findProg.size())
       {
@@ -3856,7 +4076,7 @@ kwsys_stl::string SystemTools::GetCurrentDateTime(const char* format)
   return kwsys_stl::string(buf);
 }
 
-kwsys_stl::string SystemTools::MakeCindentifier(const char* s)
+kwsys_stl::string SystemTools::MakeCidentifier(const char* s)
 {
   kwsys_stl::string str(s);
   if (str.find_first_of("0123456789") == 0)
@@ -4037,17 +4257,13 @@ bool SystemTools::IsSubDirectory(const char* cSubdir, const char* cDir)
     }
   kwsys_stl::string subdir = cSubdir;
   kwsys_stl::string dir = cDir;
+  SystemTools::ConvertToUnixSlashes(subdir);
   SystemTools::ConvertToUnixSlashes(dir);
-  kwsys_stl::string path = subdir;
-  do
+  if(subdir.size() > dir.size() && subdir[dir.size()] == '/')
     {
-    path = SystemTools::GetParentDirectory(path.c_str());
-    if(SystemTools::ComparePath(dir.c_str(), path.c_str()))
-      {
-      return true;
-      }
+    std::string s = subdir.substr(0, dir.size());
+    return SystemTools::ComparePath(s.c_str(), dir.c_str());
     }
-  while ( path.size() > dir.size() );
   return false;
 }
 
@@ -4517,7 +4733,7 @@ bool SystemTools::ParseURL( const kwsys_stl::string& URL,
 // ----------------------------------------------------------------------
 // These must NOT be initialized.  Default initialization to zero is
 // necessary.
-unsigned int SystemToolsManagerCount;
+static unsigned int SystemToolsManagerCount;
 SystemToolsTranslationMap *SystemTools::TranslationMap;
 SystemToolsTranslationMap *SystemTools::LongPathMap;
 #ifdef __CYGWIN__
@@ -4649,7 +4865,8 @@ static int SystemToolsDebugReport(int, char* message, int*)
 
 void SystemTools::EnableMSVCDebugHook()
 {
-  if (getenv("DART_TEST_FROM_DART"))
+  if (getenv("DART_TEST_FROM_DART") ||
+      getenv("DASHBOARD_TEST_FROM_CTEST"))
     {
     _CrtSetReportHook(SystemToolsDebugReport);
     }

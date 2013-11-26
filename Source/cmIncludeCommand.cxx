@@ -61,13 +61,20 @@ bool cmIncludeCommand
       noPolicyScope = true;
       }
       else if(i > 1)  // compat.: in previous cmake versions the second
-                      // parameter was ignore if it wasn't "OPTIONAL"
+                      // parameter was ignored if it wasn't "OPTIONAL"
         {
         std::string errorText = "called with invalid argument: ";
         errorText += args[i];
         this->SetError(errorText.c_str());
         return false;
         }
+    }
+
+  if(fname.empty())
+    {
+    this->Makefile->IssueMessage(cmake::AUTHOR_WARNING,
+                                 "include() given empty file name (ignored).");
+    return true;
     }
 
   if(!cmSystemTools::FileIsFullPath(fname.c_str()))

@@ -24,6 +24,16 @@ cmMakefileUtilityTargetGenerator
   cmMakefileTargetGenerator(target)
 {
   this->CustomCommandDriver = OnUtility;
+  this->OSXBundleGenerator = new cmOSXBundleGenerator(this->Target,
+                                                      this->ConfigName);
+  this->OSXBundleGenerator->SetMacContentFolders(&this->MacContentFolders);
+}
+
+//----------------------------------------------------------------------------
+cmMakefileUtilityTargetGenerator
+::~cmMakefileUtilityTargetGenerator()
+{
+  delete this->OSXBundleGenerator;
 }
 
 //----------------------------------------------------------------------------

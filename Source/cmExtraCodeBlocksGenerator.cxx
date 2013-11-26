@@ -60,6 +60,7 @@ cmExtraCodeBlocksGenerator::cmExtraCodeBlocksGenerator()
 // disable until somebody actually tests it:
 //  this->SupportedGlobalGenerators.push_back("MSYS Makefiles");
 #endif
+  this->SupportedGlobalGenerators.push_back("Ninja");
   this->SupportedGlobalGenerators.push_back("Unix Makefiles");
 }
 
@@ -383,6 +384,7 @@ void cmExtraCodeBlocksGenerator
         case cmTarget::STATIC_LIBRARY:
         case cmTarget::SHARED_LIBRARY:
         case cmTarget::MODULE_LIBRARY:
+        case cmTarget::OBJECT_LIBRARY:
           {
           this->AppendTarget(fout, ti->first.c_str(), &ti->second,
                              make.c_str(), makefile, compiler.c_str());
@@ -420,6 +422,7 @@ void cmExtraCodeBlocksGenerator
         case cmTarget::STATIC_LIBRARY:
         case cmTarget::SHARED_LIBRARY:
         case cmTarget::MODULE_LIBRARY:
+        case cmTarget::OBJECT_LIBRARY:
         case cmTarget::UTILITY: // can have sources since 2.6.3
           {
           const std::vector<cmSourceFile*>&sources=ti->second.GetSourceFiles();
@@ -532,6 +535,31 @@ void cmExtraCodeBlocksGenerator
 }
 
 
+// Write a dummy file for OBJECT libraries, so C::B can reference some file
+std::string cmExtraCodeBlocksGenerator::CreateDummyTargetFile(
+                                        cmMakefile* mf, cmTarget* target) const
+{
+  // this file doesn't seem to be used by C::B in custom makefile mode,
+  // but we generate a unique file for each OBJECT library so in case
+  // C::B uses it in some way, the targets don't interfere with each other.
+  std::string filename = mf->GetCurrentOutputDirectory();
+  filename += "/";
+  filename += mf->GetLocalGenerator()->GetTargetDirectory(*target);
+  filename += "/";
+  filename += target->GetName();
+  filename += ".objlib";
+  cmGeneratedFileStream fout(filename.c_str());
+  if(fout)
+    {
+    fout << "# This is a dummy file for the OBJECT library "
+         << target->GetName()
+         << " for the CMake CodeBlocks project generator.\n"
+         << "# Don't edit, this file will be overwritten.\n";
+    }
+  return filename;
+}
+
+
 // Generate the xml code for one target.
 void cmExtraCodeBlocksGenerator::AppendTarget(cmGeneratedFileStream& fout,
                                               const char* targetName,
@@ -570,7 +598,18 @@ void cmExtraCodeBlocksGenerator::AppendTarget(cmGeneratedFileStream& fout,
       }
 
     const char* buildType = makefile->GetDefinition("CMAKE_BUILD_TYPE");
-    fout<<"         <Option output=\"" << target->GetLocation(buildType)
+    std::string location;
+    if ( target->GetType()==cmTarget::OBJECT_LIBRARY)
+      {
+      location = this->CreateDummyTargetFile(const_cast<cmMakefile*>(makefile),
+                                             target);
+      }
+    else
+      {
+      location = target->GetLocation(buildType);
+      }
+
+    fout<<"         <Option output=\"" << location
                             << "\" prefix_auto=\"0\" extension_auto=\"0\" />\n"
           "         <Option working_dir=\"" << workingDir << "\" />\n"
           "         <Option object_output=\"./\" />\n"
@@ -578,73 +617,72 @@ void cmExtraCodeBlocksGenerator::AppendTarget(cmGeneratedFileStream& fout,
           "         <Option compiler=\"" << compiler << "\" />\n"
           "         <Compiler>\n";
 
+    cmGeneratorTarget *gtgt = this->GlobalGenerator
+                                  ->GetGeneratorTarget(target);
+
     // the compilerdefines for this target
-    const char* cdefs = target->GetMakefile()->GetProperty(
-                                                        "COMPILE_DEFINITIONS");
-    if(cdefs)
+    std::vector<std::string> cdefs;
+    target->GetCompileDefinitions(cdefs, buildType);
+
+    // Expand the list.
+    for(std::vector<std::string>::const_iterator di = cdefs.begin();
+        di != cdefs.end(); ++di)
       {
-      // Expand the list.
-      std::vector<std::string> defs;
-      cmSystemTools::ExpandListArgument(cdefs, defs);
-      for(std::vector<std::string>::const_iterator di = defs.begin();
-          di != defs.end(); ++di)
-        {
-        cmXMLSafe safedef(di->c_str());
-        fout <<"            <Add option=\"-D" << safedef.str() << "\" />\n";
-        }
+      cmXMLSafe safedef(di->c_str());
+      fout <<"            <Add option=\"-D" << safedef.str() << "\" />\n";
       }
 
-      // the include directories for this target
-      std::set<std::string> uniqIncludeDirs;
+    // the include directories for this target
+    std::set<std::string> uniqIncludeDirs;
 
-      std::vector<std::string> includes;
-      target->GetMakefile()->GetLocalGenerator()->
-        GetIncludeDirectories(includes, target);
-      for(std::vector<std::string>::const_iterator dirIt=includes.begin();
-          dirIt != includes.end();
+    std::vector<std::string> includes;
+    target->GetMakefile()->GetLocalGenerator()->
+      GetIncludeDirectories(includes, gtgt, "C", buildType);
+    for(std::vector<std::string>::const_iterator dirIt=includes.begin();
+        dirIt != includes.end();
+        ++dirIt)
+      {
+      uniqIncludeDirs.insert(*dirIt);
+      }
+
+    std::string systemIncludeDirs = makefile->GetSafeDefinition(
+                              "CMAKE_EXTRA_GENERATOR_C_SYSTEM_INCLUDE_DIRS");
+    if (!systemIncludeDirs.empty())
+      {
+      std::vector<std::string> dirs;
+      cmSystemTools::ExpandListArgument(systemIncludeDirs.c_str(), dirs);
+      for(std::vector<std::string>::const_iterator dirIt=dirs.begin();
+          dirIt != dirs.end();
           ++dirIt)
         {
         uniqIncludeDirs.insert(*dirIt);
         }
+      }
 
-      std::string systemIncludeDirs = makefile->GetSafeDefinition(
-                                "CMAKE_EXTRA_GENERATOR_C_SYSTEM_INCLUDE_DIRS");
-      if (!systemIncludeDirs.empty())
-        {
-        std::vector<std::string> dirs;
-        cmSystemTools::ExpandListArgument(systemIncludeDirs.c_str(), dirs);
-        for(std::vector<std::string>::const_iterator dirIt=dirs.begin();
-            dirIt != dirs.end();
-            ++dirIt)
-          {
-          uniqIncludeDirs.insert(*dirIt);
-          }
-        }
-
-      systemIncludeDirs = makefile->GetSafeDefinition(
-                              "CMAKE_EXTRA_GENERATOR_CXX_SYSTEM_INCLUDE_DIRS");
-      if (!systemIncludeDirs.empty())
-        {
-        std::vector<std::string> dirs;
-        cmSystemTools::ExpandListArgument(systemIncludeDirs.c_str(), dirs);
-        for(std::vector<std::string>::const_iterator dirIt=dirs.begin();
-            dirIt != dirs.end();
-            ++dirIt)
-          {
-          uniqIncludeDirs.insert(*dirIt);
-          }
-        }
-
-      for(std::set<std::string>::const_iterator dirIt=uniqIncludeDirs.begin();
-          dirIt != uniqIncludeDirs.end();
+    systemIncludeDirs = makefile->GetSafeDefinition(
+                            "CMAKE_EXTRA_GENERATOR_CXX_SYSTEM_INCLUDE_DIRS");
+    if (!systemIncludeDirs.empty())
+      {
+      std::vector<std::string> dirs;
+      cmSystemTools::ExpandListArgument(systemIncludeDirs.c_str(), dirs);
+      for(std::vector<std::string>::const_iterator dirIt=dirs.begin();
+          dirIt != dirs.end();
           ++dirIt)
         {
-        fout <<"            <Add directory=\"" << dirIt->c_str() << "\" />\n";
+        uniqIncludeDirs.insert(*dirIt);
         }
-
-      fout<<"         </Compiler>\n";
       }
-    else // e.g. all and the GLOBAL and UTILITY targets
+
+    for(std::set<std::string>::const_iterator dirIt=uniqIncludeDirs.begin();
+        dirIt != uniqIncludeDirs.end();
+        ++dirIt)
+      {
+      fout <<"            <Add directory=\"" << dirIt->c_str() << "\" />\n";
+      }
+
+    fout<<"         </Compiler>\n";
+    }
+  else // e.g. all and the GLOBAL and UTILITY targets
     {
     fout<<"         <Option working_dir=\""
                             << makefile->GetStartOutputDirectory() << "\" />\n"
@@ -728,7 +766,8 @@ int cmExtraCodeBlocksGenerator::GetCBTargetType(cmTarget* target)
       return 1;
       }
     }
-  else if ( target->GetType()==cmTarget::STATIC_LIBRARY)
+  else if (( target->GetType()==cmTarget::STATIC_LIBRARY)
+        || (target->GetType()==cmTarget::OBJECT_LIBRARY))
     {
     return 2;
     }
@@ -764,6 +803,11 @@ std::string cmExtraCodeBlocksGenerator::BuildMakeCommand(
     command += makefileName;
     command += "&quot; ";
     command += " VERBOSE=1 ";
+    command += target;
+    }
+  else if (strcmp(this->GlobalGenerator->GetName(), "Ninja")==0)
+    {
+    command += " -v ";
     command += target;
     }
   else
