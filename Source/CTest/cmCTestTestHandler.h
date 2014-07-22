@@ -44,6 +44,12 @@ public:
   void SetUseUnion(bool val) { this->UseUnion = val; }
 
   /**
+   * Set whether or not CTest should only execute the tests that failed
+   * on the previous run.  By default this is false.
+   */
+  void SetRerunFailed(bool val) { this->RerunFailed = val; }
+
+  /**
    * This method is called when reading CTest custom file
    */
   void PopulateCustomVectors(cmMakefile *mf);
@@ -103,6 +109,8 @@ public:
     int Index;
     //Requested number of process slots
     int Processors;
+    // return code of test which will mark test as "not run"
+    int SkipReturnCode;
     std::vector<std::string> Environment;
     std::vector<std::string> Labels;
     std::set<std::string> LockedResources;
@@ -213,21 +221,27 @@ private:
   // based on union regex and -I stuff
   void ComputeTestList();
 
+  // compute the lists of tests that will actually run
+  // based on LastTestFailed.log
+  void ComputeTestListForRerunFailed();
+
+  void UpdateMaxTestNameWidth();
+
   bool GetValue(const char* tag,
                 std::string& value,
-                std::ifstream& fin);
+                std::istream& fin);
   bool GetValue(const char* tag,
                 int& value,
-                std::ifstream& fin);
+                std::istream& fin);
   bool GetValue(const char* tag,
                 size_t& value,
-                std::ifstream& fin);
+                std::istream& fin);
   bool GetValue(const char* tag,
                 bool& value,
-                std::ifstream& fin);
+                std::istream& fin);
   bool GetValue(const char* tag,
                 double& value,
-                std::ifstream& fin);
+                std::istream& fin);
   /**
    * Find the executable for a test
    */
@@ -235,6 +249,7 @@ private:
 
   const char* GetTestStatus(int status);
   void ExpandTestsToRunInformation(size_t numPossibleTests);
+  void ExpandTestsToRunInformationForRerunFailed();
 
   std::vector<cmStdString> CustomPreTest;
   std::vector<cmStdString> CustomPostTest;
@@ -268,6 +283,8 @@ private:
   cmsys::RegularExpression DartStuff;
 
   std::ostream* LogFile;
+
+  bool RerunFailed;
 };
 
 #endif

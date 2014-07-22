@@ -13,11 +13,14 @@
 #include "cmSystemTools.h"
 
 #include <cmsys/RegularExpression.hxx>
+#include <cmsys/FStream.hxx>
 
-// cmUseMangledMesaCommand
 bool cmUseMangledMesaCommand
 ::InitialPass(std::vector<std::string> const& args, cmExecutionStatus &)
 {
+  if(this->Disallowed(cmPolicies::CMP0030,
+      "The use_mangled_mesa command should not be called; see CMP0030."))
+    { return true; }
   // expected two arguments:
   // arguement one: the full path to gl_mangle.h
   // arguement two : directory for output of edited headers
@@ -71,7 +74,7 @@ CopyAndFullPathMesaHeader(const char* source,
   outFile += file;
   std::string tempOutputFile = outFile;
   tempOutputFile += ".tmp";
-  std::ofstream fout(tempOutputFile.c_str());
+  cmsys::ofstream fout(tempOutputFile.c_str());
   if(!fout)
     {
     cmSystemTools::Error("Could not open file for write in copy operation: ",
@@ -79,7 +82,7 @@ CopyAndFullPathMesaHeader(const char* source,
     cmSystemTools::ReportLastSystemError("");
     return;
     }
-  std::ifstream fin(source);
+  cmsys::ifstream fin(source);
   if(!fin)
     {
     cmSystemTools::Error("Could not open file for read in copy operation",

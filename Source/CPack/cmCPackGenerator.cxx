@@ -23,10 +23,12 @@
 
 #include <cmsys/SystemTools.hxx>
 #include <cmsys/Glob.hxx>
+#include <cmsys/FStream.hxx>
 #include <algorithm>
 
 #if defined(__HAIKU__)
-#include <StorageKit.h>
+#include <FindDirectory.h>
+#include <StorageDefs.h>
 #endif
 
 //----------------------------------------------------------------------
@@ -151,7 +153,7 @@ int cmCPackGenerator::PrepareNames()
                     << descFileName << "]" << std::endl);
       return 0;
       }
-    std::ifstream ifs(descFileName);
+    cmsys::ifstream ifs(descFileName);
     if ( !ifs )
       {
       cmCPackLogger(cmCPackLog::LOG_ERROR,
@@ -579,7 +581,7 @@ int cmCPackGenerator::InstallProjectViaInstallCMakeProjects(
        *      (this works at CPack time too)
        */
       if (this->SupportsComponentInstallation() &
-          !(this->IsSet("CPACK_MONOLITHIC_INSTALL")))
+          !(this->IsOn("CPACK_MONOLITHIC_INSTALL")))
         {
         // Determine the installation types for this project (if provided).
         std::string installTypesVar = "CPACK_"
@@ -636,19 +638,21 @@ int cmCPackGenerator::InstallProjectViaInstallCMakeProjects(
         globalGenerator->FindMakeProgram(this->MakefileMap);
         const char* cmakeMakeProgram
           = this->MakefileMap->GetDefinition("CMAKE_MAKE_PROGRAM");
-        std::string buildCommand
-          = globalGenerator->GenerateBuildCommand(cmakeMakeProgram,
-            installProjectName.c_str(), 0, 0,
+        std::vector<std::string> buildCommand;
+        globalGenerator->GenerateBuildCommand(buildCommand, cmakeMakeProgram,
+            installProjectName.c_str(), installDirectory.c_str(),
             globalGenerator->GetPreinstallTargetName(),
-            buildConfig, false, false);
+            buildConfig, false);
+        std::string buildCommandStr =
+          cmSystemTools::PrintSingleCommand(buildCommand);
         cmCPackLogger(cmCPackLog::LOG_DEBUG,
-          "- Install command: " << buildCommand << std::endl);
+          "- Install command: " << buildCommandStr << std::endl);
         cmCPackLogger(cmCPackLog::LOG_OUTPUT,
           "- Run preinstall target for: " << installProjectName << std::endl);
         std::string output;
         int retVal = 1;
         bool resB =
-          cmSystemTools::RunSingleCommand(buildCommand.c_str(),
+          cmSystemTools::RunSingleCommand(buildCommand,
                                           &output,
                                           &retVal,
                                           installDirectory.c_str(),
@@ -658,12 +662,12 @@ int cmCPackGenerator::InstallProjectViaInstallCMakeProjects(
           std::string tmpFile = this->GetOption("CPACK_TOPLEVEL_DIRECTORY");
           tmpFile += "/PreinstallOutput.log";
           cmGeneratedFileStream ofs(tmpFile.c_str());
-          ofs << "# Run command: " << buildCommand.c_str() << std::endl
+          ofs << "# Run command: " << buildCommandStr.c_str() << std::endl
             << "# Directory: " << installDirectory.c_str() << std::endl
             << "# Output:" << std::endl
             << output.c_str() << std::endl;
           cmCPackLogger(cmCPackLog::LOG_ERROR,
-            "Problem running install command: " << buildCommand.c_str()
+            "Problem running install command: " << buildCommandStr.c_str()
             << std::endl
             << "Please check " << tmpFile.c_str() << " for errors"
             << std::endl);
@@ -1142,12 +1146,6 @@ int cmCPackGenerator::Initialize(const char* name, cmMakefile* mf)
 {
   this->MakefileMap = mf;
   this->Name = name;
-  if ( !this->SetCMakeRoot() )
-    {
-    cmCPackLogger(cmCPackLog::LOG_ERROR,
-      "Cannot initialize the generator" << std::endl);
-    return 0;
-    }
   // set the running generator name
   this->SetOption("CPACK_GENERATOR", this->Name.c_str());
   // Load the project specific config file
@@ -1204,32 +1202,6 @@ const char* cmCPackGenerator::GetOption(const char* op) const
 }
 
 //----------------------------------------------------------------------
-int cmCPackGenerator::SetCMakeRoot()
-{
-  // use the CMAKE_ROOT from cmake which should have been
-  // found by now
-  const char* root=
-    this->MakefileMap->GetDefinition("CMAKE_ROOT");
-
-  if(root)
-    {
-      this->CMakeRoot = root;
-      cmCPackLogger(cmCPackLog::LOG_DEBUG, "Looking for CMAKE_ROOT: "
-                    << this->CMakeRoot.c_str() << std::endl);
-      this->SetOption("CMAKE_ROOT", this->CMakeRoot.c_str());
-      return 1;
-    }
-  cmCPackLogger(cmCPackLog::LOG_ERROR,
-                "Could not find CMAKE_ROOT !!!"
-                << std::endl
-                << "CMake has most likely not been installed correctly."
-                << std::endl
-                <<"Modules directory not found in"
-                << std::endl);
-  return 0;
-}
-
-//----------------------------------------------------------------------
 int cmCPackGenerator::PackageFiles()
 {
   return 0;
@@ -1263,14 +1235,14 @@ const char* cmCPackGenerator::GetInstallPath()
   this->InstallPath += "-";
   this->InstallPath += this->GetOption("CPACK_PACKAGE_VERSION");
 #elif defined(__HAIKU__)
-  BPath dir;
-  if (find_directory(B_COMMON_DIRECTORY, &dir) == B_OK)
+  char dir[B_PATH_NAME_LENGTH];
+  if (find_directory(B_SYSTEM_DIRECTORY, -1, false, dir, sizeof(dir)) == B_OK)
     {
-    this->InstallPath = dir.Path();
+    this->InstallPath = dir;
     }
   else
     {
-    this->InstallPath = "/boot/common";
+    this->InstallPath = "/boot/system";
     }
 #else
   this->InstallPath = "/usr/local/";
@@ -1561,13 +1533,13 @@ cmCPackGenerator::GetComponent(const char *projectName, const char *name)
       component->DisplayName = component->Name;
       }
     component->IsHidden
-      = this->IsSet((macroPrefix + "_HIDDEN").c_str());
+      = this->IsOn((macroPrefix + "_HIDDEN").c_str());
     component->IsRequired
-      = this->IsSet((macroPrefix + "_REQUIRED").c_str());
+      = this->IsOn((macroPrefix + "_REQUIRED").c_str());
     component->IsDisabledByDefault
-      = this->IsSet((macroPrefix + "_DISABLED").c_str());
+      = this->IsOn((macroPrefix + "_DISABLED").c_str());
     component->IsDownloaded
-      = this->IsSet((macroPrefix + "_DOWNLOADED").c_str())
+      = this->IsOn((macroPrefix + "_DOWNLOADED").c_str())
         || cmSystemTools::IsOn(this->GetOption("CPACK_DOWNLOAD_ALL"));
 
     const char* archiveFile = this->GetOption((macroPrefix +
@@ -1664,9 +1636,9 @@ cmCPackGenerator::GetComponentGroup(const char *projectName, const char *name)
       group->Description = description;
       }
     group->IsBold
-      = this->IsSet((macroPrefix + "_BOLD_TITLE").c_str());
+      = this->IsOn((macroPrefix + "_BOLD_TITLE").c_str());
     group->IsExpandedByDefault
-      = this->IsSet((macroPrefix + "_EXPANDED").c_str());
+      = this->IsOn((macroPrefix + "_EXPANDED").c_str());
     const char* parentGroupName
       = this->GetOption((macroPrefix + "_PARENT_GROUP").c_str());
     if (parentGroupName && *parentGroupName)

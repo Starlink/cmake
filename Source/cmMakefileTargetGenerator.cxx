@@ -21,11 +21,13 @@
 #include "cmTarget.h"
 #include "cmake.h"
 #include "cmComputeLinkInformation.h"
+#include "cmGeneratorExpression.h"
 
 #include "cmMakefileExecutableTargetGenerator.h"
 #include "cmMakefileLibraryTargetGenerator.h"
 #include "cmMakefileUtilityTargetGenerator.h"
 
+#include <ctype.h>
 
 cmMakefileTargetGenerator::cmMakefileTargetGenerator(cmTarget* target)
   : OSXBundleGenerator(0)
@@ -61,7 +63,7 @@ cmMakefileTargetGenerator::~cmMakefileTargetGenerator()
 }
 
 cmMakefileTargetGenerator *
-cmMakefileTargetGenerator::New(cmTarget *tgt)
+cmMakefileTargetGenerator::New(cmGeneratorTarget *tgt)
 {
   cmMakefileTargetGenerator *result = 0;
 
@@ -131,7 +133,14 @@ void cmMakefileTargetGenerator::WriteTargetBuildRules()
      this->Makefile->GetProperty
      ("ADDITIONAL_MAKE_CLEAN_FILES"))
     {
-    cmSystemTools::ExpandListArgument(additional_clean_files,
+    const char *config = this->Makefile->GetDefinition("CMAKE_BUILD_TYPE");
+    cmListFileBacktrace lfbt;
+    cmGeneratorExpression ge(lfbt);
+    cmsys::auto_ptr<cmCompiledGeneratorExpression> cge =
+                                            ge.Parse(additional_clean_files);
+
+    cmSystemTools::ExpandListArgument(cge->Evaluate(this->Makefile, config,
+                                                  false, this->Target, 0, 0),
                                       this->CleanFiles);
     }
 
@@ -142,9 +151,11 @@ void cmMakefileTargetGenerator::WriteTargetBuildRules()
 
   // First generate the object rule files.  Save a list of all object
   // files for this target.
+  std::vector<cmSourceFile*> customCommands;
+  this->GeneratorTarget->GetCustomCommands(customCommands);
   for(std::vector<cmSourceFile*>::const_iterator
-        si = this->GeneratorTarget->CustomCommands.begin();
-      si != this->GeneratorTarget->CustomCommands.end(); ++si)
+        si = customCommands.begin();
+      si != customCommands.end(); ++si)
     {
     cmCustomCommand const* cc = (*si)->GetCustomCommand();
     this->GenerateCustomRuleFile(*cc);
@@ -161,21 +172,28 @@ void cmMakefileTargetGenerator::WriteTargetBuildRules()
         }
       }
     }
+  std::vector<cmSourceFile*> headerSources;
+  this->GeneratorTarget->GetHeaderSources(headerSources);
   this->OSXBundleGenerator->GenerateMacOSXContentStatements(
-    this->GeneratorTarget->HeaderSources,
+    headerSources,
     this->MacOSXContentGenerator);
+  std::vector<cmSourceFile*> extraSources;
+  this->GeneratorTarget->GetExtraSources(extraSources);
   this->OSXBundleGenerator->GenerateMacOSXContentStatements(
-    this->GeneratorTarget->ExtraSources,
+    extraSources,
     this->MacOSXContentGenerator);
+  std::vector<cmSourceFile*> externalObjects;
+  this->GeneratorTarget->GetExternalObjects(externalObjects);
   for(std::vector<cmSourceFile*>::const_iterator
-        si = this->GeneratorTarget->ExternalObjects.begin();
-      si != this->GeneratorTarget->ExternalObjects.end(); ++si)
+        si = externalObjects.begin();
+      si != externalObjects.end(); ++si)
     {
     this->ExternalObjects.push_back((*si)->GetFullPath());
     }
+  std::vector<cmSourceFile*> objectSources;
+  this->GeneratorTarget->GetObjectSources(objectSources);
   for(std::vector<cmSourceFile*>::const_iterator
-        si = this->GeneratorTarget->ObjectSources.begin();
-      si != this->GeneratorTarget->ObjectSources.end(); ++si)
+        si = objectSources.begin(); si != objectSources.end(); ++si)
     {
     // Generate this object file's rule file.
     this->WriteObjectRuleFiles(**si);
@@ -283,7 +301,7 @@ std::string cmMakefileTargetGenerator::GetFlags(const std::string &l)
 
     // Add include directory flags.
     this->LocalGenerator->
-      AppendFlags(flags,this->GetFrameworkFlags().c_str());
+      AppendFlags(flags,this->GetFrameworkFlags(l).c_str());
 
     // Add target-specific flags.
     this->LocalGenerator->AddCompileOptions(flags, this->Target,
@@ -326,7 +344,7 @@ void cmMakefileTargetGenerator::WriteTargetLanguageFlags()
   // write language flags for target
   std::set<cmStdString> languages;
   this->Target->GetLanguages(languages);
-    // put the compiler in the rules.make file so that if it changes
+  // put the compiler in the rules.make file so that if it changes
   // things rebuild
   for(std::set<cmStdString>::const_iterator l = languages.begin();
       l != languages.end(); ++l)
@@ -412,7 +430,8 @@ void cmMakefileTargetGenerator::WriteObjectRuleFiles(cmSourceFile& source)
     }
 
   // Get the full path name of the object file.
-  std::string const& objectName = this->GeneratorTarget->Objects[&source];
+  std::string const& objectName = this->GeneratorTarget
+                                      ->GetObjectName(&source);
   std::string obj = this->LocalGenerator->GetTargetDirectory(*this->Target);
   obj += "/";
   obj += objectName;
@@ -968,7 +987,7 @@ void cmMakefileTargetGenerator::WriteTargetDependRules()
     *this->InfoFileStream
       << "\n"
       << "# Pairs of files generated by the same build rule.\n"
-      << "SET(CMAKE_MULTIPLE_OUTPUT_PAIRS\n";
+      << "set(CMAKE_MULTIPLE_OUTPUT_PAIRS\n";
     for(MultipleOutputPairsType::const_iterator pi =
           this->MultipleOutputPairs.begin();
         pi != this->MultipleOutputPairs.end(); ++pi)
@@ -986,7 +1005,7 @@ void cmMakefileTargetGenerator::WriteTargetDependRules()
   *this->InfoFileStream
     << "\n"
     << "# Targets to which this target links.\n"
-    << "SET(CMAKE_TARGET_LINKED_INFO_FILES\n";
+    << "set(CMAKE_TARGET_LINKED_INFO_FILES\n";
   std::set<cmTarget const*> emitted;
   const char* cfg = this->LocalGenerator->ConfigurationName.c_str();
   if(cmComputeLinkInformation* cli = this->Target->GetLinkInformation(cfg))
@@ -996,7 +1015,12 @@ void cmMakefileTargetGenerator::WriteTargetDependRules()
           i = items.begin(); i != items.end(); ++i)
       {
       cmTarget const* linkee = i->Target;
-      if(linkee && !linkee->IsImported() && emitted.insert(linkee).second)
+      if(linkee && !linkee->IsImported()
+                // We can ignore the INTERFACE_LIBRARY items because
+                // Target->GetLinkInformation already processed their
+                // link interface and they don't have any output themselves.
+                && linkee->GetType() != cmTarget::INTERFACE_LIBRARY
+                && emitted.insert(linkee).second)
         {
         cmMakefile* mf = linkee->GetMakefile();
         cmLocalGenerator* lg = mf->GetLocalGenerator();
@@ -1018,7 +1042,7 @@ void cmMakefileTargetGenerator::WriteTargetDependRules()
     *this->InfoFileStream
       << "\n"
       << "# Fortran module output directory.\n"
-      << "SET(CMAKE_Fortran_TARGET_MODULE_DIR \"" << mdir << "\")\n";
+      << "set(CMAKE_Fortran_TARGET_MODULE_DIR \"" << mdir << "\")\n";
     }
 
   // Target-specific include directories:
@@ -1026,7 +1050,7 @@ void cmMakefileTargetGenerator::WriteTargetDependRules()
     << "\n"
     << "# The include file search paths:\n";
   *this->InfoFileStream
-    << "SET(CMAKE_C_TARGET_INCLUDE_PATH\n";
+    << "set(CMAKE_C_TARGET_INCLUDE_PATH\n";
   std::vector<std::string> includes;
 
   const char *config = this->Makefile->GetDefinition("CMAKE_BUILD_TYPE");
@@ -1045,13 +1069,13 @@ void cmMakefileTargetGenerator::WriteTargetDependRules()
   *this->InfoFileStream
     << "  )\n";
   *this->InfoFileStream
-    << "SET(CMAKE_CXX_TARGET_INCLUDE_PATH "
+    << "set(CMAKE_CXX_TARGET_INCLUDE_PATH "
     << "${CMAKE_C_TARGET_INCLUDE_PATH})\n";
   *this->InfoFileStream
-    << "SET(CMAKE_Fortran_TARGET_INCLUDE_PATH "
+    << "set(CMAKE_Fortran_TARGET_INCLUDE_PATH "
     << "${CMAKE_C_TARGET_INCLUDE_PATH})\n";
   *this->InfoFileStream
-    << "SET(CMAKE_ASM_TARGET_INCLUDE_PATH "
+    << "set(CMAKE_ASM_TARGET_INCLUDE_PATH "
     << "${CMAKE_C_TARGET_INCLUDE_PATH})\n";
 
   // and now write the rule to use it
@@ -1128,8 +1152,8 @@ cmMakefileTargetGenerator
 ::DriveCustomCommands(std::vector<std::string>& depends)
 {
   // Depend on all custom command outputs.
-  const std::vector<cmSourceFile*>& sources =
-    this->Target->GetSourceFiles();
+  std::vector<cmSourceFile*> sources;
+  this->Target->GetSourceFiles(sources);
   for(std::vector<cmSourceFile*>::const_iterator source = sources.begin();
       source != sources.end(); ++source)
     {
@@ -1505,12 +1529,20 @@ void cmMakefileTargetGenerator::WriteTargetDriverRule(const char* main_output,
 }
 
 //----------------------------------------------------------------------------
-std::string cmMakefileTargetGenerator::GetFrameworkFlags()
+std::string cmMakefileTargetGenerator::GetFrameworkFlags(std::string const& l)
 {
  if(!this->Makefile->IsOn("APPLE"))
    {
    return std::string();
    }
+
+  std::string fwSearchFlagVar = "CMAKE_" + l + "_FRAMEWORK_SEARCH_FLAG";
+  const char* fwSearchFlag =
+    this->Makefile->GetDefinition(fwSearchFlagVar.c_str());
+  if(!(fwSearchFlag && *fwSearchFlag))
+    {
+    return std::string();
+    }
 
  std::set<cmStdString> emitted;
 #ifdef __APPLE__  /* don't insert this when crosscompiling e.g. to iphone */
@@ -1546,7 +1578,7 @@ std::string cmMakefileTargetGenerator::GetFrameworkFlags()
       {
       if(emitted.insert(*i).second)
         {
-        flags += "-F";
+        flags += fwSearchFlag;
         flags += this->Convert(i->c_str(),
                                cmLocalGenerator::START_OUTPUT,
                                cmLocalGenerator::SHELL, true);
@@ -1672,10 +1704,42 @@ void cmMakefileTargetGenerator::RemoveForbiddenFlags(const char* flagVar,
     this->Makefile->GetSafeDefinition(removeFlags.c_str());
   std::vector<std::string> removeList;
   cmSystemTools::ExpandListArgument(removeflags, removeList);
+
   for(std::vector<std::string>::iterator i = removeList.begin();
       i != removeList.end(); ++i)
     {
-    cmSystemTools::ReplaceString(linkFlags, i->c_str(), "");
+    std::string tmp;
+    std::string::size_type lastPosition = 0;
+
+    for(;;)
+      {
+      std::string::size_type position = linkFlags.find(*i, lastPosition);
+
+      if(position == std::string::npos)
+        {
+        tmp += linkFlags.substr(lastPosition);
+        break;
+        }
+      else
+        {
+        std::string::size_type prefixLength = position - lastPosition;
+        tmp += linkFlags.substr(lastPosition, prefixLength);
+        lastPosition = position + i->length();
+
+        bool validFlagStart = position == 0 ||
+          isspace(linkFlags[position - 1]);
+
+        bool validFlagEnd = lastPosition == linkFlags.size() ||
+          isspace(linkFlags[lastPosition]);
+
+        if(!validFlagStart || !validFlagEnd)
+          {
+          tmp += *i;
+          }
+        }
+      }
+
+    linkFlags = tmp;
     }
 }
 

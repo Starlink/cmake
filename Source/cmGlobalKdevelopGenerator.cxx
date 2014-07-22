@@ -21,6 +21,7 @@
 
 #include <cmsys/SystemTools.hxx>
 #include <cmsys/Directory.hxx>
+#include <cmsys/FStream.hxx>
 
 //----------------------------------------------------------------------------
 void cmGlobalKdevelopGenerator
@@ -28,16 +29,6 @@ void cmGlobalKdevelopGenerator
 {
   entry.Name = this->GetName();
   entry.Brief = "Generates KDevelop 3 project files.";
-  entry.Full =
-    "Project files for KDevelop 3 will be created in the top directory "
-    "and in every subdirectory which features a CMakeLists.txt file "
-    "containing a PROJECT() call. "
-    "If you change the settings using KDevelop cmake will try its best "
-    "to keep your changes when regenerating the project files. "
-    "Additionally a hierarchy of UNIX makefiles is generated into the "
-    "build tree.  Any "
-    "standard UNIX-style make program can build the project through the "
-    "default make target.  A \"make install\" target is also provided.";
 }
 
 cmGlobalKdevelopGenerator::cmGlobalKdevelopGenerator()
@@ -85,7 +76,7 @@ void cmGlobalKdevelopGenerator::Generate()
         {
         if (ti->second.GetType()==cmTarget::EXECUTABLE)
           {
-          executable = ti->second.GetProperty("LOCATION");
+          executable = ti->second.GetLocation(0);
           break;
           }
         }
@@ -147,7 +138,8 @@ bool cmGlobalKdevelopGenerator
     for (cmTargets::iterator ti = targets.begin();
          ti != targets.end(); ti++)
       {
-      const std::vector<cmSourceFile*>& sources=ti->second.GetSourceFiles();
+      std::vector<cmSourceFile*> sources;
+      ti->second.GetSourceFiles(sources);
       for (std::vector<cmSourceFile*>::const_iterator si=sources.begin();
            si!=sources.end(); si++)
         {
@@ -199,7 +191,7 @@ bool cmGlobalKdevelopGenerator
 
   //check if the output file already exists and read it
   //insert all files which exist into the set of files
-  std::ifstream oldFilelist(filename.c_str());
+  cmsys::ifstream oldFilelist(filename.c_str());
   if (oldFilelist)
     {
     while (cmSystemTools::GetLineFromStream(oldFilelist, tmp))
@@ -320,7 +312,7 @@ void cmGlobalKdevelopGenerator
                     const std::string& fileToOpen,
                     const std::string& sessionFilename)
 {
-  std::ifstream oldProjectFile(filename.c_str());
+  cmsys::ifstream oldProjectFile(filename.c_str());
   if (!oldProjectFile)
     {
     this->CreateNewProjectFile(outputDir, projectDir, filename,
@@ -472,7 +464,7 @@ void cmGlobalKdevelopGenerator
         "      <numberofjobs>1</numberofjobs>\n"
         "      <dontact>false</dontact>\n"
         "      <makebin>" << this->GlobalGenerator->GetLocalGenerators()[0]->
-            GetMakefile()->GetRequiredDefinition("CMAKE_BUILD_TOOL")
+            GetMakefile()->GetRequiredDefinition("CMAKE_MAKE_PROGRAM")
             << " </makebin>\n"
         "      <selectedenvironment>default</selectedenvironment>\n"
         "      <environments>\n"

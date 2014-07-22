@@ -20,6 +20,8 @@
 #include KWSYS_HEADER(RegularExpression.hxx)
 #include KWSYS_HEADER(SystemTools.hxx)
 #include KWSYS_HEADER(Directory.hxx)
+#include KWSYS_HEADER(FStream.hxx)
+#include KWSYS_HEADER(Encoding.hxx)
 
 #include KWSYS_HEADER(ios/iostream)
 #include KWSYS_HEADER(ios/fstream)
@@ -32,6 +34,8 @@
 #if 0
 # include "SystemTools.hxx.in"
 # include "Directory.hxx.in"
+# include "FStream.hxx.in"
+# include "Encoding.hxx.in"
 # include "kwsys_ios_iostream.h.in"
 # include "kwsys_ios_fstream.h.in"
 # include "kwsys_ios_sstream.h.in"
@@ -75,6 +79,9 @@
 // Windows API.
 #if defined(_WIN32)
 # include <windows.h>
+# ifndef INVALID_FILE_ATTRIBUTES
+#  define INVALID_FILE_ATTRIBUTES ((DWORD)-1)
+# endif
 #elif defined (__CYGWIN__)
 # include <windows.h>
 # undef _WIN32
@@ -85,7 +92,7 @@ extern char **environ;
 #endif
 
 #ifdef __CYGWIN__
-extern "C" void cygwin_conv_to_win32_path(const char *path, char *win32_path);
+# include <sys/cygwin.h>
 #endif
 
 // getpwnam doesn't exist on Windows and Cray Xt3/Catamount
@@ -152,11 +159,6 @@ public:
 #define _chdir chdir
 #endif
 
-#if defined(__HAIKU__)
-#include <os/kernel/OS.h>
-#include <os/storage/Path.h>
-#endif
-
 #if defined(__BEOS__) && !defined(__ZETA__)
 #include <be/kernel/OS.h>
 #include <be/storage/Path.h>
@@ -188,22 +190,25 @@ static inline char *realpath(const char *path, char *resolved_path)
 #if defined(_WIN32) && (defined(_MSC_VER) || defined(__WATCOMC__) || defined(__BORLANDC__) || defined(__MINGW32__))
 inline int Mkdir(const char* dir)
 {
-  return _mkdir(dir);
+  return _wmkdir(KWSYS_NAMESPACE::Encoding::ToWide(dir).c_str());
 }
 inline int Rmdir(const char* dir)
 {
-  return _rmdir(dir);
+  return _wrmdir(KWSYS_NAMESPACE::Encoding::ToWide(dir).c_str());
 }
 inline const char* Getcwd(char* buf, unsigned int len)
 {
-  if(const char* ret = _getcwd(buf, len))
+  std::vector<wchar_t> w_buf(len);
+  if(const wchar_t* ret = _wgetcwd(&w_buf[0], len))
     {
     // make sure the drive letter is capital
-    if(strlen(buf) > 1 && buf[1] == ':')
+    if(wcslen(&w_buf[0]) > 1 && w_buf[1] == L':')
       {
-      buf[0] = toupper(buf[0]);
+      w_buf[0] = towupper(w_buf[0]);
       }
-    return ret;
+    std::string tmp = KWSYS_NAMESPACE::Encoding::ToNarrow(&w_buf[0]);
+    strcpy(buf, tmp.c_str());
+    return buf;
     }
   return 0;
 }
@@ -212,16 +217,18 @@ inline int Chdir(const char* dir)
   #if defined(__BORLANDC__)
   return chdir(dir);
   #else
-  return _chdir(dir);
+  return _wchdir(KWSYS_NAMESPACE::Encoding::ToWide(dir).c_str());
   #endif
 }
 inline void Realpath(const char *path, kwsys_stl::string & resolved_path)
 {
-  char *ptemp;
-  char fullpath[MAX_PATH];
-  if( GetFullPathName(path, sizeof(fullpath), fullpath, &ptemp) )
+  kwsys_stl::wstring tmp = KWSYS_NAMESPACE::Encoding::ToWide(path);
+  wchar_t *ptemp;
+  wchar_t fullpath[MAX_PATH];
+  if( GetFullPathNameW(tmp.c_str(), sizeof(fullpath)/sizeof(fullpath[0]),
+                       fullpath, &ptemp) )
     {
-    resolved_path = fullpath;
+    resolved_path = KWSYS_NAMESPACE::Encoding::ToNarrow(fullpath);
     KWSYS_NAMESPACE::SystemTools::ConvertToUnixSlashes(resolved_path);
     }
   else
@@ -596,6 +603,15 @@ const char* SystemTools::GetExecutableExtension()
 #endif
 }
 
+FILE* SystemTools::Fopen(const char* file, const char* mode)
+{
+#ifdef _WIN32
+  return _wfopen(Encoding::ToWide(file).c_str(),
+                 Encoding::ToWide(mode).c_str());
+#else
+  return fopen(file, mode);
+#endif
+}
 
 bool SystemTools::MakeDirectory(const char* path)
 {
@@ -745,7 +761,7 @@ static DWORD SystemToolsMakeRegistryMode(DWORD mode,
                                          SystemTools::KeyWOW64 view)
 {
   // only add the modes when on a system that supports Wow64.
-  static FARPROC wow64p = GetProcAddress(GetModuleHandle("kernel32"),
+  static FARPROC wow64p = GetProcAddress(GetModuleHandleW(L"kernel32"),
                                          "IsWow64Process");
   if(wow64p == NULL)
     {
@@ -779,8 +795,8 @@ SystemTools::GetRegistrySubKeys(const char *key,
     }
 
   HKEY hKey;
-  if(RegOpenKeyEx(primaryKey,
-                  second.c_str(),
+  if(RegOpenKeyExW(primaryKey,
+                  Encoding::ToWide(second).c_str(),
                   0,
                   SystemToolsMakeRegistryMode(KEY_READ, view),
                   &hKey) != ERROR_SUCCESS)
@@ -789,13 +805,13 @@ SystemTools::GetRegistrySubKeys(const char *key,
     }
   else
     {
-    char name[1024];
+    wchar_t name[1024];
     DWORD dwNameSize = sizeof(name)/sizeof(name[0]);
 
     DWORD i = 0;
-    while (RegEnumKey(hKey, i, name, dwNameSize) == ERROR_SUCCESS)
+    while (RegEnumKeyW(hKey, i, name, dwNameSize) == ERROR_SUCCESS)
       {
-      subkeys.push_back(name);
+      subkeys.push_back(Encoding::ToNarrow(name));
       ++i;
       }
 
@@ -834,8 +850,8 @@ bool SystemTools::ReadRegistryValue(const char *key, kwsys_stl::string &value,
     }
 
   HKEY hKey;
-  if(RegOpenKeyEx(primaryKey,
-                  second.c_str(),
+  if(RegOpenKeyExW(primaryKey,
+                  Encoding::ToWide(second).c_str(),
                   0,
                   SystemToolsMakeRegistryMode(KEY_READ, view),
                   &hKey) != ERROR_SUCCESS)
@@ -846,9 +862,9 @@ bool SystemTools::ReadRegistryValue(const char *key, kwsys_stl::string &value,
     {
     DWORD dwType, dwSize;
     dwSize = 1023;
-    char data[1024];
-    if(RegQueryValueEx(hKey,
-                       (LPTSTR)valuename.c_str(),
+    wchar_t data[1024];
+    if(RegQueryValueExW(hKey,
+                       Encoding::ToWide(valuename).c_str(),
                        NULL,
                        &dwType,
                        (BYTE *)data,
@@ -856,16 +872,17 @@ bool SystemTools::ReadRegistryValue(const char *key, kwsys_stl::string &value,
       {
       if (dwType == REG_SZ)
         {
-        value = data;
+        value = Encoding::ToNarrow(data);
         valueset = true;
         }
       else if (dwType == REG_EXPAND_SZ)
         {
-        char expanded[1024];
+        wchar_t expanded[1024];
         DWORD dwExpandedSize = sizeof(expanded)/sizeof(expanded[0]);
-        if(ExpandEnvironmentStrings(data, expanded, dwExpandedSize))
+        if(ExpandEnvironmentStringsW(data, expanded,
+            dwExpandedSize))
           {
-          value = expanded;
+          value = Encoding::ToNarrow(expanded);
           valueset = true;
           }
         }
@@ -906,9 +923,9 @@ bool SystemTools::WriteRegistryValue(const char *key, const char *value,
 
   HKEY hKey;
   DWORD dwDummy;
-  char lpClass[] = "";
-  if(RegCreateKeyEx(primaryKey,
-                    second.c_str(),
+  wchar_t lpClass[] = L"";
+  if(RegCreateKeyExW(primaryKey,
+                    Encoding::ToWide(second).c_str(),
                     0,
                     lpClass,
                     REG_OPTION_NON_VOLATILE,
@@ -920,12 +937,13 @@ bool SystemTools::WriteRegistryValue(const char *key, const char *value,
     return false;
     }
 
-  if(RegSetValueEx(hKey,
-                   (LPTSTR)valuename.c_str(),
+  std::wstring wvalue = Encoding::ToWide(value);
+  if(RegSetValueExW(hKey,
+                   Encoding::ToWide(valuename).c_str(),
                    0,
                    REG_SZ,
-                   (CONST BYTE *)value,
-                   (DWORD)(strlen(value) + 1)) == ERROR_SUCCESS)
+                   (CONST BYTE *)wvalue.c_str(),
+                   (DWORD)(sizeof(wchar_t) * (wvalue.size() + 1))) == ERROR_SUCCESS)
     {
     return true;
     }
@@ -957,8 +975,8 @@ bool SystemTools::DeleteRegistryValue(const char *key, KeyWOW64 view)
     }
 
   HKEY hKey;
-  if(RegOpenKeyEx(primaryKey,
-                  second.c_str(),
+  if(RegOpenKeyExW(primaryKey,
+                  Encoding::ToWide(second).c_str(),
                   0,
                   SystemToolsMakeRegistryMode(KEY_WRITE, view),
                   &hKey) != ERROR_SUCCESS)
@@ -988,7 +1006,7 @@ bool SystemTools::SameFile(const char* file1, const char* file2)
 #ifdef _WIN32
   HANDLE hFile1, hFile2;
 
-  hFile1 = CreateFile( file1,
+  hFile1 = CreateFileW( Encoding::ToWide(file1).c_str(),
                       GENERIC_READ,
                       FILE_SHARE_READ ,
                       NULL,
@@ -996,7 +1014,7 @@ bool SystemTools::SameFile(const char* file1, const char* file2)
                       FILE_FLAG_BACKUP_SEMANTICS,
                       NULL
     );
-  hFile2 = CreateFile( file2,
+  hFile2 = CreateFileW( Encoding::ToWide(file2).c_str(),
                       GENERIC_READ,
                       FILE_SHARE_READ,
                       NULL,
@@ -1045,15 +1063,6 @@ bool SystemTools::SameFile(const char* file1, const char* file2)
 }
 
 //----------------------------------------------------------------------------
-#if defined(_WIN32) || defined(__CYGWIN__)
-static bool WindowsFileExists(const char* filename)
-{
-  WIN32_FILE_ATTRIBUTE_DATA fd;
-  return GetFileAttributesExA(filename, GetFileExInfoStandard, &fd) != 0;
-}
-#endif
-
-//----------------------------------------------------------------------------
 bool SystemTools::FileExists(const char* filename)
 {
   if(!(filename && *filename))
@@ -1065,11 +1074,12 @@ bool SystemTools::FileExists(const char* filename)
   char winpath[MAX_PATH];
   if(SystemTools::PathCygwinToWin32(filename, winpath))
     {
-    return WindowsFileExists(winpath);
+    return (GetFileAttributesA(winpath) != INVALID_FILE_ATTRIBUTES);
     }
   return access(filename, R_OK) == 0;
 #elif defined(_WIN32)
-  return WindowsFileExists(filename);
+  return (GetFileAttributesW(Encoding::ToWide(filename).c_str())
+          != INVALID_FILE_ATTRIBUTES);
 #else
   return access(filename, R_OK) == 0;
 #endif
@@ -1100,7 +1110,10 @@ bool SystemTools::PathCygwinToWin32(const char *path, char *win32_path)
     }
   else
     {
-    cygwin_conv_to_win32_path(path, win32_path);
+    if(cygwin_conv_path(CCP_POSIX_TO_WIN_A, path, win32_path, MAX_PATH) != 0)
+      {
+      win32_path[0] = 0;
+      }
     SystemToolsTranslationMap::value_type entry(path, win32_path);
     SystemTools::Cyg2Win32Map->insert(entry);
     }
@@ -1112,7 +1125,7 @@ bool SystemTools::Touch(const char* filename, bool create)
 {
   if(create && !SystemTools::FileExists(filename))
     {
-    FILE* file = fopen(filename, "a+b");
+    FILE* file = Fopen(filename, "a+b");
     if(file)
       {
       fclose(file);
@@ -1121,7 +1134,8 @@ bool SystemTools::Touch(const char* filename, bool create)
     return false;
     }
 #if defined(_WIN32) && !defined(__CYGWIN__)
-  HANDLE h = CreateFile(filename, FILE_WRITE_ATTRIBUTES,
+  HANDLE h = CreateFileW(Encoding::ToWide(filename).c_str(),
+                        FILE_WRITE_ATTRIBUTES,
                         FILE_SHARE_WRITE, 0, OPEN_EXISTING,
                         FILE_FLAG_BACKUP_SEMANTICS, 0);
   if(!h)
@@ -1225,11 +1239,13 @@ bool SystemTools::FileTimeCompare(const char* f1, const char* f2,
   // Windows version.  Get the modification time from extended file attributes.
   WIN32_FILE_ATTRIBUTE_DATA f1d;
   WIN32_FILE_ATTRIBUTE_DATA f2d;
-  if(!GetFileAttributesEx(f1, GetFileExInfoStandard, &f1d))
+  if(!GetFileAttributesExW(Encoding::ToWide(f1).c_str(),
+                           GetFileExInfoStandard, &f1d))
     {
     return false;
     }
-  if(!GetFileAttributesEx(f2, GetFileExInfoStandard, &f2d))
+  if(!GetFileAttributesExW(Encoding::ToWide(f2).c_str(),
+                           GetFileExInfoStandard, &f2d))
     {
     return false;
     }
@@ -1937,6 +1953,39 @@ bool SystemTools::CopyFileIfDifferent(const char* source,
 bool SystemTools::FilesDiffer(const char* source,
                               const char* destination)
 {
+
+#if defined(_WIN32)
+  WIN32_FILE_ATTRIBUTE_DATA statSource;
+  if (GetFileAttributesExW(Encoding::ToWide(source).c_str(),
+                           GetFileExInfoStandard,
+                           &statSource) == 0)
+    {
+    return true;
+    }
+
+  WIN32_FILE_ATTRIBUTE_DATA statDestination;
+  if (GetFileAttributesExW(Encoding::ToWide(destination).c_str(),
+                           GetFileExInfoStandard,
+                           &statDestination) == 0)
+    {
+    return true;
+    }
+
+  if(statSource.nFileSizeHigh != statDestination.nFileSizeHigh ||
+     statSource.nFileSizeLow != statDestination.nFileSizeLow)
+    {
+    return true;
+    }
+
+  if(statSource.nFileSizeHigh == 0 && statSource.nFileSizeLow == 0)
+    {
+    return false;
+    }
+  off_t nleft = ((__int64)statSource.nFileSizeHigh << 32) +
+                statSource.nFileSizeLow;
+
+#else
+
   struct stat statSource;
   if (stat(source, &statSource) != 0)
     {
@@ -1958,15 +2007,19 @@ bool SystemTools::FilesDiffer(const char* source,
     {
     return false;
     }
+  off_t nleft = statSource.st_size;
+#endif
 
-#if defined(_WIN32) || defined(__CYGWIN__)
-  kwsys_ios::ifstream finSource(source, (kwsys_ios::ios::binary |
-                                         kwsys_ios::ios::in));
-  kwsys_ios::ifstream finDestination(destination, (kwsys_ios::ios::binary |
-                                                   kwsys_ios::ios::in));
+#if defined(_WIN32)
+  kwsys::ifstream finSource(source,
+                            (kwsys_ios::ios::binary |
+                             kwsys_ios::ios::in));
+  kwsys::ifstream finDestination(destination,
+                                 (kwsys_ios::ios::binary |
+                                  kwsys_ios::ios::in));
 #else
-  kwsys_ios::ifstream finSource(source);
-  kwsys_ios::ifstream finDestination(destination);
+  kwsys::ifstream finSource(source);
+  kwsys::ifstream finDestination(destination);
 #endif
   if(!finSource || !finDestination)
     {
@@ -1976,7 +2029,6 @@ bool SystemTools::FilesDiffer(const char* source,
   // Compare the files a block at a time.
   char source_buf[KWSYS_ST_BUFFER];
   char dest_buf[KWSYS_ST_BUFFER];
-  off_t nleft = statSource.st_size;
   while(nleft > 0)
     {
     // Read a block from each file.
@@ -2049,10 +2101,10 @@ bool SystemTools::CopyFileAlways(const char* source, const char* destination)
   // Open files
 
 #if defined(_WIN32) || defined(__CYGWIN__)
-  kwsys_ios::ifstream fin(source,
-                    kwsys_ios::ios::binary | kwsys_ios::ios::in);
+  kwsys::ifstream fin(source,
+                kwsys_ios::ios::binary | kwsys_ios::ios::in);
 #else
-  kwsys_ios::ifstream fin(source);
+  kwsys::ifstream fin(source);
 #endif
   if(!fin)
     {
@@ -2066,10 +2118,10 @@ bool SystemTools::CopyFileAlways(const char* source, const char* destination)
   SystemTools::RemoveFile(destination);
 
 #if defined(_WIN32) || defined(__CYGWIN__)
-  kwsys_ios::ofstream fout(destination,
+  kwsys::ofstream fout(destination,
                      kwsys_ios::ios::binary | kwsys_ios::ios::out | kwsys_ios::ios::trunc);
 #else
-  kwsys_ios::ofstream fout(destination,
+  kwsys::ofstream fout(destination,
                      kwsys_ios::ios::out | kwsys_ios::ios::trunc);
 #endif
   if(!fout)
@@ -2349,7 +2401,11 @@ bool SystemTools::RemoveFile(const char* source)
   /* Win32 unlink is stupid --- it fails if the file is read-only  */
   SystemTools::SetPermissions(source, S_IWRITE);
 #endif
+#ifdef _WIN32
+  bool res = _wunlink(Encoding::ToWide(source).c_str()) != 0 ? false : true;
+#else
   bool res = unlink(source) != 0 ? false : true;
+#endif
 #ifdef _WIN32
   if ( !res )
     {
@@ -2794,12 +2850,15 @@ bool SystemTools::FileIsDirectory(const char* name)
     }
 
   // Now check the file node type.
+#if defined( _WIN32 )
+  DWORD attr = GetFileAttributesW(Encoding::ToWide(name).c_str());
+  if (attr != INVALID_FILE_ATTRIBUTES)
+    {
+    return (attr & FILE_ATTRIBUTE_DIRECTORY) != 0;
+#else
   struct stat fs;
   if(stat(name, &fs) == 0)
     {
-#if defined( _WIN32 ) && !defined(__CYGWIN__)
-    return ((fs.st_mode & _S_IFDIR) != 0);
-#else
     return S_ISDIR(fs.st_mode);
 #endif
     }
@@ -3284,11 +3343,12 @@ static int GetCasePathName(const kwsys_stl::string & pathIn,
     kwsys_stl::string test_str = casePath;
     test_str += path_components[idx];
 
-    WIN32_FIND_DATA findData;
-    HANDLE hFind = ::FindFirstFile(test_str.c_str(), &findData);
+    WIN32_FIND_DATAW findData;
+    HANDLE hFind = ::FindFirstFileW(Encoding::ToWide(test_str).c_str(),
+      &findData);
     if (INVALID_HANDLE_VALUE != hFind)
       {
-      casePath += findData.cFileName;
+      casePath += Encoding::ToNarrow(findData.cFileName);
       ::FindClose(hFind);
       }
     else
@@ -3738,8 +3798,7 @@ bool SystemTools::FileHasSignature(const char *filename,
     return false;
     }
 
-  FILE *fp;
-  fp = fopen(filename, "rb");
+  FILE *fp = Fopen(filename, "rb");
   if (!fp)
     {
     return false;
@@ -3772,8 +3831,7 @@ SystemTools::DetectFileType(const char *filename,
     return SystemTools::FileTypeUnknown;
     }
 
-  FILE *fp;
-  fp = fopen(filename, "rb");
+  FILE *fp = Fopen(filename, "rb");
   if (!fp)
     {
     return SystemTools::FileTypeUnknown;
@@ -3963,9 +4021,8 @@ bool SystemTools::GetShortPath(const char* path, kwsys_stl::string& shortPath)
 {
 #if defined(WIN32) && !defined(__CYGWIN__)
   const int size = int(strlen(path)) +1; // size of return
-  char *buffer = new char[size];  // create a buffer
   char *tempPath = new char[size];  // create a buffer
-  int ret;
+  DWORD ret;
 
   // if the path passed in has quotes around it, first remove the quotes
   if (path[0] == '"' && path[strlen(path)-1] == '"')
@@ -3978,19 +4035,20 @@ bool SystemTools::GetShortPath(const char* path, kwsys_stl::string& shortPath)
     strcpy(tempPath,path);
     }
 
+  kwsys_stl::wstring wtempPath = Encoding::ToWide(tempPath);
+  kwsys_stl::vector<wchar_t> buffer(wtempPath.size()+1);
   buffer[0] = 0;
-  ret = GetShortPathName(tempPath, buffer, size);
+  ret = GetShortPathNameW(Encoding::ToWide(tempPath).c_str(),
+    &buffer[0], static_cast<DWORD>(wtempPath.size()));
 
-  if(buffer[0] == 0 || ret > size)
+  if(buffer[0] == 0 || ret > wtempPath.size())
     {
-    delete [] buffer;
     delete [] tempPath;
     return false;
     }
   else
     {
-    shortPath = buffer;
-    delete [] buffer;
+    shortPath = Encoding::ToNarrow(&buffer[0]);
     delete [] tempPath;
     return true;
     }
@@ -4217,12 +4275,45 @@ bool SystemTools::GetPermissions(const char* file, mode_t& mode)
     return false;
     }
 
+#if defined(_WIN32)
+  DWORD attr = GetFileAttributesW(Encoding::ToWide(file).c_str());
+  if(attr == INVALID_FILE_ATTRIBUTES)
+    {
+    return false;
+    }
+  if((attr & FILE_ATTRIBUTE_READONLY) != 0)
+    {
+    mode = (_S_IREAD  | (_S_IREAD  >> 3) | (_S_IREAD  >> 6));
+    }
+  else
+    {
+    mode = (_S_IWRITE | (_S_IWRITE >> 3) | (_S_IWRITE >> 6)) |
+           (_S_IREAD  | (_S_IREAD  >> 3) | (_S_IREAD  >> 6));
+    }
+  if((attr & FILE_ATTRIBUTE_DIRECTORY) != 0)
+    {
+    mode |= S_IFDIR | (_S_IEXEC  | (_S_IEXEC  >> 3) | (_S_IEXEC  >> 6));
+    }
+  else
+    {
+    mode |= S_IFREG;
+    }
+  const char* ext = strrchr(file, '.');
+  if(ext && (Strucmp(ext, ".exe") == 0 ||
+    Strucmp(ext, ".com") == 0 ||
+    Strucmp(ext, ".cmd") == 0 ||
+    Strucmp(ext, ".bat") == 0))
+    {
+    mode |= (_S_IEXEC  | (_S_IEXEC  >> 3) | (_S_IEXEC  >> 6));
+    }
+#else
   struct stat st;
   if ( stat(file, &st) < 0 )
     {
     return false;
     }
   mode = st.st_mode;
+#endif
   return true;
 }
 
@@ -4236,7 +4327,11 @@ bool SystemTools::SetPermissions(const char* file, mode_t mode)
     {
     return false;
     }
+#ifdef _WIN32
+  if ( _wchmod(Encoding::ToWide(file).c_str(), mode) < 0 )
+#else
   if ( chmod(file, mode) < 0 )
+#endif
     {
     return false;
     }
@@ -4341,7 +4436,9 @@ void SystemTools::ConvertWindowsCommandLineToUnixArguments(
 
   (*argv)[0] = new char [1024];
 #ifdef _WIN32
-  ::GetModuleFileName(0, (*argv)[0], 1024);
+  wchar_t tmp[1024];
+  ::GetModuleFileNameW(0, tmp, 1024);
+  strcpy((*argv)[0], Encoding::ToNarrow(tmp).c_str());
 #else
   (*argv)[0][0] = '\0';
 #endif
@@ -4401,14 +4498,14 @@ kwsys_stl::string SystemTools::GetOperatingSystemNameAndVersion()
 #ifdef _WIN32
   char buffer[256];
 
-  OSVERSIONINFOEX osvi;
+  OSVERSIONINFOEXA osvi;
   BOOL bOsVersionInfoEx;
 
   // Try calling GetVersionEx using the OSVERSIONINFOEX structure.
   // If that fails, try using the OSVERSIONINFO structure.
 
-  ZeroMemory(&osvi, sizeof(OSVERSIONINFOEX));
-  osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEX);
+  ZeroMemory(&osvi, sizeof(OSVERSIONINFOEXA));
+  osvi.dwOSVersionInfoSize = sizeof(OSVERSIONINFOEXA);
 
   bOsVersionInfoEx = GetVersionEx((OSVERSIONINFO *)&osvi);
   if (!bOsVersionInfoEx)
@@ -4551,21 +4648,21 @@ kwsys_stl::string SystemTools::GetOperatingSystemNameAndVersion()
         {
         HKEY hKey;
         #define BUFSIZE 80
-        char szProductType[BUFSIZE];
+        wchar_t szProductType[BUFSIZE];
         DWORD dwBufLen=BUFSIZE;
         LONG lRet;
 
-        lRet = RegOpenKeyEx(
+        lRet = RegOpenKeyExW(
           HKEY_LOCAL_MACHINE,
-          "SYSTEM\\CurrentControlSet\\Control\\ProductOptions",
+          L"SYSTEM\\CurrentControlSet\\Control\\ProductOptions",
           0, KEY_QUERY_VALUE, &hKey);
         if (lRet != ERROR_SUCCESS)
           {
           return 0;
           }
 
-        lRet = RegQueryValueEx(hKey, "ProductType", NULL, NULL,
-                               (LPBYTE) szProductType, &dwBufLen);
+        lRet = RegQueryValueExW(hKey, L"ProductType", NULL, NULL,
+                                (LPBYTE) szProductType, &dwBufLen);
 
         if ((lRet != ERROR_SUCCESS) || (dwBufLen > BUFSIZE))
           {
@@ -4574,15 +4671,15 @@ kwsys_stl::string SystemTools::GetOperatingSystemNameAndVersion()
 
         RegCloseKey(hKey);
 
-        if (lstrcmpi("WINNT", szProductType) == 0)
+        if (lstrcmpiW(L"WINNT", szProductType) == 0)
           {
           res += " Workstation";
           }
-        if (lstrcmpi("LANMANNT", szProductType) == 0)
+        if (lstrcmpiW(L"LANMANNT", szProductType) == 0)
           {
           res += " Server";
           }
-        if (lstrcmpi("SERVERNT", szProductType) == 0)
+        if (lstrcmpiW(L"SERVERNT", szProductType) == 0)
           {
           res += " Advanced Server";
           }
@@ -4598,16 +4695,16 @@ kwsys_stl::string SystemTools::GetOperatingSystemNameAndVersion()
       // Display service pack (if any) and build number.
 
       if (osvi.dwMajorVersion == 4 &&
-          lstrcmpi(osvi.szCSDVersion, "Service Pack 6") == 0)
+          lstrcmpiA(osvi.szCSDVersion, "Service Pack 6") == 0)
         {
         HKEY hKey;
         LONG lRet;
 
         // Test for SP6 versus SP6a.
 
-        lRet = RegOpenKeyEx(
+        lRet = RegOpenKeyExW(
           HKEY_LOCAL_MACHINE,
-          "SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Hotfix\\Q246009",
+          L"SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\Hotfix\\Q246009",
           0, KEY_QUERY_VALUE, &hKey);
 
         if (lRet == ERROR_SUCCESS)

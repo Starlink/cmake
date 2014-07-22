@@ -27,9 +27,6 @@
 
 #include <ctype.h> // for isspace
 
-// Package GUID of Intel Visual Fortran plugin to VS IDE
-#define CM_INTEL_PLUGIN_GUID "{B68A201D-CB9B-47AF-A52F-7EEC72E217E4}"
-
 static bool cmLVS6G_IsFAT(const char* dir);
 
 class cmLocalVisualStudio7GeneratorInternals
@@ -78,6 +75,10 @@ void cmLocalVisualStudio7Generator::AddHelperCommands()
     static_cast<cmGlobalVisualStudio7Generator *>(this->GlobalGenerator);
   for(cmTargets::iterator l = tgts.begin(); l != tgts.end(); l++)
     {
+    if(l->second.GetType() == cmTarget::INTERFACE_LIBRARY)
+      {
+      continue;
+      }
     const char* path = l->second.GetProperty("EXTERNAL_MSPROJECT");
     if(path)
       {
@@ -181,6 +182,10 @@ void cmLocalVisualStudio7Generator::WriteProjectFiles()
   for(cmTargets::iterator l = tgts.begin();
       l != tgts.end(); l++)
     {
+    if(l->second.GetType() == cmTarget::INTERFACE_LIBRARY)
+      {
+      continue;
+      }
     // INCLUDE_EXTERNAL_MSPROJECT command only affects the workspace
     // so don't build a projectfile for it
     if(!l->second.GetProperty("EXTERNAL_MSPROJECT"))
@@ -200,7 +205,7 @@ void cmLocalVisualStudio7Generator::WriteStampFiles()
   cmSystemTools::MakeDirectory(stampName.c_str());
   stampName += "/";
   stampName += "generate.stamp";
-  std::ofstream stamp(stampName.c_str());
+  cmsys::ofstream stamp(stampName.c_str());
   stamp << "# CMake generation timestamp file for this directory.\n";
 
   // Create a helper file so CMake can determine when it is run
@@ -211,7 +216,7 @@ void cmLocalVisualStudio7Generator::WriteStampFiles()
   // the stamp file can just be touched.
   std::string depName = stampName;
   depName += ".depend";
-  std::ofstream depFile(depName.c_str());
+  cmsys::ofstream depFile(depName.c_str());
   depFile << "# CMake generation dependency list for this directory.\n";
   std::vector<std::string> const& listFiles = this->Makefile->GetListFiles();
   for(std::vector<std::string>::const_iterator lf = listFiles.begin();
@@ -1260,6 +1265,7 @@ void cmLocalVisualStudio7Generator::OutputBuildTool(std::ostream& fout,
     }
     case cmTarget::UTILITY:
     case cmTarget::GLOBAL_TARGET:
+    case cmTarget::INTERFACE_LIBRARY:
       break;
     }
 }
@@ -1290,7 +1296,8 @@ cmLocalVisualStudio7GeneratorInternals
                                     cmLocalGenerator::UNCHANGED);
       fout << lg->ConvertToXMLOutputPath(rel.c_str()) << " ";
       }
-    else
+    else if (!l->Target
+        || l->Target->GetType() != cmTarget::INTERFACE_LIBRARY)
       {
       fout << l->Value << " ";
       }
@@ -1374,7 +1381,8 @@ void cmLocalVisualStudio7Generator::WriteVCProjFile(std::ostream& fout,
 
   // get the classes from the source lists then add them to the groups
   this->ModuleDefinitionFile = "";
-  std::vector<cmSourceFile*>const & classes = target.GetSourceFiles();
+  std::vector<cmSourceFile*> classes;
+  target.GetSourceFiles(classes);
   for(std::vector<cmSourceFile*>::const_iterator i = classes.begin();
       i != classes.end(); i++)
     {
@@ -1384,9 +1392,9 @@ void cmLocalVisualStudio7Generator::WriteVCProjFile(std::ostream& fout,
       {
       this->ModuleDefinitionFile = (*i)->GetFullPath();
       }
-    cmSourceGroup& sourceGroup =
+    cmSourceGroup* sourceGroup =
       this->Makefile->FindSourceGroup(source.c_str(), sourceGroups);
-    sourceGroup.AssignSource(*i);
+    sourceGroup->AssignSource(*i);
     }
 
   // open the project
@@ -1461,9 +1469,9 @@ cmLocalVisualStudio7GeneratorFCInfo
   cmGeneratorTarget* gt =
     lg->GetGlobalGenerator()->GetGeneratorTarget(&target);
   std::string objectName;
-  if(gt->ExplicitObjectName.find(&sf) != gt->ExplicitObjectName.end())
+  if(gt->HasExplicitObjectName(&sf))
     {
-    objectName = gt->Objects[&sf];
+    objectName = gt->GetObjectName(&sf);
     }
 
   // Compute per-source, per-config information.
@@ -1819,7 +1827,7 @@ WriteCustomRule(std::ostream& fout,
       // make sure the rule runs reliably.
       if(!cmSystemTools::FileExists(source))
         {
-        std::ofstream depout(source);
+        cmsys::ofstream depout(source);
         depout << "Artificial dependency for a custom command.\n";
         }
       fout << this->ConvertToXMLOutputPath(source);
@@ -1953,35 +1961,10 @@ cmLocalVisualStudio7Generator
 
   cmGlobalVisualStudio7Generator* gg =
     static_cast<cmGlobalVisualStudio7Generator *>(this->GlobalGenerator);
-
-  // Compute the version of the Intel plugin to the VS IDE.
-  // If the key does not exist then use a default guess.
-  std::string intelVersion;
-  std::string vskey = gg->GetRegistryBase();
-  vskey += "\\Packages\\" CM_INTEL_PLUGIN_GUID ";ProductVersion";
-  cmSystemTools::ReadRegistryValue(vskey.c_str(), intelVersion,
-                                   cmSystemTools::KeyWOW64_32);
-  unsigned int intelVersionNumber = ~0u;
-  sscanf(intelVersion.c_str(), "%u", &intelVersionNumber);
-  if(intelVersionNumber >= 11)
-    {
-    // Default to latest known project file version.
-    intelVersion = "11.0";
-    }
-  else if(intelVersionNumber == 10)
-    {
-    // Version 10.x actually uses 9.10 in project files!
-    intelVersion = "9.10";
-    }
-  else
-    {
-    // Version <= 9: use ProductVersion from registry.
-    }
-
   fout << "<?xml version=\"1.0\" encoding = \"Windows-1252\"?>\n"
        << "<VisualStudioProject\n"
        << "\tProjectCreator=\"Intel Fortran\"\n"
-       << "\tVersion=\"" << intelVersion << "\"\n";
+       << "\tVersion=\"" << gg->GetIntelProjectVersion() << "\"\n";
   const char* keyword = target.GetProperty("VS_KEYWORD");
   if(!keyword)
     {
@@ -2070,6 +2053,11 @@ cmLocalVisualStudio7Generator::WriteProjectStart(std::ostream& fout,
     fout << "\tProjectGUID=\"{" << gg->GetGUID(libName) << "}\"\n";
     }
   this->WriteProjectSCC(fout, target);
+  if(const char* targetFrameworkVersion =
+     target.GetProperty("VS_DOTNET_TARGET_FRAMEWORK_VERSION"))
+    {
+    fout << "\tTargetFrameworkVersion=\"" << targetFrameworkVersion << "\"\n";
+    }
   fout << "\tKeyword=\"" << keyword << "\">\n"
        << "\t<Platforms>\n"
        << "\t\t<Platform\n\t\t\tName=\"" << this->PlatformName << "\"/>\n"
@@ -2237,7 +2225,7 @@ static bool cmLVS6G_IsFAT(const char* dir)
     char volRoot[4] = "_:/";
     volRoot[0] = dir[0];
     char fsName[16];
-    if(GetVolumeInformation(volRoot, 0, 0, 0, 0, 0, fsName, 16) &&
+    if(GetVolumeInformationA(volRoot, 0, 0, 0, 0, 0, fsName, 16) &&
        strstr(fsName, "FAT") != 0)
       {
       return true;

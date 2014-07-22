@@ -63,8 +63,8 @@ public:
    * was used to write the currently loaded cache, note
    * this method will not work before the cache is loaded.
    */
-  unsigned int GetCacheMajorVersion();
-  unsigned int GetCacheMinorVersion();
+  unsigned int GetCacheMajorVersion() const;
+  unsigned int GetCacheMinorVersion() const;
 
   /* Check for unused variables in this scope */
   void CheckForUnusedVariables() const;
@@ -76,7 +76,7 @@ public:
   bool VariableUsed(const char* ) const;
   /** Return whether compatibility features needed for a version of
       the cache or lower should be enabled.  */
-  bool NeedCacheCompatibility(int major, int minor);
+  bool NeedCacheCompatibility(int major, int minor) const;
 
   /**
    * Construct an empty makefile.
@@ -142,21 +142,14 @@ public:
   void SetLocalGenerator(cmLocalGenerator*);
 
   ///! Get the current makefile generator.
-  cmLocalGenerator* GetLocalGenerator()
+  cmLocalGenerator* GetLocalGenerator() const
     { return this->LocalGenerator;}
-
-  /**
-   * Test whether compatibility is set to a given version or lower.
-   */
-  bool NeedBackwardsCompatibility(unsigned int major,
-                                  unsigned int minor,
-                                  unsigned int patch = 0xFFu);
 
   /**
    * Help enforce global target name uniqueness.
    */
   bool EnforceUniqueName(std::string const& name, std::string& msg,
-                         bool isCustom = false);
+                         bool isCustom = false) const;
 
   /**
    * Perform FinalPass, Library dependency analysis etc before output of the
@@ -172,7 +165,7 @@ public:
   /**
    * Print the object state to std::cout.
    */
-  void Print();
+  void Print() const;
 
   /** Add a custom command to the build.  */
   void AddCustomCommandToTarget(const char* target,
@@ -180,7 +173,7 @@ public:
                                 const cmCustomCommandLines& commandLines,
                                 cmTarget::CustomCommandType type,
                                 const char* comment, const char* workingDir,
-                                bool escapeOldStyle = true);
+                                bool escapeOldStyle = true) const;
   cmSourceFile* AddCustomCommandToOutput(
     const std::vector<std::string>& outputs,
     const std::vector<std::string>& depends,
@@ -257,13 +250,6 @@ public:
    */
   void AddLinkDirectory(const char*);
 
-  /**
-   * Get the list of link directories
-   */
-  std::vector<std::string>& GetLinkDirectories()
-    {
-      return this->LinkDirectories;
-    }
   const std::vector<std::string>& GetLinkDirectories() const
     {
       return this->LinkDirectories;
@@ -363,7 +349,7 @@ public:
      */
   bool SetPolicy(cmPolicies::PolicyID id, cmPolicies::PolicyStatus status);
   bool SetPolicy(const char *id, cmPolicies::PolicyStatus status);
-  cmPolicies::PolicyStatus GetPolicyStatus(cmPolicies::PolicyID id);
+  cmPolicies::PolicyStatus GetPolicyStatus(cmPolicies::PolicyID id) const;
   bool SetPolicyVersion(const char *version);
   void RecordPolicies(cmPolicies::PolicyMap& pm);
   //@}
@@ -386,7 +372,7 @@ public:
   /**
     * Get the Policies Instance
     */
- cmPolicies *GetPolicies();
+ cmPolicies *GetPolicies() const;
 
   /**
    * Add an auxiliary directory to the build.
@@ -499,7 +485,7 @@ public:
     {
       this->IncludeFileRegularExpression = regex;
     }
-  const char* GetIncludeRegularExpression()
+  const char* GetIncludeRegularExpression() const
     {
       return this->IncludeFileRegularExpression.c_str();
     }
@@ -512,7 +498,7 @@ public:
     {
       this->ComplainFileRegularExpression = regex;
     }
-  const char* GetComplainRegularExpression()
+  const char* GetComplainRegularExpression() const
     {
       return this->ComplainFileRegularExpression.c_str();
     }
@@ -540,19 +526,20 @@ public:
       this->GeneratorTargets = targets;
     }
 
-  cmTarget* FindTarget(const char* name, bool excludeAliases = false);
+  cmTarget* FindTarget(const std::string& name,
+                       bool excludeAliases = false) const;
 
   /** Find a target to use in place of the given name.  The target
       returned may be imported or built within the project.  */
-  cmTarget* FindTargetToUse(const char* name, bool excludeAliases = false);
-  bool IsAlias(const char *name);
-  cmGeneratorTarget* FindGeneratorTargetToUse(const char* name);
+  cmTarget* FindTargetToUse(const std::string& name,
+                            bool excludeAliases = false) const;
+  bool IsAlias(const std::string& name) const;
+  cmGeneratorTarget* FindGeneratorTargetToUse(const char* name) const;
 
   /**
    * Mark include directories as system directories.
    */
   void AddSystemIncludeDirectories(const std::set<cmStdString> &incs);
-  bool IsSystemIncludeDirectory(const char* dir, const char *config);
 
   /** Expand out any arguements in the vector that have ; separated
    *  strings into multiple arguements.  A new vector is created
@@ -563,12 +550,12 @@ public:
    */
   void ExpandSourceListArguments(std::vector<std::string> const& argsIn,
                                  std::vector<std::string>& argsOut,
-                                 unsigned int startArgumentIndex);
+                                 unsigned int startArgumentIndex) const;
 
   /** Get a cmSourceFile pointer for a given source name, if the name is
    *  not found, then a null pointer is returned.
    */
-  cmSourceFile* GetSource(const char* sourceName);
+  cmSourceFile* GetSource(const char* sourceName) const;
 
   /** Get a cmSourceFile pointer for a given source name, if the name is
    *  not found, then create the source file and return it. generated
@@ -581,7 +568,7 @@ public:
   /**
    * Obtain a list of auxiliary source directories.
    */
-  std::vector<std::string>& GetAuxSourceDirectories()
+  const std::vector<std::string>& GetAuxSourceDirectories() const
     {return this->AuxSourceDirectories;}
 
   //@{
@@ -626,13 +613,13 @@ public:
   /**
    * Get a list of preprocessor define flags.
    */
-  const char* GetDefineFlags()
+  const char* GetDefineFlags() const
     {return this->DefineFlags.c_str();}
 
   /**
    * Make sure CMake can write this file
    */
-  bool CanIWriteThisFile(const char* fileName);
+  bool CanIWriteThisFile(const char* fileName) const;
 
 #if defined(CMAKE_BUILD_WITH_CMAKE)
   /**
@@ -644,7 +631,7 @@ public:
   /**
    * Get the source group
    */
-  cmSourceGroup* GetSourceGroup(const std::vector<std::string>&name);
+  cmSourceGroup* GetSourceGroup(const std::vector<std::string>&name) const;
 #endif
 
   /**
@@ -655,11 +642,9 @@ public:
   ///! When the file changes cmake will be re-run from the build system.
   void AddCMakeDependFile(const std::string& file)
     { this->ListFiles.push_back(file);}
+  void AddCMakeDependFilesFromUser();
 
-    /**
-     * Get the list file stack as a string
-     */
-    std::string GetListFileStack();
+  std::string GetListFileStack() const;
 
   /**
    * Get the current context backtrace.
@@ -681,14 +666,14 @@ public:
    * entry in the this->Definitions map.  Also \@var\@ is
    * expanded to match autoconf style expansions.
    */
-  const char *ExpandVariablesInString(std::string& source);
+  const char *ExpandVariablesInString(std::string& source) const;
   const char *ExpandVariablesInString(std::string& source, bool escapeQuotes,
                                       bool noEscapes,
                                       bool atOnly = false,
                                       const char* filename = 0,
                                       long line = -1,
                                       bool removeEmpty = false,
-                                      bool replaceAt = true);
+                                      bool replaceAt = true) const;
 
   /**
    * Remove any remaining variables in the string. Anything with ${var} or
@@ -707,7 +692,7 @@ public:
    * See cmConfigureFileCommand for details.
    */
   void ConfigureString(const std::string& input, std::string& output,
-                       bool atOnly, bool escapeQuotes);
+                       bool atOnly, bool escapeQuotes) const;
 
   /**
    * Copy file but change lines acording to ConfigureString
@@ -721,14 +706,14 @@ public:
   /**
    * find what source group this source is in
    */
-  cmSourceGroup& FindSourceGroup(const char* source,
-                                 std::vector<cmSourceGroup> &groups);
+  cmSourceGroup* FindSourceGroup(const char* source,
+                                 std::vector<cmSourceGroup> &groups) const;
 #endif
 
   /**
    * Print a command's invocation
    */
-  void PrintCommandTrace(const cmListFileFunction& lff);
+  void PrintCommandTrace(const cmListFileFunction& lff) const;
 
   /**
    * Execute a single CMake command.  Returns true if the command
@@ -764,14 +749,14 @@ public:
 #endif
 
   ///! Display progress or status message.
-  void DisplayStatus(const char*, float);
+  void DisplayStatus(const char*, float) const;
 
   /**
    * Expand the given list file arguments into the full set after
    * variable replacement and list expansion.
    */
   bool ExpandArguments(std::vector<cmListFileArgument> const& inArgs,
-                       std::vector<std::string>& outArgs);
+                       std::vector<std::string>& outArgs) const;
   /**
    * Get the instance
    */
@@ -788,7 +773,7 @@ public:
    * Is there a source file that has the provided source file as an output?
    * if so then return it
    */
-  cmSourceFile *GetSourceFileWithOutput(const char *outName);
+  cmSourceFile *GetSourceFileWithOutput(const char *outName) const;
 
   /**
    * Add a macro to the list of macros. The arguments should be name of the
@@ -807,20 +792,20 @@ public:
   /**
    * Get a list of macros as a ; separated string
    */
-  void GetListOfMacros(std::string& macros);
+  void GetListOfMacros(std::string& macros) const;
 
   /**
    * Return a location of a file in cmake or custom modules directory
    */
-  std::string GetModulesFile(const char* name);
+  std::string GetModulesFile(const char* name) const;
 
   ///! Set/Get a property of this directory
   void SetProperty(const char *prop, const char *value);
   void AppendProperty(const char *prop, const char *value,bool asString=false);
-  const char *GetProperty(const char *prop);
-  const char *GetPropertyOrDefinition(const char *prop);
-  const char *GetProperty(const char *prop, cmProperty::ScopeType scope);
-  bool GetPropertyAsBool(const char *prop);
+  const char *GetProperty(const char *prop) const;
+  const char *GetPropertyOrDefinition(const char *prop) const;
+  const char *GetProperty(const char *prop, cmProperty::ScopeType scope) const;
+  bool GetPropertyAsBool(const char *prop) const;
 
   const char* GetFeature(const char* feature, const char* config);
 
@@ -841,7 +826,7 @@ public:
 
   void AddTestGenerator(cmTestGenerator* g)
     { if(g) this->TestGenerators.push_back(g); }
-  std::vector<cmTestGenerator*>& GetTestGenerators()
+  const std::vector<cmTestGenerator*>& GetTestGenerators() const
     { return this->TestGenerators; }
 
   // Define the properties
@@ -868,24 +853,29 @@ public:
   /** Set whether or not to report a CMP0000 violation.  */
   void SetCheckCMP0000(bool b) { this->CheckCMP0000 = b; }
 
-  std::vector<cmValueWithOrigin> GetIncludeDirectoriesEntries() const
+  const std::vector<cmValueWithOrigin>& GetIncludeDirectoriesEntries() const
   {
     return this->IncludeDirectoriesEntries;
   }
-  std::vector<cmValueWithOrigin> GetCompileOptionsEntries() const
+  const std::vector<cmValueWithOrigin>& GetCompileOptionsEntries() const
   {
     return this->CompileOptionsEntries;
   }
-  std::vector<cmValueWithOrigin> GetCompileDefinitionsEntries() const
+  const std::vector<cmValueWithOrigin>& GetCompileDefinitionsEntries() const
   {
     return this->CompileDefinitionsEntries;
   }
 
-  bool IsGeneratingBuildSystem(){ return this->GeneratingBuildSystem; }
+  bool IsGeneratingBuildSystem() const { return this->GeneratingBuildSystem; }
   void SetGeneratingBuildSystem(){ this->GeneratingBuildSystem = true; }
+
+  void AddQtUiFileWithOptions(cmSourceFile *sf);
+  std::vector<cmSourceFile*> GetQtUiFilesWithOptions() const;
 
   std::set<cmStdString> const & GetSystemIncludeDirectories() const
     { return this->SystemIncludeDirectories; }
+
+  bool PolicyOptionalWarningEnabled(std::string const& var);
 
 protected:
   // add link libraries and directories to the target
@@ -906,7 +896,7 @@ protected:
   std::string ProjectName;    // project name
 
   // libraries, classes, and executables
-  cmTargets Targets;
+  mutable cmTargets Targets;
   std::map<std::string, cmTarget*> AliasTargets;
   cmGeneratorTargetsType GeneratorTargets;
   std::vector<cmSourceFile*> SourceFiles;
@@ -959,9 +949,8 @@ private:
 
   bool ParseDefineFlag(std::string const& definition, bool remove);
 
-  bool EnforceUniqueDir(const char* srcPath, const char* binPath);
+  bool EnforceUniqueDir(const char* srcPath, const char* binPath) const;
 
-  void ReadSources(std::ifstream& fin, bool t);
   friend class cmMakeDepend;    // make depend needs direct access
                                 // to the Sources array
   void PrintStringVector(const char* s, const
@@ -981,9 +970,9 @@ private:
 
   std::map<cmStdString, bool> SubDirectoryOrder;
 
-  cmsys::RegularExpression cmDefineRegex;
-  cmsys::RegularExpression cmDefine01Regex;
-  cmsys::RegularExpression cmAtVarRegex;
+  mutable cmsys::RegularExpression cmDefineRegex;
+  mutable cmsys::RegularExpression cmDefine01Regex;
+  mutable cmsys::RegularExpression cmAtVarRegex;
 
   cmPropertyMap Properties;
 
@@ -1007,7 +996,6 @@ private:
   CallStackType CallStack;
   friend class cmMakefileCall;
 
-  cmTarget* FindBasicTarget(const char* name);
   std::vector<cmTarget*> ImportedTargetsOwned;
   std::map<cmStdString, cmTarget*> ImportedTargets;
 
@@ -1033,22 +1021,22 @@ private:
   typedef std::vector<PolicyStackEntry> PolicyStackType;
   PolicyStackType PolicyStack;
   std::vector<PolicyStackType::size_type> PolicyBarriers;
-  cmPolicies::PolicyStatus GetPolicyStatusInternal(cmPolicies::PolicyID id);
+  cmPolicies::PolicyStatus
+  GetPolicyStatusInternal(cmPolicies::PolicyID id) const;
 
   bool CheckCMP0000;
 
   // Enforce rules about CMakeLists.txt files.
-  void EnforceDirectoryLevelRules();
+  void EnforceDirectoryLevelRules() const;
 
   bool GeneratingBuildSystem;
-
   /**
    * Old version of GetSourceFileWithOutput(const char*) kept for
    * backward-compatibility. It implements a linear search and support
    * relative file paths. It is used as a fall back by
    * GetSourceFileWithOutput(const char*).
    */
-  cmSourceFile *LinearGetSourceFileWithOutput(const char *cname);
+  cmSourceFile *LinearGetSourceFileWithOutput(const char *cname) const;
 
   // A map for fast output to input look up.
 #if defined(CMAKE_BUILD_WITH_CMAKE)
@@ -1062,6 +1050,8 @@ private:
                                cmSourceFile* source);
   void UpdateOutputToSourceMap(std::string const& output,
                                cmSourceFile* source);
+
+  std::vector<cmSourceFile*> QtUiFilesWithOptions;
 };
 
 //----------------------------------------------------------------------------

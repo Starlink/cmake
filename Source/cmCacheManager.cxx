@@ -20,7 +20,7 @@
 
 #include <cmsys/Directory.hxx>
 #include <cmsys/Glob.hxx>
-
+#include <cmsys/FStream.hxx>
 #include <cmsys/RegularExpression.hxx>
 
 const char* cmCacheManagerTypes[] =
@@ -211,7 +211,7 @@ bool cmCacheManager::LoadCache(const char* path,
     return false;
     }
 
-  std::ifstream fin(cacheFile.c_str());
+  cmsys::ifstream fin(cacheFile.c_str());
   if(!fin)
     {
     return false;
@@ -566,7 +566,7 @@ bool cmCacheManager::SaveCache(const char* path)
   checkCacheFile += cmake::GetCMakeFilesDirectory();
   cmSystemTools::MakeDirectory(checkCacheFile.c_str());
   checkCacheFile += "/cmake.check_cache";
-  std::ofstream checkCache(checkCacheFile.c_str());
+  cmsys::ofstream checkCache(checkCacheFile.c_str());
   if(!checkCache)
     {
     cmSystemTools::Error("Unable to open check cache file for write. ",
@@ -750,11 +750,7 @@ void cmCacheManager::AddCacheEntry(const char* key,
     }
   e.SetProperty("HELPSTRING", helpString? helpString :
                 "(This variable does not exist and should not be used)");
-  if (this->Cache[key].Value == e.Value)
-    {
-    this->CMakeInstance->UnwatchUnusedCli(key);
-    }
-  this->Cache[key] = e;
+  this->CMakeInstance->UnwatchUnusedCli(key);
 }
 
 bool cmCacheManager::CacheIterator::IsAtEnd() const
@@ -930,70 +926,8 @@ bool cmCacheManager::NeedCacheCompatibility(int major, int minor)
 
   // Compatibility is needed if the cache version is equal to or lower
   // than the given version.
-  unsigned int actual_compat =
+  cmIML_INT_uint64_t actual_compat =
     CMake_VERSION_ENCODE(this->CacheMajorVersion, this->CacheMinorVersion, 0);
   return (actual_compat &&
           actual_compat <= CMake_VERSION_ENCODE(major, minor, 0));
-}
-
-//----------------------------------------------------------------------------
-void cmCacheManager::DefineProperties(cmake *cm)
-{
-  cm->DefineProperty
-    ("ADVANCED", cmProperty::CACHE,
-     "True if entry should be hidden by default in GUIs.",
-     "This is a boolean value indicating whether the entry is considered "
-     "interesting only for advanced configuration.  "
-     "The mark_as_advanced() command modifies this property."
-      );
-
-  cm->DefineProperty
-    ("HELPSTRING", cmProperty::CACHE,
-     "Help associated with entry in GUIs.",
-     "This string summarizes the purpose of an entry to help users set it "
-     "through a CMake GUI."
-      );
-
-  cm->DefineProperty
-    ("TYPE", cmProperty::CACHE,
-     "Widget type for entry in GUIs.",
-     "Cache entry values are always strings, but CMake GUIs present widgets "
-     "to help users set values.  "
-     "The GUIs use this property as a hint to determine the widget type.  "
-     "Valid TYPE values are:\n"
-     "  BOOL          = Boolean ON/OFF value.\n"
-     "  PATH          = Path to a directory.\n"
-     "  FILEPATH      = Path to a file.\n"
-     "  STRING        = Generic string value.\n"
-     "  INTERNAL      = Do not present in GUI at all.\n"
-     "  STATIC        = Value managed by CMake, do not change.\n"
-     "  UNINITIALIZED = Type not yet specified.\n"
-     "Generally the TYPE of a cache entry should be set by the command "
-     "which creates it (set, option, find_library, etc.)."
-      );
-
-  cm->DefineProperty
-    ("MODIFIED", cmProperty::CACHE,
-     "Internal management property.  Do not set or get.",
-     "This is an internal cache entry property managed by CMake to "
-     "track interactive user modification of entries.  Ignore it."
-      );
-
-  cm->DefineProperty
-    ("STRINGS", cmProperty::CACHE,
-     "Enumerate possible STRING entry values for GUI selection.",
-     "For cache entries with type STRING, this enumerates a set of values.  "
-     "CMake GUIs may use this to provide a selection widget instead of a "
-     "generic string entry field.  "
-     "This is for convenience only.  "
-     "CMake does not enforce that the value matches one of those listed."
-      );
-
-  cm->DefineProperty
-    ("VALUE", cmProperty::CACHE,
-     "Value of a cache entry.",
-     "This property maps to the actual value of a cache entry.  "
-     "Setting this property always sets the value without checking, so "
-     "use with care."
-      );
 }

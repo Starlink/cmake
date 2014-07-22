@@ -1,5 +1,7 @@
 cmake_minimum_required (VERSION 2.8.8)
-project(GeneratorExpression CXX)
+project(GeneratorExpression)
+
+include(CTest)
 
 # This test is split into multiple parts as needed to avoid NMake command
 # length limits.
@@ -11,6 +13,7 @@ add_custom_target(check-part1 ALL
     -Dtest_1=$<1:content>
     -Dtest_1_with_comma=$<1:-Wl,--no-undefined>
     -Dconfig=$<CONFIGURATION>
+    -Dshort_config=$<CONFIG>
     -Dtest_and_0=$<AND:0>
     -Dtest_and_0_0=$<AND:0,0>
     -Dtest_and_0_1=$<AND:0,1>
@@ -186,7 +189,72 @@ add_custom_target(check-part3 ALL
     -Dtest_alias_target_name=$<STREQUAL:$<TARGET_PROPERTY:Alias::SomeLib,NAME>,$<TARGET_PROPERTY:empty1,NAME>>
     -Dtest_early_termination_1=$<$<1:>:
     -Dtest_early_termination_2=$<$<1:>:,
+    -Dsystem_name=${CMAKE_HOST_SYSTEM_NAME}
+    -Dtest_platform_id=$<PLATFORM_ID>
+    -Dtest_platform_id_Linux=$<PLATFORM_ID:Linux>
+    -Dtest_platform_id_Windows=$<PLATFORM_ID:Windows>
+    -Dtest_platform_id_Darwin=$<PLATFORM_ID:Darwin>
+    -Dlower_case=$<LOWER_CASE:Mi,XeD>
+    -Dupper_case=$<UPPER_CASE:MiX,eD>
+    -Dmake_c_identifier=$<MAKE_C_IDENTIFIER:4f,oo:+bar-$>
+    -Dequal1=$<EQUAL:1,2>
+    -Dequal2=$<EQUAL:1,1>
+    -Dequal3=$<EQUAL:0x1,1>
+    -Dequal4=$<EQUAL:0X1,2>
+    -Dequal5=$<EQUAL:0xA,0xa>
+    -Dequal6=$<EQUAL:0xA,10>
+    -Dequal7=$<EQUAL:0xA,012>
+    -Dequal8=$<EQUAL:10,012>
+    -Dequal9=$<EQUAL:10,010>
+    -Dequal10=$<EQUAL:10,0b1010>
+    -Dequal11=$<EQUAL:-10,-0xa>
+    -Dequal12=$<EQUAL:10,+0xa>
+    -Dequal13=$<EQUAL:+10,+0Xa>
+    -Dequal14=$<EQUAL:+10,0xa>
+    -Dequal15=$<EQUAL:-10,-0Xa>
+    -Dequal16=$<EQUAL:-10,-0b1010>
+    -Dequal17=$<EQUAL:-10,+0b1010>
+    -Dequal18=$<EQUAL:10,+0B1010>
+    -Dequal19=$<EQUAL:10,-0B1010>
+    -Dequal20=$<EQUAL:10,0B1010>
+    -Dequal21=$<EQUAL:10,+012>
+    -Dequal22=$<EQUAL:10,-012>
+    -Dequal23=$<EQUAL:-10,-012>
     -P ${CMAKE_CURRENT_SOURCE_DIR}/check-part3.cmake
   COMMAND ${CMAKE_COMMAND} -E echo "check done (part 3 of 3)"
   VERBATIM
   )
+
+#-----------------------------------------------------------------------------
+# Cover test properties with generator expressions.
+add_executable(echo echo.c)
+add_executable(pwd pwd.c)
+
+add_test(NAME echo-configuration COMMAND echo $<CONFIGURATION>)
+set_property(TEST echo-configuration PROPERTY
+  PASS_REGULAR_EXPRESSION "^$<CONFIGURATION>\n$")
+
+add_test(NAME echo-target-file COMMAND echo $<TARGET_FILE:echo>)
+set_property(TEST echo-target-file PROPERTY
+  PASS_REGULAR_EXPRESSION "/echo${CMAKE_EXECUTABLE_SUFFIX}\n$")
+set_property(TEST echo-target-file PROPERTY
+  REQUIRED_FILES "$<TARGET_FILE:echo>")
+
+add_test(NAME working-dir-arg
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/WorkingDirectory/$<CONFIGURATION>"
+  COMMAND pwd)
+set_property(TEST working-dir-arg PROPERTY
+  PASS_REGULAR_EXPRESSION "WorkingDirectory/$<CONFIGURATION>\n$")
+foreach(c ${CMAKE_CONFIGURATION_TYPES} ${CMAKE_BUILD_TYPE})
+  file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/WorkingDirectory/${c}")
+endforeach()
+
+add_test(echo-old-style echo "\$<CONFIGURATION>")
+set_property(TEST echo-old-style PROPERTY
+    PASS_REGULAR_EXPRESSION "^\\$<CONFIGURATION>\n$")
+
+add_subdirectory(CMP0044 ${CMAKE_BINARY_DIR}/CMP0044-WARN)
+set(CMP0044_TYPE NEW)
+add_subdirectory(CMP0044 ${CMAKE_BINARY_DIR}/CMP0044-NEW)
+set(CMP0044_TYPE OLD)
+add_subdirectory(CMP0044 ${CMAKE_BINARY_DIR}/CMP0044-OLD)

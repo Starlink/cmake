@@ -17,6 +17,7 @@
 #include "cmGeneratedFileStream.h"
 #include "cmMakefile.h"
 #include "cmOSXBundleGenerator.h"
+#include "cmGeneratorTarget.h"
 
 #include <assert.h>
 #include <algorithm>
@@ -27,8 +28,8 @@
 
 
 cmNinjaNormalTargetGenerator::
-cmNinjaNormalTargetGenerator(cmTarget* target)
-  : cmNinjaTargetGenerator(target)
+cmNinjaNormalTargetGenerator(cmGeneratorTarget* target)
+  : cmNinjaTargetGenerator(target->Target)
   , TargetNameOut()
   , TargetNameSO()
   , TargetNameReal()
@@ -36,15 +37,16 @@ cmNinjaNormalTargetGenerator(cmTarget* target)
   , TargetNamePDB()
   , TargetLinkLanguage(0)
 {
-  this->TargetLinkLanguage = target->GetLinkerLanguage(this->GetConfigName());
+  this->TargetLinkLanguage = target->Target
+                                   ->GetLinkerLanguage(this->GetConfigName());
   if (target->GetType() == cmTarget::EXECUTABLE)
-    target->GetExecutableNames(this->TargetNameOut,
+    target->Target->GetExecutableNames(this->TargetNameOut,
                                this->TargetNameReal,
                                this->TargetNameImport,
                                this->TargetNamePDB,
                                GetLocalGenerator()->GetConfigName());
   else
-    target->GetLibraryNames(this->TargetNameOut,
+    target->Target->GetLibraryNames(this->TargetNameOut,
                             this->TargetNameSO,
                             this->TargetNameReal,
                             this->TargetNameImport,
@@ -55,7 +57,7 @@ cmNinjaNormalTargetGenerator(cmTarget* target)
     {
     // on Windows the output dir is already needed at compile time
     // ensure the directory exists (OutDir test)
-    EnsureDirectoryExists(target->GetDirectory(this->GetConfigName()));
+    EnsureDirectoryExists(target->Target->GetDirectory(this->GetConfigName()));
     }
 
   this->OSXBundleGenerator = new cmOSXBundleGenerator(target,
@@ -261,8 +263,11 @@ cmNinjaNormalTargetGenerator
                                         description.str(),
                                         comment.str(),
                                         /*depfile*/ "",
+                                        /*deptype*/ "",
                                         rspfile,
-                                        rspcontent);
+                                        rspcontent,
+                                        /*restat*/ false,
+                                        /*generator*/ false);
   }
 
   if (this->TargetNameOut != this->TargetNameReal &&
@@ -277,14 +282,28 @@ cmNinjaNormalTargetGenerator
                                           " -E cmake_symlink_executable"
                                           " $in $out && $POST_BUILD",
                                           "Creating executable symlink $out",
-                                      "Rule for creating executable symlink.");
+                                          "Rule for creating "
+                                          "executable symlink.",
+                                          /*depfile*/ "",
+                                          /*deptype*/ "",
+                                          /*rspfile*/ "",
+                                          /*rspcontent*/ "",
+                                          /*restat*/ false,
+                                          /*generator*/ false);
     else
       this->GetGlobalGenerator()->AddRule("CMAKE_SYMLINK_LIBRARY",
                                           cmakeCommand +
                                           " -E cmake_symlink_library"
                                           " $in $SONAME $out && $POST_BUILD",
                                           "Creating library symlink $out",
-                                         "Rule for creating library symlink.");
+                                          "Rule for creating "
+                                          "library symlink.",
+                                          /*depfile*/ "",
+                                          /*deptype*/ "",
+                                          /*rspfile*/ "",
+                                          /*rspcontent*/ "",
+                                          /*restat*/ false,
+                                          /*generator*/ false);
   }
 }
 
@@ -445,6 +464,8 @@ void cmNinjaNormalTargetGenerator::WriteLinkStatement()
                                             linkPath,
                                             this->GetGeneratorTarget());
 
+  this->addPoolNinjaVariable("JOB_POOL_LINK", this->GetTarget(), vars);
+
   this->AddModuleDefinitionFlag(vars["LINK_FLAGS"]);
   vars["LINK_FLAGS"] = cmGlobalNinjaGenerator
                         ::EncodeLiteral(vars["LINK_FLAGS"]);
@@ -517,7 +538,7 @@ void cmNinjaNormalTargetGenerator::WriteLinkStatement()
     std::replace(linkLibraries.begin(), linkLibraries.end(), '\\', '/');
     }
 
-  std::vector<cmCustomCommand> *cmdLists[3] = {
+  const std::vector<cmCustomCommand> *cmdLists[3] = {
     &this->GetTarget()->GetPreBuildCommands(),
     &this->GetTarget()->GetPreLinkCommands(),
     &this->GetTarget()->GetPostBuildCommands()

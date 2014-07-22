@@ -15,7 +15,7 @@
 
 #include <vector>
 #include <string>
-#include <fstream>
+#include <cmsys/FStream.hxx>
 
 #include <CPack/cmCPackLog.h>
 
@@ -32,12 +32,15 @@ public:
 
   void BeginElement(const std::string& name);
 
-  void EndElement();
+  void EndElement(const std::string& name);
 
   void AddProcessingInstruction(
     const std::string& target, const std::string& content);
 
   void AddAttribute(
+    const std::string& key, const std::string& value);
+
+  void AddAttributeUnlessEmpty(
     const std::string& key, const std::string& value);
 
   static std::string WindowsCodepageToUtf8(const std::string& value);
@@ -57,11 +60,13 @@ private:
 
   cmCPackLog* Logger;
 
-  std::ofstream file;
+  cmsys::ofstream File;
 
-  State state;
+  State State;
 
-  std::vector<std::string> elements;
+  std::vector<std::string> Elements;
+
+  std::string SourceFilename;
 };
 
 #endif

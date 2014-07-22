@@ -77,6 +77,8 @@ public:
   virtual void EnableLanguage(std::vector<std::string>const& languages,
                               cmMakefile *, bool optional);
 
+  virtual void Configure();
+
   /**
    * Generate the all required files for building this project/tree. This
    * basically creates a series of LocalGenerators for each directory and
@@ -105,12 +107,16 @@ public:
   std::string GetEmptyRuleHackDepends() { return this->EmptyRuleHackDepends; }
 
   // change the build command for speed
-  virtual std::string GenerateBuildCommand
-  (const char* makeProgram,
-   const char *projectName, const char *projectDir,
-   const char* additionalOptions,
-   const char *targetName,
-   const char* config, bool ignoreErrors, bool fast);
+  virtual void GenerateBuildCommand(
+    std::vector<std::string>& makeCommand,
+    const char* makeProgram,
+    const char* projectName,
+    const char* projectDir,
+    const char* targetName,
+    const char* config,
+    bool fast,
+    std::vector<std::string> const& makeOptions = std::vector<std::string>()
+    );
 
   /** Record per-target progress information.  */
   void RecordTargetProgress(cmMakefileTargetGenerator* tg);
@@ -118,6 +124,9 @@ public:
   void AddCXXCompileCommand(const std::string &sourceFile,
                             const std::string &workingDirectory,
                             const std::string &compileCommand);
+
+  /** Does the make tool tolerate .NOTPARALLEL? */
+  virtual bool AllowNotParallel() const { return true; }
 
 protected:
   void WriteMainMakefile2();
@@ -152,7 +161,7 @@ protected:
   const char* GetRebuildCacheTargetName()  const { return "rebuild_cache"; }
   const char* GetCleanTargetName()         const { return "clean"; }
 
-  virtual bool CheckALLOW_DUPLICATE_CUSTOM_TARGETS() { return true; }
+  virtual bool CheckALLOW_DUPLICATE_CUSTOM_TARGETS() const { return true; }
 
   // Some make programs (Borland) do not keep a rule if there are no
   // dependencies or commands.  This is a problem for creating rules
@@ -175,17 +184,20 @@ protected:
     std::vector<unsigned long> Marks;
     void WriteProgressVariables(unsigned long total, unsigned long& current);
   };
-  struct ProgressMapCompare { bool operator()(cmTarget*,cmTarget*) const; };
-  typedef std::map<cmTarget*, TargetProgress,
+  struct ProgressMapCompare { bool operator()(cmTarget const*,
+                                              cmTarget const*) const; };
+  typedef std::map<cmTarget const*, TargetProgress,
                    ProgressMapCompare> ProgressMapType;
   ProgressMapType ProgressMap;
 
-  size_t CountProgressMarksInTarget(cmTarget* target,
-                                    std::set<cmTarget*>& emitted);
+  size_t CountProgressMarksInTarget(cmTarget const* target,
+                                    std::set<cmTarget const*>& emitted);
   size_t CountProgressMarksInAll(cmLocalUnixMakefileGenerator3* lg);
 
   cmGeneratedFileStream *CommandDatabase;
 private:
+  virtual const char* GetBuildIgnoreErrorsFlag() const { return "-i"; }
+  virtual std::string GetEditCacheCommand() const;
   virtual void ComputeTargetObjects(cmGeneratorTarget* gt) const;
 };
 

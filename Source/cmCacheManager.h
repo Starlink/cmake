@@ -145,12 +145,11 @@ public:
   const char* GetCacheValue(const char* key) const;
 
   /** Get the version of CMake that wrote the cache.  */
-  unsigned int GetCacheMajorVersion() { return this->CacheMajorVersion; }
-  unsigned int GetCacheMinorVersion() { return this->CacheMinorVersion; }
+  unsigned int GetCacheMajorVersion() const
+    { return this->CacheMajorVersion; }
+  unsigned int GetCacheMinorVersion() const
+    { return this->CacheMinorVersion; }
   bool NeedCacheCompatibility(int major, int minor);
-
-  /** Define and document CACHE entry properties.  */
-  static void DefineProperties(cmake *cm);
 
 protected:
   ///! Add an entry into the cache
@@ -182,7 +181,6 @@ private:
   // the commands should never use the cmCacheManager directly
   friend class cmMakefile; // allow access to add cache values
   friend class cmake; // allow access to add cache values
-  friend class cmakewizard; // allow access to add cache values
   friend class cmMarkAsAdvancedCommand; // allow access to add cache values
 };
 

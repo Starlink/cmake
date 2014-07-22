@@ -24,6 +24,7 @@
 //#include <cmsys/RegularExpression.hxx>
 #include <cmsys/Process.h>
 #include <cmsys/Directory.hxx>
+#include <cmsys/FStream.hxx>
 
 // used for sleep
 #ifdef _WIN32
@@ -751,7 +752,7 @@ void cmCTestBuildHandler::GenerateXMLFooter(std::ostream& os,
 void cmCTestBuildHandler::GenerateXMLLaunchedFragment(std::ostream& os,
                                                       const char* fname)
 {
-  std::ifstream fin(fname, std::ios::in | std::ios::binary);
+  cmsys::ifstream fin(fname, std::ios::in | std::ios::binary);
   std::string line;
   while(cmSystemTools::GetLineFromStream(fin, line))
     {
@@ -763,7 +764,7 @@ void cmCTestBuildHandler::GenerateXMLLaunchedFragment(std::ostream& os,
 bool cmCTestBuildHandler::IsLaunchedErrorFile(const char* fname)
 {
   // error-{hash}.xml
-  return (strncmp(fname, "error-", 6) == 0 &&
+  return (cmHasLiteralPrefix(fname, "error-") &&
           strcmp(fname+strlen(fname)-4, ".xml") == 0);
 }
 
@@ -771,7 +772,7 @@ bool cmCTestBuildHandler::IsLaunchedErrorFile(const char* fname)
 bool cmCTestBuildHandler::IsLaunchedWarningFile(const char* fname)
 {
   // warning-{hash}.xml
-  return (strncmp(fname, "warning-", 8) == 0 &&
+  return (cmHasLiteralPrefix(fname, "warning-") &&
           strcmp(fname+strlen(fname)-4, ".xml") == 0);
 }
 
@@ -885,7 +886,7 @@ cmCTestBuildHandler::LaunchHelper
 
 //----------------------------------------------------------------------
 int cmCTestBuildHandler::RunMakeCommand(const char* command,
-  int* retVal, const char* dir, int timeout, std::ofstream& ofs)
+  int* retVal, const char* dir, int timeout, std::ostream& ofs)
 {
   // First generate the command and arguments
   std::vector<cmStdString> args = cmSystemTools::ParseArguments(command);
@@ -1049,7 +1050,7 @@ int cmCTestBuildHandler::RunMakeCommand(const char* command,
 
 //----------------------------------------------------------------------
 void cmCTestBuildHandler::ProcessBuffer(const char* data, int length,
-  size_t& tick, size_t tick_len, std::ofstream& ofs,
+  size_t& tick, size_t tick_len, std::ostream& ofs,
   t_BuildProcessingQueueType* queue)
 {
   const std::string::size_type tick_line_len = 50;

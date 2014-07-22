@@ -21,79 +21,57 @@
 #include "cmVersion.h"
 #include <cmsys/CommandLineArguments.hxx>
 #include <cmsys/SystemTools.hxx>
+#include <cmsys/Encoding.hxx>
 
 //----------------------------------------------------------------------------
-static const char * cmDocumentationName[][3] =
+static const char * cmDocumentationName[][2] =
 {
   {0,
-   "  cmake-gui - CMake GUI.", 0},
-  {0,0,0}
+   "  cmake-gui - CMake GUI."},
+  {0,0}
 };
 
 //----------------------------------------------------------------------------
-static const char * cmDocumentationUsage[][3] =
+static const char * cmDocumentationUsage[][2] =
 {
   {0,
    "  cmake-gui [options]\n"
    "  cmake-gui [options] <path-to-source>\n"
-   "  cmake-gui [options] <path-to-existing-build>", 0},
-  {0,0,0}
+   "  cmake-gui [options] <path-to-existing-build>"},
+  {0,0}
 };
 
 //----------------------------------------------------------------------------
-static const char * cmDocumentationDescription[][3] =
+static const char * cmDocumentationOptions[][2] =
 {
-  {0,
-   "The \"cmake-gui\" executable is the CMake GUI.  Project "
-   "configuration settings may be specified interactively.  "
-   "Brief instructions are provided at the bottom of the "
-   "window when the program is running.", 0},
-  CMAKE_STANDARD_INTRODUCTION,
-  {0,0,0}
-};
-
-//----------------------------------------------------------------------------
-static const char * cmDocumentationOptions[][3] =
-{
-  {0,0,0}
+  {0,0}
 };
 
 int main(int argc, char** argv)
 {
-  cmSystemTools::FindExecutableDirectory(argv[0]);
+  cmsys::Encoding::CommandLineArguments encoding_args =
+    cmsys::Encoding::CommandLineArguments::Main(argc, argv);
+  int argc2 = encoding_args.argc();
+  char const* const* argv2 = encoding_args.argv();
+
+  cmSystemTools::FindCMakeResources(argv2[0]);
   // check docs first so that X is not need to get docs
   // do docs, if args were given
   cmDocumentation doc;
   doc.addCMakeStandardDocSections();
-  if(argc >1 && doc.CheckOptions(argc, argv))
+  if(argc2 >1 && doc.CheckOptions(argc2, argv2))
     {
     // Construct and print requested documentation.
     cmake hcm;
     hcm.AddCMakePaths();
-    // just incase the install is bad avoid a seg fault
-    const char* root = hcm.GetCacheDefinition("CMAKE_ROOT");
-    if(root)
-      {
-      doc.SetCMakeRoot(root);
-      }
-    std::vector<cmDocumentationEntry> commands;
-    std::vector<cmDocumentationEntry> compatCommands;
-    std::map<std::string,cmDocumentationSection *> propDocs;
 
     std::vector<cmDocumentationEntry> generators;
-    hcm.GetCommandDocumentation(commands, true, false);
-    hcm.GetCommandDocumentation(compatCommands, false, true);
     hcm.GetGeneratorDocumentation(generators);
-    hcm.GetPropertiesDocumentation(propDocs);
     doc.SetName("cmake");
     doc.SetSection("Name",cmDocumentationName);
     doc.SetSection("Usage",cmDocumentationUsage);
-    doc.SetSection("Description",cmDocumentationDescription);
     doc.AppendSection("Generators",generators);
     doc.PrependSection("Options",cmDocumentationOptions);
-    doc.SetSection("Commands",commands);
-    doc.SetSection("Compatilbility Commands", compatCommands);
-    doc.SetSections(propDocs);
 
     return (doc.PrintRequestedDocumentation(std::cout)? 0:1);
     }
@@ -108,9 +86,9 @@ int main(int argc, char** argv)
     }
 
   // if arg for install
-  for(int i =0; i < argc; i++)
+  for(int i =0; i < argc2; i++)
     {
-    if(strcmp(argv[i], "--mac-install") == 0)
+    if(strcmp(argv2[i], "--mac-install") == 0)
       {
       QMacInstallDialog setupdialog(0);
       setupdialog.exec();
@@ -144,7 +122,7 @@ int main(int argc, char** argv)
   dialog.show();
 
   cmsys::CommandLineArguments arg;
-  arg.Initialize(argc, argv);
+  arg.Initialize(argc2, argv2);
   std::string binaryDirectory;
   std::string sourceDirectory;
   typedef cmsys::CommandLineArguments argT;

@@ -69,9 +69,11 @@ public:
 protected:
   virtual const char* GetIDEVersion() { return "8.0"; }
 
+  virtual std::string FindDevEnvCommand();
+
   virtual bool VSLinksDependencies() const { return false; }
 
-  void AddCheckTarget();
+  bool AddCheckTarget();
 
   static cmIDEFlagTable const* GetExtraFlagTableVS8();
   virtual void WriteSLNHeader(std::ostream& fout);
@@ -82,7 +84,7 @@ protected:
     const char* platformMapping = NULL);
   virtual bool ComputeTargetDepends();
   virtual void WriteProjectDepends(std::ostream& fout, const char* name,
-                                   const char* path, cmTarget &t);
+                                   const char* path, cmTarget const& t);
 
   std::string Name;
   std::string WindowsCEVersion;

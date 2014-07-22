@@ -31,6 +31,8 @@ class cmExternalMakefileProjectGenerator;
 class cmTarget;
 class cmInstallTargetGenerator;
 class cmInstallFilesGenerator;
+class cmExportBuildFileGenerator;
+class cmQtAutoGenerators;
 
 /** \class cmGlobalGenerator
  * \brief Responable for overseeing the generation process for the entire tree
@@ -50,6 +52,10 @@ public:
 
   ///! Get the name for this generator
   virtual const char *GetName() const { return "Generic"; };
+
+  /** Check whether the given name matches the current generator.  */
+  virtual bool MatchesGeneratorName(const char* name) const
+  { return strcmp(this->GetName(), name) == 0; }
 
   /** Set the generator-specific toolset name.  Returns true if toolset
       is supported and false otherwise.  */
@@ -74,7 +80,7 @@ public:
   void SetLanguageEnabled(const char*, cmMakefile* mf);
   bool GetLanguageEnabled(const char*) const;
   void ClearEnabledLanguages();
-  void GetEnabledLanguages(std::vector<std::string>& lang);
+  void GetEnabledLanguages(std::vector<std::string>& lang) const;
   /**
    * Try to determine system infomation such as shared library
    * extension, pthreads, byte order etc.
@@ -87,7 +93,7 @@ public:
    * Intended to be called from EnableLanguage.
    */
   void ResolveLanguageCompiler(const std::string &lang, cmMakefile *mf,
-                               bool optional);
+                               bool optional) const;
 
   /**
    * Try to determine system infomation, get it from another generator
@@ -117,24 +123,28 @@ public:
             bool clean, bool fast,
             double timeout,
             cmSystemTools::OutputOption outputflag=cmSystemTools::OUTPUT_NONE,
-            const char* extraOptions = 0,
             std::vector<std::string> const& nativeOptions =
             std::vector<std::string>());
 
-  virtual std::string GenerateBuildCommand(
+  virtual void GenerateBuildCommand(
+    std::vector<std::string>& makeCommand,
     const char* makeProgram,
     const char *projectName, const char *projectDir,
-    const char* additionalOptions,
-    const char *targetName, const char* config,
-    bool ignoreErrors, bool fast);
+    const char *targetName, const char* config, bool fast,
+    std::vector<std::string> const& makeOptions = std::vector<std::string>()
+    );
 
+  /** Generate a "cmake --build" call for a given target and config.  */
+  std::string GenerateCMakeBuildCommand(const char* target,
+                                        const char* config,
+                                        const char* native,
+                                        bool ignoreErrors);
 
   ///! Set the CMake instance
   void SetCMakeInstance(cmake *cm);
 
   ///! Get the CMake instance
-  cmake *GetCMakeInstance() { return this->CMakeInstance; }
-  const cmake *GetCMakeInstance() const { return this->CMakeInstance; }
+  cmake *GetCMakeInstance() const { return this->CMakeInstance; }
 
   void SetConfiguredFilesPath(cmGlobalGenerator* gen);
   const std::vector<cmLocalGenerator *>& GetLocalGenerators() const {
@@ -172,16 +182,20 @@ public:
   bool GetToolSupportsColor() const { return this->ToolSupportsColor; }
 
   ///! return the language for the given extension
-  const char* GetLanguageFromExtension(const char* ext);
+  const char* GetLanguageFromExtension(const char* ext) const;
   ///! is an extension to be ignored
-  bool IgnoreFile(const char* ext);
+  bool IgnoreFile(const char* ext) const;
   ///! What is the preference for linkers and this language (None or Prefered)
-  int GetLinkerPreference(const char* lang);
+  int GetLinkerPreference(const char* lang) const;
   ///! What is the object file extension for a given source file?
-  const char* GetLanguageOutputExtension(cmSourceFile const&);
+  const char* GetLanguageOutputExtension(cmSourceFile const&) const;
 
   ///! What is the configurations directory variable called?
   virtual const char* GetCMakeCFGIntDir() const { return "."; }
+
+  ///! expand CFGIntDir for a configuration
+  virtual std::string ExpandCFGIntDir(const std::string& str,
+                                      const std::string& config) const;
 
   /** Get whether the generator should use a script for link commands.  */
   bool GetUseLinkScript() const { return this->UseLinkScript; }
@@ -193,24 +207,24 @@ public:
   /*
    * Determine what program to use for building the project.
    */
-  void FindMakeProgram(cmMakefile*);
+  virtual void FindMakeProgram(cmMakefile*);
 
   ///! Find a target by name by searching the local generators.
   cmTarget* FindTarget(const char* project, const char* name,
-                       bool excludeAliases = false);
+                       bool excludeAliases = false) const;
 
   void AddAlias(const char *name, cmTarget *tgt);
-  bool IsAlias(const char *name);
+  bool IsAlias(const char *name) const;
 
   /** Determine if a name resolves to a framework on disk or a built target
       that is a framework. */
-  bool NameResolvesToFramework(const std::string& libname);
+  bool NameResolvesToFramework(const std::string& libname) const;
 
   /** If check to see if the target is linked to by any other
       target in the project */
-  bool IsDependedOn(const char* project, cmTarget* target);
+  bool IsDependedOn(const char* project, cmTarget const* target);
   ///! Find a local generator by its startdirectory
-  cmLocalGenerator* FindLocalGenerator(const char* start_dir);
+  cmLocalGenerator* FindLocalGenerator(const char* start_dir) const;
 
   /** Append the subdirectory for the given configuration.  If anything is
       appended the given prefix and suffix will be appended around it, which
@@ -234,6 +248,8 @@ public:
 
   void AddTarget(cmTarget* t);
 
+  static bool IsReservedTarget(std::string const& name);
+
   virtual const char* GetAllTargetName()         const { return "ALL_BUILD"; }
   virtual const char* GetInstallTargetName()       const { return "INSTALL"; }
   virtual const char* GetInstallLocalTargetName()  const { return 0; }
@@ -246,15 +262,18 @@ public:
   virtual const char* GetRebuildCacheTargetName()  const { return 0; }
   virtual const char* GetCleanTargetName()         const { return 0; }
 
+  // Lookup edit_cache target command preferred by this generator.
+  virtual std::string GetEditCacheCommand() const { return ""; }
+
   // Class to track a set of dependencies.
   typedef cmTargetDependSet TargetDependSet;
 
   // what targets does the specified target depend on directly
   // via a target_link_libraries or add_dependencies
-  TargetDependSet const& GetTargetDirectDepends(cmTarget & target);
+  TargetDependSet const& GetTargetDirectDepends(cmTarget const& target);
 
   /** Get per-target generator information.  */
-  cmGeneratorTarget* GetGeneratorTarget(cmTarget*) const;
+  cmGeneratorTarget* GetGeneratorTarget(cmTarget const*) const;
 
   const std::map<cmStdString, std::vector<cmLocalGenerator*> >& GetProjectMap()
                                                const {return this->ProjectMap;}
@@ -278,7 +297,7 @@ public:
       i.e. "Can I build Debug and Release in the same tree?" */
   virtual bool IsMultiConfig() { return false; }
 
-  std::string GetSharedLibFlagsForLanguage(std::string const& lang);
+  std::string GetSharedLibFlagsForLanguage(std::string const& lang) const;
 
   /** Generate an <output>.rule file path for a given command output.  */
   virtual std::string GenerateRuleFile(std::string const& output) const;
@@ -293,6 +312,16 @@ public:
 
   void ProcessEvaluationFiles();
 
+  std::map<std::string, cmExportBuildFileGenerator*>& GetBuildExportSets()
+    {return this->BuildExportSets;}
+  void AddBuildExportSet(cmExportBuildFileGenerator*);
+  void AddBuildExportExportSet(cmExportBuildFileGenerator*);
+  bool IsExportedTargetsFile(const std::string &filename) const;
+  bool GenerateImportFile(const std::string &file);
+  cmExportBuildFileGenerator*
+  GetExportedTargetsFile(const std::string &filename) const;
+  void AddCMP0042WarnTarget(const std::string& target);
+
 protected:
   typedef std::vector<cmLocalGenerator*> GeneratorVector;
   // for a project collect all its targets by following depend
@@ -300,26 +329,31 @@ protected:
   virtual void GetTargetSets(TargetDependSet& projectTargets,
                              TargetDependSet& originalTargets,
                              cmLocalGenerator* root, GeneratorVector const&);
-  virtual bool IsRootOnlyTarget(cmTarget* target);
-  void AddTargetDepends(cmTarget* target, TargetDependSet& projectTargets);
+  bool IsRootOnlyTarget(cmTarget* target) const;
+  void AddTargetDepends(cmTarget const* target,
+                        TargetDependSet& projectTargets);
   void SetLanguageEnabledFlag(const char* l, cmMakefile* mf);
   void SetLanguageEnabledMaps(const char* l, cmMakefile* mf);
   void FillExtensionToLanguageMap(const char* l, cmMakefile* mf);
 
   virtual bool ComputeTargetDepends();
 
-  virtual bool CheckALLOW_DUPLICATE_CUSTOM_TARGETS();
+  virtual bool CheckALLOW_DUPLICATE_CUSTOM_TARGETS() const;
 
   bool CheckTargets();
-  void CreateAutomocTargets();
+  typedef std::vector<std::pair<cmQtAutoGenerators,
+                                cmTarget const*> > AutogensType;
+  void CreateQtAutoGeneratorsTargets(AutogensType& autogens);
 
+  std::string SelectMakeProgram(const char* makeProgram,
+                                std::string makeDefault = "") const;
 
   // Fill the ProjectMap, this must be called after LocalGenerators
   // has been populated.
   void FillProjectMap();
   void CheckLocalGenerators();
-  bool IsExcluded(cmLocalGenerator* root, cmLocalGenerator* gen);
-  bool IsExcluded(cmLocalGenerator* root, cmTarget& target);
+  bool IsExcluded(cmLocalGenerator* root, cmLocalGenerator* gen) const;
+  bool IsExcluded(cmLocalGenerator* root, cmTarget const& target) const;
   void FillLocalGeneratorToTargetMap();
   void CreateDefaultGlobalTargets(cmTargets* targets);
   cmTarget CreateGlobalTarget(const char* name, const char* message,
@@ -337,13 +371,16 @@ protected:
   cmLocalGenerator* CurrentLocalGenerator;
   // map from project name to vector of local generators in that project
   std::map<cmStdString, std::vector<cmLocalGenerator*> > ProjectMap;
-  std::map<cmLocalGenerator*, std::set<cmTarget *> > LocalGeneratorToTargetMap;
+  std::map<cmLocalGenerator*, std::set<cmTarget const*> >
+                                                    LocalGeneratorToTargetMap;
 
   // Set of named installation components requested by the project.
   std::set<cmStdString> InstallComponents;
   bool InstallTargetEnabled;
   // Sets of named target exports
   cmExportSetMap ExportSets;
+  std::map<std::string, cmExportBuildFileGenerator*> BuildExportSets;
+  std::map<std::string, cmExportBuildFileGenerator*> BuildExportExportSets;
 
   // Manifest of all targets that will be built for each configuration.
   // This is computed just before local generators generate.
@@ -382,7 +419,11 @@ private:
 
   void WriteSummary();
   void WriteSummary(cmTarget* target);
-  void FinalizeTargetCompileDefinitions();
+  void FinalizeTargetCompileInfo();
+
+  virtual void PrintCompilerAdvice(std::ostream& os, std::string lang,
+                                   const char* envVar) const;
+  void CheckCompilerIdCompatibility(cmMakefile* mf, std::string lang) const;
 
   cmExternalMakefileProjectGenerator* ExtraGenerator;
 
@@ -390,14 +431,20 @@ private:
   std::vector<std::string> FilesReplacedDuringGenerate;
 
   // Store computed inter-target dependencies.
-  typedef std::map<cmTarget *, TargetDependSet> TargetDependMap;
+  typedef std::map<cmTarget const*, TargetDependSet> TargetDependMap;
   TargetDependMap TargetDependencies;
 
   // Per-target generator information.
   cmGeneratorTargetsType GeneratorTargets;
+  friend class cmake;
+  void CreateGeneratorTargets(cmMakefile* mf);
   void CreateGeneratorTargets();
-  void ClearGeneratorTargets();
+  void ComputeGeneratorTargetObjects();
   virtual void ComputeTargetObjects(cmGeneratorTarget* gt) const;
+
+  void ClearGeneratorMembers();
+
+  virtual const char* GetBuildIgnoreErrorsFlag() const { return 0; }
 
   // Cache directory content and target files to be built.
   struct DirectoryContent: public std::set<cmStdString>
@@ -412,6 +459,9 @@ private:
 
   // Set of binary directories on disk.
   std::set<cmStdString> BinaryDirectories;
+
+  // track targets to issue CMP0042 warning for.
+  std::set<std::string> CMP0042WarnTargets;
 };
 
 #endif

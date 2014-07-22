@@ -20,6 +20,8 @@
 #include <cmsys/Process.h>
 #include <cmsys/RegularExpression.hxx>
 #include <cmsys/Base64.h>
+#include <cmsys/Directory.hxx>
+#include <cmsys/FStream.hxx>
 #include "cmMakefile.h"
 #include "cmGlobalGenerator.h"
 #include "cmLocalGenerator.h"
@@ -59,10 +61,6 @@ public:
    * The name of the command as specified in CMakeList.txt.
    */
   virtual const char* GetName() const { return "subdirs";}
-
-  // Unused methods
-  virtual const char* GetTerseDocumentation() const { return ""; }
-  virtual const char* GetFullDocumentation() const { return ""; }
 
   cmTypeMacro(cmCTestSubdirCommand, cmCommand);
 
@@ -161,10 +159,6 @@ public:
    */
   virtual const char* GetName() const { return "add_subdirectory";}
 
-  // Unused methods
-  virtual const char* GetTerseDocumentation() const { return ""; }
-  virtual const char* GetFullDocumentation() const { return ""; }
-
   cmTypeMacro(cmCTestAddSubdirectoryCommand, cmCommand);
 
   cmCTestTestHandler* TestHandler;
@@ -249,11 +243,7 @@ public:
   /**
    * The name of the command as specified in CMakeList.txt.
    */
-  virtual const char* GetName() const { return "ADD_TEST";}
-
-  // Unused methods
-  virtual const char* GetTerseDocumentation() const { return ""; }
-  virtual const char* GetFullDocumentation() const { return ""; }
+  virtual const char* GetName() const { return "add_test";}
 
   cmTypeMacro(cmCTestAddTestCommand, cmCommand);
 
@@ -297,11 +287,7 @@ public:
   /**
    * The name of the command as specified in CMakeList.txt.
    */
-  virtual const char* GetName() const { return "SET_TESTS_PROPERTIES";}
-
-  // Unused methods
-  virtual const char* GetTerseDocumentation() const { return ""; }
-  virtual const char* GetFullDocumentation() const { return ""; }
+  virtual const char* GetName() const { return "set_tests_properties";}
 
   cmTypeMacro(cmCTestSetTestsPropertiesCommand, cmCommand);
 
@@ -537,6 +523,7 @@ int cmCTestTestHandler::ProcessHandler()
     this->UseExcludeRegExp();
     this->SetExcludeRegExp(val);
     }
+  this->SetRerunFailed(cmSystemTools::IsOn(this->GetOption("RerunFailed")));
 
   this->TestResults.clear();
 
@@ -819,6 +806,13 @@ void cmCTestTestHandler::ComputeTestList()
 {
   this->TestList.clear(); // clear list of test
   this->GetListOfTests();
+
+  if (this->RerunFailed)
+    {
+    this->ComputeTestListForRerunFailed();
+    return;
+    }
+
   cmCTestTestHandler::ListOfTests::size_type tmsize = this->TestList.size();
   // how many tests are in based on RegExp?
   int inREcnt = 0;
@@ -881,9 +875,47 @@ void cmCTestTestHandler::ComputeTestList()
   this->TotalNumberOfTests = this->TestList.size();
   // Set the TestList to the final list of all test
   this->TestList = finalList;
+
+  this->UpdateMaxTestNameWidth();
+}
+
+void cmCTestTestHandler::ComputeTestListForRerunFailed()
+{
+  this->ExpandTestsToRunInformationForRerunFailed();
+
+  cmCTestTestHandler::ListOfTests::iterator it;
+  ListOfTests finalList;
+  int cnt = 0;
+  for ( it = this->TestList.begin(); it != this->TestList.end(); it ++ )
+    {
+    cnt ++;
+
+    // if this test is not in our list of tests to run, then skip it.
+    if ((this->TestsToRun.size() &&
+         std::find(this->TestsToRun.begin(), this->TestsToRun.end(), cnt)
+         == this->TestsToRun.end()))
+      {
+      continue;
+      }
+
+    it->Index = cnt;
+    finalList.push_back(*it);
+    }
+
+  // Save the total number of tests before exclusions
+  this->TotalNumberOfTests = this->TestList.size();
+
+  // Set the TestList to the list of failed tests to rerun
+  this->TestList = finalList;
+
+  this->UpdateMaxTestNameWidth();
+}
+
+void cmCTestTestHandler::UpdateMaxTestNameWidth()
+{
   std::string::size_type max = this->CTest->GetMaxTestNameWidth();
-  for (it = this->TestList.begin();
-       it != this->TestList.end(); it ++ )
+  for ( cmCTestTestHandler::ListOfTests::iterator it = this->TestList.begin();
+        it != this->TestList.end(); it ++ )
     {
     cmCTestTestProperties& p = *it;
     if(max < p.Name.size())
@@ -900,7 +932,7 @@ void cmCTestTestHandler::ComputeTestList()
 
 bool cmCTestTestHandler::GetValue(const char* tag,
                                   int& value,
-                                  std::ifstream& fin)
+                                  std::istream& fin)
 {
   std::string line;
   bool ret = true;
@@ -922,7 +954,7 @@ bool cmCTestTestHandler::GetValue(const char* tag,
 
 bool cmCTestTestHandler::GetValue(const char* tag,
                                   double& value,
-                                  std::ifstream& fin)
+                                  std::istream& fin)
 {
   std::string line;
   cmSystemTools::GetLineFromStream(fin, line);
@@ -944,7 +976,7 @@ bool cmCTestTestHandler::GetValue(const char* tag,
 
 bool cmCTestTestHandler::GetValue(const char* tag,
                                   bool& value,
-                                  std::ifstream& fin)
+                                  std::istream& fin)
 {
   std::string line;
   cmSystemTools::GetLineFromStream(fin, line);
@@ -976,7 +1008,7 @@ bool cmCTestTestHandler::GetValue(const char* tag,
 
 bool cmCTestTestHandler::GetValue(const char* tag,
                                   size_t& value,
-                                  std::ifstream& fin)
+                                  std::istream& fin)
 {
   std::string line;
   cmSystemTools::GetLineFromStream(fin, line);
@@ -998,7 +1030,7 @@ bool cmCTestTestHandler::GetValue(const char* tag,
 
 bool cmCTestTestHandler::GetValue(const char* tag,
                                   std::string& value,
-                                  std::ifstream& fin)
+                                  std::istream& fin)
 {
   std::string line;
   cmSystemTools::GetLineFromStream(fin, line);
@@ -1708,6 +1740,91 @@ void cmCTestTestHandler::ExpandTestsToRunInformation(size_t numTests)
   this->TestsToRun.erase(new_end, this->TestsToRun.end());
 }
 
+void cmCTestTestHandler::ExpandTestsToRunInformationForRerunFailed()
+{
+
+  std::string dirName = this->CTest->GetBinaryDir() + "/Testing/Temporary";
+
+  cmsys::Directory directory;
+  if (directory.Load(dirName.c_str()) == 0)
+    {
+    cmCTestLog(this->CTest, ERROR_MESSAGE, "Unable to read the contents of "
+      << dirName << std::endl);
+    return;
+    }
+
+  int numFiles = static_cast<int>
+    (cmsys::Directory::GetNumberOfFilesInDirectory(dirName.c_str()));
+  std::string pattern = "LastTestsFailed";
+  std::string logName = "";
+
+  for (int i = 0; i < numFiles; ++i)
+    {
+    std::string fileName = directory.GetFile(i);
+    // bcc crashes if we attempt a normal substring comparison,
+    // hence the following workaround
+    std::string fileNameSubstring = fileName.substr(0, pattern.length());
+    if (fileNameSubstring.compare(pattern) != 0)
+      {
+      continue;
+      }
+    if (logName == "")
+      {
+      logName = fileName;
+      }
+    else
+      {
+      // if multiple matching logs were found we use the most recently
+      // modified one.
+      int res;
+      cmSystemTools::FileTimeCompare(logName.c_str(), fileName.c_str(), &res);
+      if (res == -1)
+        {
+        logName = fileName;
+        }
+      }
+    }
+
+  std::string lastTestsFailedLog = this->CTest->GetBinaryDir()
+    + "/Testing/Temporary/" + logName;
+
+  if ( !cmSystemTools::FileExists(lastTestsFailedLog.c_str()) )
+    {
+    if ( !this->CTest->GetShowOnly() && !this->CTest->ShouldPrintLabels() )
+      {
+      cmCTestLog(this->CTest, ERROR_MESSAGE, lastTestsFailedLog
+        << " does not exist!" << std::endl);
+      }
+    return;
+    }
+
+  // parse the list of tests to rerun from LastTestsFailed.log
+  cmsys::ifstream ifs(lastTestsFailedLog.c_str());
+  if ( ifs )
+    {
+    std::string line;
+    std::string::size_type pos;
+    while ( cmSystemTools::GetLineFromStream(ifs, line) )
+      {
+      pos = line.find(':', 0);
+      if (pos == line.npos)
+        {
+        continue;
+        }
+
+      int val = atoi(line.substr(0, pos).c_str());
+      this->TestsToRun.push_back(val);
+      }
+    ifs.close();
+    }
+  else if ( !this->CTest->GetShowOnly() && !this->CTest->ShouldPrintLabels() )
+    {
+    cmCTestLog(this->CTest, ERROR_MESSAGE, "Problem reading file: "
+      << lastTestsFailedLog.c_str() <<
+      " while generating list of previously failed tests." << std::endl);
+    }
+}
+
 //----------------------------------------------------------------------
 // Just for convenience
 #define SPACE_REGEX "[ \t\r\n]"
@@ -1848,7 +1965,7 @@ std::string cmCTestTestHandler::GenerateRegressionImages(
           }
         else
           {
-          std::ifstream ifs(filename.c_str(), std::ios::in
+          cmsys::ifstream ifs(filename.c_str(), std::ios::in
 #ifdef _WIN32
                             | std::ios::binary
 #endif
@@ -1938,7 +2055,7 @@ void cmCTestTestHandler::SetTestsToRunInformation(const char* in)
   // string
   if(cmSystemTools::FileExists(in))
     {
-    std::ifstream fin(in);
+    cmsys::ifstream fin(in);
     unsigned long filelen = cmSystemTools::FileLength(in);
     char* buff = new char[filelen+1];
     fin.getline(buff, filelen);
@@ -2112,6 +2229,14 @@ bool cmCTestTestHandler::SetTestsProperties(
               rtit->Processors = 1;
               }
             }
+          if ( key == "SKIP_RETURN_CODE" )
+            {
+            rtit->SkipReturnCode = atoi(val.c_str());
+            if(rtit->SkipReturnCode < 0 || rtit->SkipReturnCode > 255)
+              {
+              rtit->SkipReturnCode = -1;
+              }
+            }
           if ( key == "DEPENDS" )
             {
             std::vector<std::string> lval;
@@ -2247,6 +2372,7 @@ bool cmCTestTestHandler::AddTest(const std::vector<std::string>& args)
   test.ExplicitTimeout = false;
   test.Cost = 0;
   test.Processors = 1;
+  test.SkipReturnCode = -1;
   test.PreviousRuns = 0;
   if (this->UseIncludeRegExpFlag &&
     !this->IncludeTestsRegularExpression.find(testname.c_str()))

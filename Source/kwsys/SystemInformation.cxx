@@ -117,16 +117,8 @@ typedef int siginfo_t;
 #  include <ifaddrs.h>
 #  define KWSYS_SYSTEMINFORMATION_IMPLEMENT_FQDN
 # endif
-# if __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__-0 >= 1050
-#  if defined(KWSYS_SYSTEMINFORMATION_HAS_BACKTRACE)
-#   include <execinfo.h>
-#   if defined(KWSYS_SYSTEMINFORMATION_HAS_CPP_DEMANGLE)
-#     include <cxxabi.h>
-#   endif
-#   if defined(KWSYS_SYSTEMINFORMATION_HAS_SYMBOL_LOOKUP)
-#     include <dlfcn.h>
-#   endif
-#  endif
+# if !(__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__-0 >= 1050)
+#  undef KWSYS_SYSTEMINFORMATION_HAS_BACKTRACE
 # endif
 #endif
 
@@ -139,15 +131,6 @@ typedef int siginfo_t;
 #  include <ifaddrs.h>
 #  if !defined(__LSB_VERSION__) /* LSB has no getifaddrs */
 #   define KWSYS_SYSTEMINFORMATION_IMPLEMENT_FQDN
-#  endif
-# endif
-# if defined(KWSYS_SYSTEMINFORMATION_HAS_BACKTRACE)
-#  include <execinfo.h>
-#  if defined(KWSYS_SYSTEMINFORMATION_HAS_CPP_DEMANGLE)
-#    include <cxxabi.h>
-#  endif
-#  if defined(KWSYS_SYSTEMINFORMATION_HAS_SYMBOL_LOOKUP)
-#    include <dlfcn.h>
 #  endif
 # endif
 # if defined(KWSYS_CXX_HAS_RLIMIT64)
@@ -167,6 +150,19 @@ typedef struct rlimit ResourceLimitType;
 
 #ifdef __HAIKU__
 # include <OS.h>
+#endif
+
+#if defined(KWSYS_SYSTEMINFORMATION_HAS_BACKTRACE)
+# include <execinfo.h>
+# if defined(KWSYS_SYSTEMINFORMATION_HAS_CPP_DEMANGLE)
+#  include <cxxabi.h>
+# endif
+# if defined(KWSYS_SYSTEMINFORMATION_HAS_SYMBOL_LOOKUP)
+#  include <dlfcn.h>
+# endif
+#else
+# undef KWSYS_SYSTEMINFORMATION_HAS_CPP_DEMANGLE
+# undef KWSYS_SYSTEMINFORMATION_HAS_SYMBOL_LOOKUP
 #endif
 
 #include <memory.h>
@@ -244,7 +240,7 @@ static bool call_cpuid(int select, int result[4])
     _asm {
 #ifdef CPUID_AWARE_COMPILER
       ; we must push/pop the registers <<CPUID>> writes to, as the
-      ; optimiser doesn't know about <<CPUID>>, and so doesn't expect
+      ; optimiser does not know about <<CPUID>>, and so does not expect
       ; these registers to change.
       push eax
       push ebx
@@ -1734,12 +1730,12 @@ int SystemInformationImplementation::GetFullyQualifiedDomainName(
       {
       char host[NI_MAXHOST]={'\0'};
 
-      socklen_t addrlen
+      const size_t addrlen
         = (fam==AF_INET?sizeof(struct sockaddr_in):sizeof(struct sockaddr_in6));
 
       ierr=getnameinfo(
             ifa->ifa_addr,
-            addrlen,
+            static_cast<socklen_t>(addrlen),
             host,
             NI_MAXHOST,
             NULL,
@@ -2445,8 +2441,8 @@ bool SystemInformationImplementation::RetrieveCPUClockSpeed()
   if (!retrieved)
     {
     HKEY hKey = NULL;
-    LONG err = RegOpenKeyEx(HKEY_LOCAL_MACHINE,
-      "HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0", 0,
+    LONG err = RegOpenKeyExW(HKEY_LOCAL_MACHINE,
+      L"HARDWARE\\DESCRIPTION\\System\\CentralProcessor\\0", 0,
       KEY_READ, &hKey);
 
     if (ERROR_SUCCESS == err)
@@ -2455,7 +2451,7 @@ bool SystemInformationImplementation::RetrieveCPUClockSpeed()
       DWORD data = 0;
       DWORD dwSize = sizeof(DWORD);
 
-      err = RegQueryValueEx(hKey, "~MHz", 0,
+      err = RegQueryValueExW(hKey, L"~MHz", 0,
         &dwType, (LPBYTE) &data, &dwSize);
 
       if (ERROR_SUCCESS == err)
@@ -3153,8 +3149,17 @@ bool SystemInformationImplementation::RetreiveInformationFromCpuInfoFile()
   kwsys_stl::string cores =
                         this->ExtractValueFromCpuInfoFile(buffer,"cpu cores");
   int numberOfCoresPerCPU=atoi(cores.c_str());
-  this->NumberOfPhysicalCPU=static_cast<unsigned int>(
-    numberOfCoresPerCPU*(maxId+1));
+  if (maxId > 0)
+    {
+    this->NumberOfPhysicalCPU=static_cast<unsigned int>(
+      numberOfCoresPerCPU*(maxId+1));
+    }
+  else
+    {
+    // Linux Sparc: get cpu count
+    this->NumberOfPhysicalCPU=
+            atoi(this->ExtractValueFromCpuInfoFile(buffer,"ncpus active").c_str());
+    }
 
 #else // __CYGWIN__
   // does not have "physical id" entries, neither "cpu cores"
@@ -3176,7 +3181,19 @@ bool SystemInformationImplementation::RetreiveInformationFromCpuInfoFile()
 
   // CPU speed (checking only the first processor)
   kwsys_stl::string CPUSpeed = this->ExtractValueFromCpuInfoFile(buffer,"cpu MHz");
-  this->CPUSpeedInMHz = static_cast<float>(atof(CPUSpeed.c_str()));
+  if(!CPUSpeed.empty())
+    {
+    this->CPUSpeedInMHz = static_cast<float>(atof(CPUSpeed.c_str()));
+    }
+#ifdef __linux
+  else
+    {
+    // Linux Sparc: CPU speed is in Hz and encoded in hexadecimal
+    CPUSpeed = this->ExtractValueFromCpuInfoFile(buffer,"Cpu0ClkTck");
+    this->CPUSpeedInMHz = static_cast<float>(
+                                 strtoull(CPUSpeed.c_str(),0,16))/1000000.0f;
+    }
+#endif
 
   // Chip family
   kwsys_stl::string familyStr =
@@ -3836,7 +3853,8 @@ bool SystemInformationImplementation::QueryLinuxMemory()
     unsigned long temp;
     unsigned long cachedMem;
     unsigned long buffersMem;
-    char *r=fgets(buffer, sizeof(buffer), fd); // Skip "total: used:..."
+    // Skip "total: used:..."
+    char *r=fgets(buffer, static_cast<int>(sizeof(buffer)), fd);
     int status=0;
     if(r==buffer)
       {
@@ -4981,7 +4999,12 @@ bool SystemInformationImplementation::QueryHPUXProcessor()
     case CPU_PA_RISC2_0:
       this->ChipID.Vendor = "Hewlett-Packard";
       this->ChipID.Family = 0x200;
+#  ifdef CPU_HP_INTEL_EM_1_0
+    case CPU_HP_INTEL_EM_1_0:
+#  endif
+#  ifdef CPU_IA64_ARCHREV_0
     case CPU_IA64_ARCHREV_0:
+#  endif
       this->ChipID.Vendor = "GenuineIntel";
       this->Features.HasIA64 = true;
       break;
@@ -5007,19 +5030,19 @@ bool SystemInformationImplementation::QueryOSInformation()
 
   this->OSName = "Windows";
 
-  OSVERSIONINFOEX osvi;
+  OSVERSIONINFOEXW osvi;
   BOOL bIsWindows64Bit;
   BOOL bOsVersionInfoEx;
   char operatingSystem[256];
 
   // Try calling GetVersionEx using the OSVERSIONINFOEX structure.
-  ZeroMemory (&osvi, sizeof (OSVERSIONINFOEX));
-  osvi.dwOSVersionInfoSize = sizeof (OSVERSIONINFOEX);
-  bOsVersionInfoEx = GetVersionEx ((OSVERSIONINFO *) &osvi);
+  ZeroMemory (&osvi, sizeof (OSVERSIONINFOEXW));
+  osvi.dwOSVersionInfoSize = sizeof (OSVERSIONINFOEXW);
+  bOsVersionInfoEx = GetVersionExW ((OSVERSIONINFOW*)&osvi);
   if (!bOsVersionInfoEx)
     {
-    osvi.dwOSVersionInfoSize = sizeof (OSVERSIONINFO);
-    if (!GetVersionEx ((OSVERSIONINFO *) &osvi))
+    osvi.dwOSVersionInfoSize = sizeof (OSVERSIONINFOW);
+    if (!GetVersionExW((OSVERSIONINFOW*)&osvi))
       {
       return false;
       }
@@ -5105,19 +5128,19 @@ bool SystemInformationImplementation::QueryOSInformation()
 #endif        // VER_NT_WORKSTATION
         {
         HKEY hKey;
-        char szProductType[80];
+        wchar_t szProductType[80];
         DWORD dwBufLen;
 
         // Query the registry to retrieve information.
-        RegOpenKeyEx (HKEY_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Control\\ProductOptions", 0, KEY_QUERY_VALUE, &hKey);
-        RegQueryValueEx (hKey, "ProductType", NULL, NULL, (LPBYTE) szProductType, &dwBufLen);
+        RegOpenKeyExW(HKEY_LOCAL_MACHINE, L"SYSTEM\\CurrentControlSet\\Control\\ProductOptions", 0, KEY_QUERY_VALUE, &hKey);
+        RegQueryValueExW(hKey, L"ProductType", NULL, NULL, (LPBYTE) szProductType, &dwBufLen);
         RegCloseKey (hKey);
 
-        if (lstrcmpi ("WINNT", szProductType) == 0)
+        if (lstrcmpiW(L"WINNT", szProductType) == 0)
           {
           this->OSRelease += " Professional";
           }
-        if (lstrcmpi ("LANMANNT", szProductType) == 0)
+        if (lstrcmpiW(L"LANMANNT", szProductType) == 0)
           {
           // Decide between Windows 2000 Advanced Server and Windows .NET Enterprise Server.
           if (osvi.dwMajorVersion == 5 && osvi.dwMinorVersion == 1)
@@ -5129,7 +5152,7 @@ bool SystemInformationImplementation::QueryOSInformation()
             this->OSRelease += " Server";
             }
           }
-        if (lstrcmpi ("SERVERNT", szProductType) == 0)
+        if (lstrcmpiW(L"SERVERNT", szProductType) == 0)
           {
           // Decide between Windows 2000 Advanced Server and Windows .NET Enterprise Server.
           if (osvi.dwMajorVersion == 5 && osvi.dwMinorVersion == 1)
@@ -5162,7 +5185,7 @@ bool SystemInformationImplementation::QueryOSInformation()
         LPFNPROC DLLProc;
 
         // Load the Kernel32 DLL.
-        hKernelDLL = LoadLibrary ("kernel32");
+        hKernelDLL = LoadLibraryW(L"kernel32");
         if (hKernelDLL != NULL)  {
           // Only XP and .NET Server support IsWOW64Process so... Load dynamically!
           DLLProc = (LPFNPROC) GetProcAddress (hKernelDLL, "IsWow64Process");

@@ -23,6 +23,21 @@ cmake_version_component()
 "
 }
 
+# Install destination extraction function.
+cmake_install_dest_default()
+{
+  cat "${cmake_source_dir}/Source/CMakeInstallDestinations.cmake" | sed -n '
+/^ *set(CMAKE_'"${1}"'_DIR_DEFAULT.*) # '"${2}"'$/ {
+  s/^ *set(CMAKE_'"${1}"'_DIR_DEFAULT *"\([^"]*\)").*$/\1/
+  s/${CMake_VERSION_MAJOR}/'"${cmake_version_major}"'/
+  s/${CMake_VERSION_MINOR}/'"${cmake_version_minor}"'/
+  s/${CMake_VERSION_PATCH}/'"${cmake_version_patch}"'/
+  p
+  q
+}
+'
+}
+
 cmake_toupper()
 {
     echo "$1" | sed 'y/abcdefghijklmnopqrstuvwxyz/ABCDEFGHIJKLMNOPQRSTUVWXYZ/'
@@ -38,22 +53,32 @@ cmake_version_major="`cmake_version_component MAJOR`"
 cmake_version_minor="`cmake_version_component MINOR`"
 cmake_version_patch="`cmake_version_component PATCH`"
 cmake_version="${cmake_version_major}.${cmake_version_minor}.${cmake_version_patch}"
-cmake_version_tweak="`cmake_version_component TWEAK`"
-if [ "$cmake_version_tweak" != "0" ]; then
-  cmake_version="${cmake_version}.${cmake_version_tweak}"
+cmake_version_rc="`cmake_version_component RC`"
+if [ "$cmake_version_rc" != "" ]; then
+  cmake_version="${cmake_version}-rc${cmake_version_rc}"
 fi
 
-cmake_data_dir="share/cmake-${cmake_version_major}.${cmake_version_minor}"
-cmake_doc_dir="doc/cmake-${cmake_version_major}.${cmake_version_minor}"
-cmake_man_dir="man"
+cmake_copyright="`grep '^Copyright .* Kitware' "${cmake_source_dir}/Copyright.txt"`"
+
+cmake_data_dir_keyword="OTHER"
+cmake_doc_dir_keyword="OTHER"
+cmake_man_dir_keyword="OTHER"
+cmake_data_dir=""
+cmake_doc_dir=""
+cmake_man_dir=""
 cmake_init_file=""
 cmake_bootstrap_system_libs=""
 cmake_bootstrap_qt_gui=""
 cmake_bootstrap_qt_qmake=""
+cmake_sphinx_man=""
+cmake_sphinx_html=""
+cmake_sphinx_build=""
 
 # Determine whether this is a Cygwin environment.
 if echo "${cmake_system}" | grep CYGWIN >/dev/null 2>&1; then
   cmake_system_cygwin=true
+  cmake_doc_dir_keyword="CYGWIN"
+  cmake_man_dir_keyword="CYGWIN"
 else
   cmake_system_cygwin=false
 fi
@@ -75,6 +100,8 @@ fi
 # Determine whether this is BeOS
 if echo "${cmake_system}" | grep BeOS >/dev/null 2>&1; then
   cmake_system_beos=true
+  cmake_doc_dir_keyword="HAIKU"
+  cmake_man_dir_keyword="HAIKU"
 else
   cmake_system_beos=false
 fi
@@ -82,6 +109,8 @@ fi
 # Determine whether this is Haiku
 if echo "${cmake_system}" | grep Haiku >/dev/null 2>&1; then
   cmake_system_haiku=true
+  cmake_doc_dir_keyword="HAIKU"
+  cmake_man_dir_keyword="HAIKU"
 else
   cmake_system_haiku=false
 fi
@@ -160,11 +189,14 @@ if ${cmake_system_mingw}; then
   fi
 elif ${cmake_system_haiku}; then
   cmake_default_prefix=`finddir B_COMMON_DIRECTORY`
-  cmake_man_dir="documentation/man"
-  cmake_doc_dir="documentation/doc/cmake-${cmake_version}"
 else
   cmake_default_prefix="/usr/local"
 fi
+
+# Lookup default install destinations.
+cmake_data_dir_default="`cmake_install_dest_default DATA ${cmake_data_dir_keyword}`"
+cmake_doc_dir_default="`cmake_install_dest_default DOC ${cmake_doc_dir_keyword}`"
+cmake_man_dir_default="`cmake_install_dest_default MAN ${cmake_man_dir_keyword}`"
 
 CMAKE_KNOWN_C_COMPILERS="cc gcc xlc icc tcc"
 CMAKE_KNOWN_CXX_COMPILERS="aCC xlC CC g++ c++ icc como "
@@ -196,7 +228,7 @@ CMAKE_CXX_SOURCES="\
   cmStandardIncludes \
   cmake  \
   cmakemain \
-  cmakewizard  \
+  cmcmd  \
   cmCommandArgumentLexer \
   cmCommandArgumentParser \
   cmCommandArgumentParserHelper \
@@ -204,7 +236,6 @@ CMAKE_CXX_SOURCES="\
   cmDepends \
   cmDependsC \
   cmDocumentationFormatter \
-  cmDocumentationFormatterText \
   cmPolicies \
   cmProperty \
   cmPropertyMap \
@@ -249,12 +280,11 @@ CMAKE_CXX_SOURCES="\
   cmNewLineStyle \
   cmBootstrapCommands1 \
   cmBootstrapCommands2 \
-  cmCommands \
+  cmCommandsForBootstrap \
   cmTarget \
   cmTest \
   cmCustomCommand \
   cmCustomCommandGenerator \
-  cmDocumentVariables \
   cmCacheManager \
   cmListFileCache \
   cmComputeLinkDepends \
@@ -275,8 +305,7 @@ CMAKE_CXX_SOURCES="\
 if ${cmake_system_mingw}; then
   CMAKE_CXX_SOURCES="${CMAKE_CXX_SOURCES}\
     cmGlobalMSYSMakefileGenerator \
-    cmGlobalMinGWMakefileGenerator \
-    cmWin32ProcessExecution"
+    cmGlobalMinGWMakefileGenerator"
 fi
 
 CMAKE_C_SOURCES="\
@@ -285,11 +314,13 @@ CMAKE_C_SOURCES="\
 
 if ${cmake_system_mingw}; then
   KWSYS_C_SOURCES="\
+    EncodingC \
     ProcessWin32 \
     String \
     System"
 else
   KWSYS_C_SOURCES="\
+    EncodingC \
     ProcessUNIX \
     String \
     System"
@@ -297,6 +328,7 @@ fi
 
 KWSYS_CXX_SOURCES="\
   Directory \
+  EncodingCXX \
   Glob \
   RegularExpression \
   SystemTools"
@@ -304,6 +336,9 @@ KWSYS_CXX_SOURCES="\
 KWSYS_FILES="\
   auto_ptr.hxx \
   Directory.hxx \
+  Encoding.h \
+  Encoding.hxx \
+  FStream.hxx \
   Glob.hxx \
   Process.h \
   RegularExpression.hxx \
@@ -317,6 +352,11 @@ KWSYS_IOS_FILES="
   iosfwd \
   iostream \
   sstream"
+
+KWIML_FILES='
+  ABI.h
+  INT.h
+'
 
 # Display CMake bootstrap usage
 cmake_usage()
@@ -351,15 +391,19 @@ Configuration:
   --no-qt-gui             do not build the Qt-based GUI (default)
   --qt-qmake=<qmake>      use <qmake> as the qmake executable to find Qt
 
+  --sphinx-man            build man pages with Sphinx
+  --sphinx-html           build html help with Sphinx
+  --sphinx-build=<sb>     use <sb> as the sphinx-build executable
+
 Directory and file names:
   --prefix=PREFIX         install files in tree rooted at PREFIX
                           ['"${cmake_default_prefix}"']
   --datadir=DIR           install data files in PREFIX/DIR
-                          ['"${cmake_data_dir}"']
+                          ['"${cmake_data_dir_default}"']
   --docdir=DIR            install documentation files in PREFIX/DIR
-                          ['"${cmake_doc_dir}"']
+                          ['"${cmake_doc_dir_default}"']
   --mandir=DIR            install man pages files in PREFIX/DIR/manN
-                          ['"${cmake_man_dir}"']
+                          ['"${cmake_man_dir_default}"']
 '
   exit 10
 }
@@ -367,7 +411,7 @@ Directory and file names:
 # Display CMake bootstrap usage
 cmake_version_display()
 {
-  echo "CMake ${cmake_version}, Copyright 2000-2012 Kitware, Inc."
+  echo "CMake ${cmake_version}, ${cmake_copyright}"
 }
 
 # Display CMake bootstrap error, display the log file and exit
@@ -442,6 +486,7 @@ cmake_kwsys_config_replace_string ()
                 s/@KWSYS_STL_HAS_ALLOCATOR_REBIND@/${KWSYS_STL_HAS_ALLOCATOR_REBIND}/g;
                 s/@KWSYS_STL_HAS_ALLOCATOR_MAX_SIZE_ARGUMENT@/${KWSYS_STL_HAS_ALLOCATOR_MAX_SIZE_ARGUMENT}/g;
                 s/@KWSYS_STL_HAS_ALLOCATOR_OBJECTS@/${KWSYS_STL_HAS_ALLOCATOR_OBJECTS}/g;
+                s/@KWSYS_STL_HAS_WSTRING@/${KWSYS_STL_HAS_WSTRING}/g;
                 s/@KWSYS_CXX_HAS_CSTDDEF@/${KWSYS_CXX_HAS_CSTDDEF}/g;
                 s/@KWSYS_CXX_HAS_NULL_TEMPLATE_ARGS@/${KWSYS_CXX_HAS_NULL_TEMPLATE_ARGS}/g;
                 s/@KWSYS_CXX_HAS_MEMBER_TEMPLATES@/${KWSYS_CXX_HAS_MEMBER_TEMPLATES}/g;
@@ -582,6 +627,9 @@ while test $# != 0; do
   --qt-gui) cmake_bootstrap_qt_gui="1" ;;
   --no-qt-gui) cmake_bootstrap_qt_gui="0" ;;
   --qt-qmake=*) cmake_bootstrap_qt_qmake=`cmake_arg "$1"` ;;
+  --sphinx-man) cmake_sphinx_man="1" ;;
+  --sphinx-html) cmake_sphinx_html="1" ;;
+  --sphinx-build=*) cmake_sphinx_build=`cmake_arg "$1"` ;;
   --help) cmake_usage ;;
   --version) cmake_version_display ; exit 2 ;;
   --verbose) cmake_verbose=TRUE ;;
@@ -658,6 +706,11 @@ for a in stl ios; do
   fi
 done
 
+[ -d "cmIML" ] || mkdir "cmIML"
+if [ ! -d "cmIML" ]; then
+  cmake_error 12 "Cannot create directory ${cmake_bootstrap_dir}/cmIML"
+fi
+
 # Delete all the bootstrap files
 rm -f "${cmake_bootstrap_dir}/cmake_bootstrap.log"
 rm -f "${cmake_bootstrap_dir}/cmConfigure.h${_tmp}"
@@ -692,10 +745,7 @@ if ${cmake_system_linux}; then
   # avoid binutils problem with large binaries, e.g. when building CMake in debug mode
   # See http://gcc.gnu.org/bugzilla/show_bug.cgi?id=50230
   if ${cmake_machine_parisc}; then
-    # if -O[s23] is given the effect is inverted, so do not use the flag then
-    if [ "`echo "${CXXFLAGS}" | sed -r '/^(.* )?(-O[s234])( .*)?$/s/.*/-Os/'`" != "-Os" ]; then
-      cmake_ld_flags="${LDFLAGS} -Wl,--unique=.text.*"
-    fi
+    cmake_ld_flags="${LDFLAGS} -Wl,--unique=.text._*"
   fi
 fi
 
@@ -1035,8 +1085,8 @@ if [ "x${cmake_cxx_compiler_is_gnu}" != "x1" ]; then
   cmake_test_flags=
 
   # If we are on HP-UX, check for -Ae for the C compiler.
-  cmake_test_flags="-Ae"
   if [ "x${cmake_system}" = "xHP-UX" ]; then
+    cmake_test_flags="-Ae"
     TMPFILE=`cmake_tmp_file`
     echo '
     int main(int argc, char** argv) { (void)argc; (void)argv; return 0; }
@@ -1057,6 +1107,29 @@ if [ "x${cmake_cxx_compiler_is_gnu}" != "x1" ]; then
       echo "${cmake_c_compiler} does not need ${cmake_test_flags}"
     fi
     rm -f "${TMPFILE}.c"
+    echo '
+    #include <iostream>
+    int main(int argc, char** argv) {
+    for(int i=0; i < 1; ++i);
+    for(int i=0; i < 1; ++i);
+    (void)argc; (void)argv; return 0; }
+' > ${TMPFILE}.cxx
+    cmake_need_AAstd98=0
+    cmake_test_flags="-AA +hpxstd98"
+    if cmake_try_run "${cmake_cxx_compiler}" "${cmake_cxx_flags}" "${TMPFILE}.cxx" >> cmake_bootstrap.log 2>&1; then
+      :
+    else
+      if cmake_try_run "${cmake_cxx_compiler}" \
+        "${cmake_cxx_flags} ${cmake_test_flags}" "${TMPFILE}.cxx" >> cmake_bootstrap.log 2>&1; then
+        cmake_need_AAstd98=1
+      fi
+    fi
+    if [ "x${cmake_need_AAstd98}" = "x1" ]; then
+      cmake_cxx_flags="${cmake_cxx_flags} ${cmake_test_flags}"
+      echo "${cmake_cxx_compiler} needs ${cmake_test_flags}"
+    else
+      echo "${cmake_cxx_compiler} does not need ${cmake_test_flags}"
+    fi
   fi
   cmake_test_flags=
 fi
@@ -1083,6 +1156,7 @@ KWSYS_STL_HAS_ALLOCATOR_NONTEMPLATE=0
 KWSYS_STL_HAS_ALLOCATOR_REBIND=0
 KWSYS_STL_HAS_ALLOCATOR_MAX_SIZE_ARGUMENT=0
 KWSYS_STL_HAS_ALLOCATOR_OBJECTS=0
+KWSYS_STL_HAS_WSTRING=0
 KWSYS_CXX_HAS_SETENV=0
 KWSYS_CXX_HAS_UNSETENV=0
 KWSYS_CXX_HAS_ENVIRON_IN_STDLIB_H=0
@@ -1270,6 +1344,15 @@ else
 fi
 
 if cmake_try_run "${cmake_cxx_compiler}" \
+  "${cmake_cxx_flags} -DTEST_KWSYS_STL_HAS_WSTRING -DKWSYS_STL_HAVE_STD=${KWSYS_STL_HAVE_STD}" \
+  "${cmake_source_dir}/Source/kwsys/kwsysPlatformTestsCXX.cxx" >> cmake_bootstrap.log 2>&1; then
+  KWSYS_STL_HAS_WSTRING=1
+  echo "${cmake_cxx_compiler} has stl wstring"
+else
+  echo "${cmake_cxx_compiler} does not have stl wstring"
+fi
+
+if cmake_try_run "${cmake_cxx_compiler}" \
   "${cmake_cxx_flags} -DTEST_KWSYS_CXX_HAS_CSTDDEF" \
   "${cmake_source_dir}/Source/kwsys/kwsysPlatformTestsCXX.cxx" >> cmake_bootstrap.log 2>&1; then
   KWSYS_CXX_HAS_CSTDDEF=1
@@ -1400,10 +1483,9 @@ fi
 cmake_report cmVersionConfig.h${_tmp} "#define CMake_VERSION_MAJOR ${cmake_version_major}"
 cmake_report cmVersionConfig.h${_tmp} "#define CMake_VERSION_MINOR ${cmake_version_minor}"
 cmake_report cmVersionConfig.h${_tmp} "#define CMake_VERSION_PATCH ${cmake_version_patch}"
-cmake_report cmVersionConfig.h${_tmp} "#define CMake_VERSION_TWEAK ${cmake_version_tweak}"
 cmake_report cmVersionConfig.h${_tmp} "#define CMake_VERSION \"${cmake_version}\""
 cmake_report cmConfigure.h${_tmp} "#define CMAKE_ROOT_DIR \"${cmake_root_dir}\""
-cmake_report cmConfigure.h${_tmp} "#define CMAKE_DATA_DIR \"/${cmake_data_dir}\""
+cmake_report cmConfigure.h${_tmp} "#define CMAKE_DATA_DIR \"/bootstrap-not-insalled\""
 cmake_report cmConfigure.h${_tmp} "#define CMAKE_BOOTSTRAP"
 
 # Regenerate configured headers
@@ -1446,6 +1528,11 @@ for a in string vector set map algorithm; do
     "${cmake_bootstrap_dir}/cmsys/stl/${a}" KWSYS_STL_HEADER ${a}
 done
 
+for a in ${KWIML_FILES}; do
+  cmake_replace_string "${cmake_source_dir}/Utilities/KWIML/${a}.in" \
+     "${cmake_bootstrap_dir}/cmIML/${a}" KWIML cmIML
+done
+
 # Generate Makefile
 dep="cmConfigure.h cmsys/*.hxx cmsys/*.h `cmake_escape \"${cmake_source_dir}\"`/Source/*.h"
 objs=""
@@ -1476,6 +1563,9 @@ if [ "x${cmake_cxx_flags}" != "x" ]; then
 fi
 
 cmake_c_flags_String="-DKWSYS_STRING_C"
+if ${cmake_system_mingw}; then
+  cmake_c_flags_EncodingC="-DKWSYS_ENCODING_DEFAULT_CODEPAGE=CP_ACP"
+fi
 cmake_cxx_flags_SystemTools="
   -DKWSYS_CXX_HAS_SETENV=${KWSYS_CXX_HAS_SETENV}
   -DKWSYS_CXX_HAS_UNSETENV=${KWSYS_CXX_HAS_UNSETENV}
@@ -1537,6 +1627,21 @@ fi
 if [ "x${cmake_bootstrap_qt_qmake}" != "x" ]; then
   echo '
 set (QT_QMAKE_EXECUTABLE "'"${cmake_bootstrap_qt_qmake}"'" CACHE FILEPATH "Location of Qt qmake" FORCE)
+' >> "${cmake_bootstrap_dir}/InitialCacheFlags.cmake"
+fi
+if [ "x${cmake_sphinx_man}" != "x" ]; then
+  echo '
+set (SPHINX_MAN "'"${cmake_sphinx_man}"'" CACHE FILEPATH "Build man pages with Sphinx" FORCE)
+' >> "${cmake_bootstrap_dir}/InitialCacheFlags.cmake"
+fi
+if [ "x${cmake_sphinx_html}" != "x" ]; then
+  echo '
+set (SPHINX_HTML "'"${cmake_sphinx_html}"'" CACHE FILEPATH "Build html help with Sphinx" FORCE)
+' >> "${cmake_bootstrap_dir}/InitialCacheFlags.cmake"
+fi
+if [ "x${cmake_sphinx_build}" != "x" ]; then
+  echo '
+set (SPHINX_EXECUTABLE "'"${cmake_sphinx_build}"'" CACHE FILEPATH "Location of Qt sphinx-build" FORCE)
 ' >> "${cmake_bootstrap_dir}/InitialCacheFlags.cmake"
 fi
 

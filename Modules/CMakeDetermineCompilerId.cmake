@@ -44,8 +44,23 @@ function(CMAKE_DETERMINE_COMPILER_ID lang flagvar src)
   endforeach()
 
   # If the compiler is still unknown, try to query its vendor.
-  if(NOT CMAKE_${lang}_COMPILER_ID)
+  if(CMAKE_${lang}_COMPILER AND NOT CMAKE_${lang}_COMPILER_ID)
     CMAKE_DETERMINE_COMPILER_ID_VENDOR(${lang})
+  endif()
+
+  if (COMPILER_QNXNTO AND CMAKE_${lang}_COMPILER_ID STREQUAL GNU)
+    execute_process(
+      COMMAND "${CMAKE_${lang}_COMPILER}"
+      -V
+      OUTPUT_VARIABLE output ERROR_VARIABLE output
+      RESULT_VARIABLE result
+      TIMEOUT 10
+      )
+    if (output MATCHES "targets available")
+      set(CMAKE_${lang}_COMPILER_ID QCC)
+      # http://community.qnx.com/sf/discussion/do/listPosts/projects.community/discussion.qnx_momentics_community_support.topc3555?_pagenum=2
+      # The qcc driver does not itself have a version.
+    endif()
   endif()
 
   # if the format is unknown after all files have been checked, put "Unknown" in the cache
@@ -67,12 +82,10 @@ function(CMAKE_DETERMINE_COMPILER_ID lang flagvar src)
   endif()
 
   # Check if compiler id detection gave us the compiler tool.
-  if(NOT CMAKE_${lang}_COMPILER)
-    if(CMAKE_${lang}_COMPILER_ID_TOOL)
-      set(CMAKE_${lang}_COMPILER "${CMAKE_${lang}_COMPILER_ID_TOOL}" PARENT_SCOPE)
-    else()
-      set(CMAKE_${lang}_COMPILER "CMAKE_${lang}_COMPILER-NOTFOUND" PARENT_SCOPE)
-    endif()
+  if(CMAKE_${lang}_COMPILER_ID_TOOL)
+    set(CMAKE_${lang}_COMPILER "${CMAKE_${lang}_COMPILER_ID_TOOL}" PARENT_SCOPE)
+  elseif(NOT CMAKE_${lang}_COMPILER)
+    set(CMAKE_${lang}_COMPILER "CMAKE_${lang}_COMPILER-NOTFOUND" PARENT_SCOPE)
   endif()
 
   set(CMAKE_${lang}_COMPILER_ID "${CMAKE_${lang}_COMPILER_ID}" PARENT_SCOPE)
@@ -80,12 +93,16 @@ function(CMAKE_DETERMINE_COMPILER_ID lang flagvar src)
   set(MSVC_${lang}_ARCHITECTURE_ID "${MSVC_${lang}_ARCHITECTURE_ID}"
     PARENT_SCOPE)
   set(CMAKE_${lang}_COMPILER_VERSION "${CMAKE_${lang}_COMPILER_VERSION}" PARENT_SCOPE)
+  set(CMAKE_${lang}_SIMULATE_ID "${CMAKE_${lang}_SIMULATE_ID}" PARENT_SCOPE)
+  set(CMAKE_${lang}_SIMULATE_VERSION "${CMAKE_${lang}_SIMULATE_VERSION}" PARENT_SCOPE)
 endfunction()
 
 #-----------------------------------------------------------------------------
 # Function to write the compiler id source file.
 function(CMAKE_DETERMINE_COMPILER_ID_WRITE lang src)
-  file(READ ${CMAKE_ROOT}/Modules/${src}.in ID_CONTENT_IN)
+  find_file(src_in ${src}.in PATHS ${CMAKE_ROOT}/Modules ${CMAKE_MODULE_PATH} NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
+  file(READ ${src_in} ID_CONTENT_IN)
+  unset(src_in CACHE)
   string(CONFIGURE "${ID_CONTENT_IN}" ID_CONTENT_OUT @ONLY)
   file(WRITE ${CMAKE_${lang}_COMPILER_ID_DIR}/${src} "${ID_CONTENT_OUT}")
 endfunction()
@@ -107,12 +124,20 @@ Id flags: ${testflags}
 ")
 
   # Compile the compiler identification source.
-  if("${CMAKE_GENERATOR}" MATCHES "Visual Studio ([0-9]+)")
+  if(CMAKE_GENERATOR STREQUAL "Visual Studio 6" AND
+      lang STREQUAL "Fortran")
+    set(CMAKE_${lang}_COMPILER_ID_RESULT 1)
+    set(CMAKE_${lang}_COMPILER_ID_OUTPUT "No Intel Fortran in VS 6")
+  elseif("${CMAKE_GENERATOR}" MATCHES "Visual Studio ([0-9]+)")
     set(vs_version ${CMAKE_MATCH_1})
     set(id_platform ${CMAKE_VS_PLATFORM_NAME})
     set(id_lang "${lang}")
     set(id_cl cl.exe)
-    if(NOT "${vs_version}" VERSION_LESS 10)
+    if(lang STREQUAL Fortran)
+      set(v Intel)
+      set(ext vfproj)
+      set(id_cl ifort.exe)
+    elseif(NOT "${vs_version}" VERSION_LESS 10)
       set(v 10)
       set(ext vcxproj)
     elseif(NOT "${vs_version}" VERSION_LESS 7)
@@ -128,6 +153,9 @@ Id flags: ${testflags}
     endif()
     if(CMAKE_VS_PLATFORM_TOOLSET)
       set(id_toolset "<PlatformToolset>${CMAKE_VS_PLATFORM_TOOLSET}</PlatformToolset>")
+      if(CMAKE_VS_PLATFORM_TOOLSET MATCHES "Intel")
+        set(id_cl icl.exe)
+      endif()
     else()
       set(id_toolset "")
     endif()
@@ -141,27 +169,37 @@ Id flags: ${testflags}
     else()
       set(id_subsystem 1)
     endif()
-    if("${CMAKE_MAKE_PROGRAM}" MATCHES "[Mm][Ss][Bb][Uu][Ii][Ll][Dd]")
-      set(build /p:Configuration=Debug /p:Platform=@id_platform@ /p:VisualStudioVersion=${vs_version}.0)
-    elseif("${CMAKE_MAKE_PROGRAM}" MATCHES "[Mm][Ss][Dd][Ee][Vv]")
-      set(build /make)
-    else()
-      set(build /build Debug)
-    endif()
     set(id_dir ${CMAKE_${lang}_COMPILER_ID_DIR})
     get_filename_component(id_src "${src}" NAME)
     configure_file(${CMAKE_ROOT}/Modules/CompilerId/VS-${v}.${ext}.in
-      ${id_dir}/CompilerId${lang}.${ext} @ONLY IMMEDIATE)
-    execute_process(
-      COMMAND ${CMAKE_MAKE_PROGRAM} CompilerId${lang}.${ext} ${build}
-      WORKING_DIRECTORY ${CMAKE_${lang}_COMPILER_ID_DIR}
-      OUTPUT_VARIABLE CMAKE_${lang}_COMPILER_ID_OUTPUT
-      ERROR_VARIABLE CMAKE_${lang}_COMPILER_ID_OUTPUT
-      RESULT_VARIABLE CMAKE_${lang}_COMPILER_ID_RESULT
-      )
+      ${id_dir}/CompilerId${lang}.${ext} @ONLY)
+    if(CMAKE_VS_MSBUILD_COMMAND AND NOT lang STREQUAL "Fortran")
+      set(command "${CMAKE_VS_MSBUILD_COMMAND}" "CompilerId${lang}.${ext}"
+        "/p:Configuration=Debug" "/p:Platform=${id_platform}" "/p:VisualStudioVersion=${vs_version}.0"
+        )
+    elseif(CMAKE_VS_DEVENV_COMMAND)
+      set(command "${CMAKE_VS_DEVENV_COMMAND}" "CompilerId${lang}.${ext}" "/build" "Debug")
+    elseif(CMAKE_VS_MSDEV_COMMAND)
+      set(command "${CMAKE_VS_MSDEV_COMMAND}" "CompilerId${lang}.${ext}" "/make")
+    else()
+      set(command "")
+    endif()
+    if(command)
+      execute_process(
+        COMMAND ${command}
+        WORKING_DIRECTORY ${CMAKE_${lang}_COMPILER_ID_DIR}
+        OUTPUT_VARIABLE CMAKE_${lang}_COMPILER_ID_OUTPUT
+        ERROR_VARIABLE CMAKE_${lang}_COMPILER_ID_OUTPUT
+        RESULT_VARIABLE CMAKE_${lang}_COMPILER_ID_RESULT
+        )
+    else()
+      set(CMAKE_${lang}_COMPILER_ID_RESULT 1)
+      set(CMAKE_${lang}_COMPILER_ID_OUTPUT "VS environment not known to support ${lang}")
+    endif()
     # Match the compiler location line printed out.
     if("${CMAKE_${lang}_COMPILER_ID_OUTPUT}" MATCHES "CMAKE_${lang}_COMPILER=([^%\r\n]+)[\r\n]")
-      set(_comp "${CMAKE_MATCH_1}")
+      # Strip VS diagnostic output from the end of the line.
+      string(REGEX REPLACE " \\(TaskId:[0-9]*\\)$" "" _comp "${CMAKE_MATCH_1}")
       if(EXISTS "${_comp}")
         file(TO_CMAKE_PATH "${_comp}" _comp)
         set(CMAKE_${lang}_COMPILER_ID_TOOL "${_comp}" PARENT_SCOPE)
@@ -188,7 +226,7 @@ Id flags: ${testflags}
       set(ext xcode)
     endif()
     configure_file(${CMAKE_ROOT}/Modules/CompilerId/Xcode-${v}.pbxproj.in
-      ${id_dir}/CompilerId${lang}.${ext}/project.pbxproj @ONLY IMMEDIATE)
+      ${id_dir}/CompilerId${lang}.${ext}/project.pbxproj @ONLY)
     unset(_ENV_MACOSX_DEPLOYMENT_TARGET)
     if(DEFINED ENV{MACOSX_DEPLOYMENT_TARGET})
       set(_ENV_MACOSX_DEPLOYMENT_TARGET "$ENV{MACOSX_DEPLOYMENT_TARGET}")
@@ -218,7 +256,7 @@ Id flags: ${testflags}
   else()
     if(COMMAND EXECUTE_PROCESS)
       execute_process(
-        COMMAND ${CMAKE_${lang}_COMPILER}
+        COMMAND "${CMAKE_${lang}_COMPILER}"
                 ${CMAKE_${lang}_COMPILER_ID_ARG1}
                 ${CMAKE_${lang}_COMPILER_ID_FLAGS_LIST}
                 ${testflags}
@@ -230,7 +268,7 @@ Id flags: ${testflags}
         )
     else()
       exec_program(
-        ${CMAKE_${lang}_COMPILER} ${CMAKE_${lang}_COMPILER_ID_DIR}
+        "${CMAKE_${lang}_COMPILER}" ${CMAKE_${lang}_COMPILER_ID_DIR}
         ARGS ${CMAKE_${lang}_COMPILER_ID_ARG1}
              ${CMAKE_${lang}_COMPILER_ID_FLAGS_LIST}
              ${testflags}
@@ -242,7 +280,10 @@ Id flags: ${testflags}
   endif()
 
   # Check the result of compilation.
-  if(CMAKE_${lang}_COMPILER_ID_RESULT)
+  if(CMAKE_${lang}_COMPILER_ID_RESULT
+     # Intel Fortran warns and ignores preprocessor lines without /fpp
+     OR CMAKE_${lang}_COMPILER_ID_OUTPUT MATCHES "Bad # preprocessor line"
+     )
     # Compilation failed.
     set(MSG
       "Compiling the ${lang} compiler identification source file \"${src}\" failed.
@@ -308,9 +349,12 @@ function(CMAKE_DETERMINE_COMPILER_ID_CHECK lang file)
     set(COMPILER_ID)
     set(COMPILER_VERSION)
     set(PLATFORM_ID)
+    set(ARCHITECTURE_ID)
+    set(SIMULATE_ID)
+    set(SIMULATE_VERSION)
     file(STRINGS ${file}
-      CMAKE_${lang}_COMPILER_ID_STRINGS LIMIT_COUNT 4 REGEX "INFO:")
-    set(HAVE_COMPILER_TWICE 0)
+      CMAKE_${lang}_COMPILER_ID_STRINGS LIMIT_COUNT 6 REGEX "INFO:")
+    set(COMPILER_ID_TWICE)
     foreach(info ${CMAKE_${lang}_COMPILER_ID_STRINGS})
       if("${info}" MATCHES ".*INFO:compiler\\[([^]\"]*)\\].*")
         if(COMPILER_ID)
@@ -331,6 +375,17 @@ function(CMAKE_DETERMINE_COMPILER_ID_CHECK lang file)
         string(REGEX REPLACE ".*INFO:compiler_version\\[([^]]*)\\].*" "\\1" COMPILER_VERSION "${info}")
         string(REGEX REPLACE "^0+([0-9])" "\\1" COMPILER_VERSION "${COMPILER_VERSION}")
         string(REGEX REPLACE "\\.0+([0-9])" ".\\1" COMPILER_VERSION "${COMPILER_VERSION}")
+      endif()
+      if("${info}" MATCHES ".*INFO:simulate\\[([^]\"]*)\\].*")
+        set(SIMULATE_ID "${CMAKE_MATCH_1}")
+      endif()
+      if("${info}" MATCHES ".*INFO:simulate_version\\[([^]\"]*)\\].*")
+        set(SIMULATE_VERSION "${CMAKE_MATCH_1}")
+        string(REGEX REPLACE "^0+([0-9])" "\\1" SIMULATE_VERSION "${SIMULATE_VERSION}")
+        string(REGEX REPLACE "\\.0+([0-9])" ".\\1" SIMULATE_VERSION "${SIMULATE_VERSION}")
+      endif()
+      if("${info}" MATCHES ".*INFO:qnxnto")
+        set(COMPILER_QNXNTO 1)
       endif()
     endforeach()
 
@@ -369,6 +424,8 @@ function(CMAKE_DETERMINE_COMPILER_ID_CHECK lang file)
       set(CMAKE_${lang}_PLATFORM_ID "${PLATFORM_ID}")
       set(MSVC_${lang}_ARCHITECTURE_ID "${ARCHITECTURE_ID}")
       set(CMAKE_${lang}_COMPILER_VERSION "${COMPILER_VERSION}")
+      set(CMAKE_${lang}_SIMULATE_ID "${SIMULATE_ID}")
+      set(CMAKE_${lang}_SIMULATE_VERSION "${SIMULATE_VERSION}")
     endif()
 
     # Check the compiler identification string.
@@ -417,7 +474,10 @@ function(CMAKE_DETERMINE_COMPILER_ID_CHECK lang file)
   set(MSVC_${lang}_ARCHITECTURE_ID "${MSVC_${lang}_ARCHITECTURE_ID}"
     PARENT_SCOPE)
   set(CMAKE_${lang}_COMPILER_VERSION "${CMAKE_${lang}_COMPILER_VERSION}" PARENT_SCOPE)
+  set(CMAKE_${lang}_SIMULATE_ID "${CMAKE_${lang}_SIMULATE_ID}" PARENT_SCOPE)
+  set(CMAKE_${lang}_SIMULATE_VERSION "${CMAKE_${lang}_SIMULATE_VERSION}" PARENT_SCOPE)
   set(CMAKE_EXECUTABLE_FORMAT "${CMAKE_EXECUTABLE_FORMAT}" PARENT_SCOPE)
+  set(COMPILER_QNXNTO "${COMPILER_QNXNTO}" PARENT_SCOPE)
 endfunction()
 
 #-----------------------------------------------------------------------------
@@ -444,7 +504,7 @@ function(CMAKE_DETERMINE_COMPILER_ID_VENDOR lang)
     set(flags ${CMAKE_${lang}_COMPILER_ID_VENDOR_FLAGS_${vendor}})
     set(regex ${CMAKE_${lang}_COMPILER_ID_VENDOR_REGEX_${vendor}})
     execute_process(
-      COMMAND ${CMAKE_${lang}_COMPILER}
+      COMMAND "${CMAKE_${lang}_COMPILER}"
       ${CMAKE_${lang}_COMPILER_ID_ARG1}
       ${CMAKE_${lang}_COMPILER_ID_FLAGS_LIST}
       ${flags}

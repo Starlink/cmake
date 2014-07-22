@@ -42,13 +42,6 @@ void cmExtraCodeBlocksGenerator
 {
   entry.Name = this->GetName();
   entry.Brief = "Generates CodeBlocks project files.";
-  entry.Full =
-    "Project files for CodeBlocks will be created in the top directory "
-    "and in every subdirectory which features a CMakeLists.txt file "
-    "containing a PROJECT() call. "
-    "Additionally a hierarchy of makefiles is generated into the "
-    "build tree.  The appropriate make program can build the project through "
-    "the default make target.  A \"make install\" target is also provided.";
 }
 
 cmExtraCodeBlocksGenerator::cmExtraCodeBlocksGenerator()
@@ -336,30 +329,10 @@ void cmExtraCodeBlocksGenerator
         {
         case cmTarget::GLOBAL_TARGET:
           {
-          bool insertTarget = false;
           // Only add the global targets from CMAKE_BINARY_DIR,
           // not from the subdirs
           if (strcmp(makefile->GetStartOutputDirectory(),
                      makefile->GetHomeOutputDirectory())==0)
-            {
-            insertTarget = true;
-            // only add the "edit_cache" target if it's not ccmake, because
-            // this will not work within the IDE
-            if (ti->first == "edit_cache")
-              {
-              const char* editCommand = makefile->GetDefinition
-                                                        ("CMAKE_EDIT_COMMAND");
-              if (editCommand == 0)
-                {
-                insertTarget = false;
-                }
-              else if (strstr(editCommand, "ccmake")!=NULL)
-                {
-                insertTarget = false;
-                }
-              }
-            }
-          if (insertTarget)
             {
             this->AppendTarget(fout, ti->first.c_str(), 0,
                                make.c_str(), makefile, compiler.c_str());
@@ -425,7 +398,8 @@ void cmExtraCodeBlocksGenerator
         case cmTarget::OBJECT_LIBRARY:
         case cmTarget::UTILITY: // can have sources since 2.6.3
           {
-          const std::vector<cmSourceFile*>&sources=ti->second.GetSourceFiles();
+          std::vector<cmSourceFile*> sources;
+          ti->second.GetSourceFiles(sources);
           for (std::vector<cmSourceFile*>::const_iterator si=sources.begin();
                si!=sources.end(); si++)
             {
@@ -787,10 +761,12 @@ std::string cmExtraCodeBlocksGenerator::BuildMakeCommand(
   std::string command = make;
   if (strcmp(this->GlobalGenerator->GetName(), "NMake Makefiles")==0)
     {
+    // For Windows ConvertToOutputPath already adds quotes when required.
+    // These need to be escaped, see
+    // http://public.kitware.com/Bug/view.php?id=13952
     std::string makefileName = cmSystemTools::ConvertToOutputPath(makefile);
-    command += " /NOLOGO /f &quot;";
-    command += makefileName;
-    command += "&quot; ";
+    command += " /NOLOGO /f ";
+    command += cmXMLSafe(makefileName).str();
     command += " VERBOSE=1 ";
     command += target;
     }

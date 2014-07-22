@@ -19,6 +19,7 @@
 #include <cmsys/String.h>
 
 #include <assert.h>
+#include <errno.h>
 
 //----------------------------------------------------------------------------
 #if !defined(__SUNPRO_CC) || __SUNPRO_CC > 0x510
@@ -48,7 +49,7 @@ struct cmGeneratorExpressionNode
   enum {
     DynamicParameters = 0,
     OneOrMoreParameters = -1,
-    ZeroOrMoreParameters = -2
+    OneOrZeroParameters = -2
   };
   virtual ~cmGeneratorExpressionNode() {}
 
@@ -82,7 +83,6 @@ static const struct ZeroNode : public cmGeneratorExpressionNode
                        const GeneratorExpressionContent *,
                        cmGeneratorExpressionDAGChecker *) const
   {
-    // Unreachable
     return std::string();
   }
 } zeroNode;
@@ -94,13 +94,12 @@ static const struct OneNode : public cmGeneratorExpressionNode
 
   virtual bool AcceptsArbitraryContentParameter() const { return true; }
 
-  std::string Evaluate(const std::vector<std::string> &,
+  std::string Evaluate(const std::vector<std::string> &parameters,
                        cmGeneratorExpressionContext *,
                        const GeneratorExpressionContent *,
                        cmGeneratorExpressionDAGChecker *) const
   {
-    // Unreachable
-    return std::string();
+    return parameters.front();
   }
 } oneNode;
 
@@ -199,6 +198,140 @@ static const struct StrEqualNode : public cmGeneratorExpressionNode
 } strEqualNode;
 
 //----------------------------------------------------------------------------
+static const struct EqualNode : public cmGeneratorExpressionNode
+{
+  EqualNode() {}
+
+  virtual int NumExpectedParameters() const { return 2; }
+
+  std::string Evaluate(const std::vector<std::string> &parameters,
+                       cmGeneratorExpressionContext *context,
+                       const GeneratorExpressionContent *content,
+                       cmGeneratorExpressionDAGChecker *) const
+  {
+    char *pEnd;
+
+    int base = 0;
+    bool flipSign = false;
+
+    const char *lhs = parameters[0].c_str();
+    if (cmHasLiteralPrefix(lhs, "0b") || cmHasLiteralPrefix(lhs, "0B"))
+      {
+      base = 2;
+      lhs += 2;
+      }
+    if (cmHasLiteralPrefix(lhs, "-0b") || cmHasLiteralPrefix(lhs, "-0B"))
+      {
+      base = 2;
+      lhs += 3;
+      flipSign = true;
+      }
+    if (cmHasLiteralPrefix(lhs, "+0b") || cmHasLiteralPrefix(lhs, "+0B"))
+      {
+      base = 2;
+      lhs += 3;
+      }
+
+    long lnum = strtol(lhs, &pEnd, base);
+    if (pEnd == lhs || *pEnd != '\0' || errno == ERANGE)
+      {
+      reportError(context, content->GetOriginalExpression(),
+          "$<EQUAL> parameter " + parameters[0] + " is not a valid integer.");
+      return std::string();
+      }
+
+    if (flipSign)
+      {
+      lnum = -lnum;
+      }
+
+    base = 0;
+    flipSign = false;
+
+    const char *rhs = parameters[1].c_str();
+    if (cmHasLiteralPrefix(rhs, "0b") || cmHasLiteralPrefix(rhs, "0B"))
+      {
+      base = 2;
+      rhs += 2;
+      }
+    if (cmHasLiteralPrefix(rhs, "-0b") || cmHasLiteralPrefix(rhs, "-0B"))
+      {
+      base = 2;
+      rhs += 3;
+      flipSign = true;
+      }
+    if (cmHasLiteralPrefix(rhs, "+0b") || cmHasLiteralPrefix(rhs, "+0B"))
+      {
+      base = 2;
+      rhs += 3;
+      }
+
+    long rnum = strtol(rhs, &pEnd, base);
+    if (pEnd == rhs || *pEnd != '\0' || errno == ERANGE)
+      {
+      reportError(context, content->GetOriginalExpression(),
+          "$<EQUAL> parameter " + parameters[1] + " is not a valid integer.");
+      return std::string();
+      }
+
+    if (flipSign)
+      {
+      rnum = -rnum;
+      }
+
+    return lnum == rnum ? "1" : "0";
+  }
+} equalNode;
+
+//----------------------------------------------------------------------------
+static const struct LowerCaseNode : public cmGeneratorExpressionNode
+{
+  LowerCaseNode() {}
+
+  bool AcceptsArbitraryContentParameter() const { return true; }
+
+  std::string Evaluate(const std::vector<std::string> &parameters,
+                       cmGeneratorExpressionContext *,
+                       const GeneratorExpressionContent *,
+                       cmGeneratorExpressionDAGChecker *) const
+  {
+    return cmSystemTools::LowerCase(parameters.front());
+  }
+} lowerCaseNode;
+
+//----------------------------------------------------------------------------
+static const struct UpperCaseNode : public cmGeneratorExpressionNode
+{
+  UpperCaseNode() {}
+
+  bool AcceptsArbitraryContentParameter() const { return true; }
+
+  std::string Evaluate(const std::vector<std::string> &parameters,
+                       cmGeneratorExpressionContext *,
+                       const GeneratorExpressionContent *,
+                       cmGeneratorExpressionDAGChecker *) const
+  {
+    return cmSystemTools::UpperCase(parameters.front());
+  }
+} upperCaseNode;
+
+//----------------------------------------------------------------------------
+static const struct MakeCIdentifierNode : public cmGeneratorExpressionNode
+{
+  MakeCIdentifierNode() {}
+
+  bool AcceptsArbitraryContentParameter() const { return true; }
+
+  std::string Evaluate(const std::vector<std::string> &parameters,
+                       cmGeneratorExpressionContext *,
+                       const GeneratorExpressionContent *,
+                       cmGeneratorExpressionDAGChecker *) const
+  {
+    return cmSystemTools::MakeCidentifier(parameters.front().c_str());
+  }
+} makeCIdentifierNode;
+
+//----------------------------------------------------------------------------
 static const struct Angle_RNode : public cmGeneratorExpressionNode
 {
   Angle_RNode() {}
@@ -251,7 +384,7 @@ struct CompilerIdNode : public cmGeneratorExpressionNode
 {
   CompilerIdNode() {}
 
-  virtual int NumExpectedParameters() const { return ZeroOrMoreParameters; }
+  virtual int NumExpectedParameters() const { return OneOrZeroParameters; }
 
   std::string EvaluateWithLanguage(const std::vector<std::string> &parameters,
                        cmGeneratorExpressionContext *context,
@@ -279,9 +412,31 @@ struct CompilerIdNode : public cmGeneratorExpressionNode
       return parameters.front().empty() ? "1" : "0";
       }
 
-    if (cmsysString_strcasecmp(parameters.begin()->c_str(), compilerId) == 0)
+    if (strcmp(parameters.begin()->c_str(), compilerId) == 0)
       {
       return "1";
+      }
+
+    if (cmsysString_strcasecmp(parameters.begin()->c_str(), compilerId) == 0)
+      {
+      switch(context->Makefile->GetPolicyStatus(cmPolicies::CMP0044))
+        {
+        case cmPolicies::WARN:
+          {
+          cmOStringStream e;
+          e << context->Makefile->GetPolicies()
+                      ->GetPolicyWarning(cmPolicies::CMP0044);
+          context->Makefile->GetCMakeInstance()
+                 ->IssueMessage(cmake::AUTHOR_WARNING,
+                                e.str().c_str(), context->Backtrace);
+          }
+        case cmPolicies::OLD:
+          return "1";
+        case cmPolicies::NEW:
+        case cmPolicies::REQUIRED_ALWAYS:
+        case cmPolicies::REQUIRED_IF_USED:
+          break;
+        }
       }
     return "0";
   }
@@ -297,17 +452,12 @@ static const struct CCompilerIdNode : public CompilerIdNode
                        const GeneratorExpressionContent *content,
                        cmGeneratorExpressionDAGChecker *dagChecker) const
   {
-    if (parameters.size() != 0 && parameters.size() != 1)
-      {
-      reportError(context, content->GetOriginalExpression(),
-          "$<C_COMPILER_ID> expression requires one or two parameters");
-      return std::string();
-      }
     if (!context->HeadTarget)
       {
       reportError(context, content->GetOriginalExpression(),
           "$<C_COMPILER_ID> may only be used with targets.  It may not "
           "be used with add_custom_command.");
+      return std::string();
       }
     return this->EvaluateWithLanguage(parameters, context, content,
                                       dagChecker, "C");
@@ -324,17 +474,12 @@ static const struct CXXCompilerIdNode : public CompilerIdNode
                        const GeneratorExpressionContent *content,
                        cmGeneratorExpressionDAGChecker *dagChecker) const
   {
-    if (parameters.size() != 0 && parameters.size() != 1)
-      {
-      reportError(context, content->GetOriginalExpression(),
-          "$<CXX_COMPILER_ID> expression requires one or two parameters");
-      return std::string();
-      }
     if (!context->HeadTarget)
       {
       reportError(context, content->GetOriginalExpression(),
           "$<CXX_COMPILER_ID> may only be used with targets.  It may not "
           "be used with add_custom_command.");
+      return std::string();
       }
     return this->EvaluateWithLanguage(parameters, context, content,
                                       dagChecker, "CXX");
@@ -346,7 +491,7 @@ struct CompilerVersionNode : public cmGeneratorExpressionNode
 {
   CompilerVersionNode() {}
 
-  virtual int NumExpectedParameters() const { return ZeroOrMoreParameters; }
+  virtual int NumExpectedParameters() const { return OneOrZeroParameters; }
 
   std::string EvaluateWithLanguage(const std::vector<std::string> &parameters,
                        cmGeneratorExpressionContext *context,
@@ -391,17 +536,12 @@ static const struct CCompilerVersionNode : public CompilerVersionNode
                        const GeneratorExpressionContent *content,
                        cmGeneratorExpressionDAGChecker *dagChecker) const
   {
-    if (parameters.size() != 0 && parameters.size() != 1)
-      {
-      reportError(context, content->GetOriginalExpression(),
-          "$<C_COMPILER_VERSION> expression requires one or two parameters");
-      return std::string();
-      }
     if (!context->HeadTarget)
       {
       reportError(context, content->GetOriginalExpression(),
           "$<C_COMPILER_VERSION> may only be used with targets.  It may not "
           "be used with add_custom_command.");
+      return std::string();
       }
     return this->EvaluateWithLanguage(parameters, context, content,
                                       dagChecker, "C");
@@ -418,24 +558,51 @@ static const struct CxxCompilerVersionNode : public CompilerVersionNode
                        const GeneratorExpressionContent *content,
                        cmGeneratorExpressionDAGChecker *dagChecker) const
   {
-    if (parameters.size() != 0 && parameters.size() != 1)
-      {
-      reportError(context, content->GetOriginalExpression(),
-          "$<CXX_COMPILER_VERSION> expression requires one or two "
-          "parameters");
-      return std::string();
-      }
     if (!context->HeadTarget)
       {
       reportError(context, content->GetOriginalExpression(),
           "$<CXX_COMPILER_VERSION> may only be used with targets.  It may "
           "not be used with add_custom_command.");
+      return std::string();
       }
     return this->EvaluateWithLanguage(parameters, context, content,
                                       dagChecker, "CXX");
   }
 } cxxCompilerVersionNode;
 
+
+//----------------------------------------------------------------------------
+struct PlatformIdNode : public cmGeneratorExpressionNode
+{
+  PlatformIdNode() {}
+
+  virtual int NumExpectedParameters() const { return OneOrZeroParameters; }
+
+  std::string Evaluate(const std::vector<std::string> &parameters,
+                       cmGeneratorExpressionContext *context,
+                       const GeneratorExpressionContent *,
+                       cmGeneratorExpressionDAGChecker *) const
+  {
+    const char *platformId = context->Makefile ?
+                              context->Makefile->GetSafeDefinition(
+                        "CMAKE_SYSTEM_NAME") : "";
+    if (parameters.size() == 0)
+      {
+      return platformId ? platformId : "";
+      }
+
+    if (!platformId)
+      {
+      return parameters.front().empty() ? "1" : "0";
+      }
+
+    if (strcmp(parameters.begin()->c_str(), platformId) == 0)
+      {
+      return "1";
+      }
+    return "0";
+  }
+} platformIdNode;
 
 //----------------------------------------------------------------------------
 static const struct VersionGreaterNode : public cmGeneratorExpressionNode
@@ -531,13 +698,17 @@ static const struct ConfigurationTestNode : public cmGeneratorExpressionNode
 {
   ConfigurationTestNode() {}
 
-  virtual int NumExpectedParameters() const { return 1; }
+  virtual int NumExpectedParameters() const { return OneOrZeroParameters; }
 
   std::string Evaluate(const std::vector<std::string> &parameters,
                        cmGeneratorExpressionContext *context,
                        const GeneratorExpressionContent *content,
                        cmGeneratorExpressionDAGChecker *) const
   {
+    if (parameters.empty())
+      {
+      return configurationNode.Evaluate(parameters, context, content, 0);
+      }
     cmsys::RegularExpression configValidator;
     configValidator.compile("^[A-Za-z0-9_]*$");
     if (!configValidator.find(parameters.begin()->c_str()))
@@ -619,7 +790,7 @@ static const struct JoinNode : public cmGeneratorExpressionNode
 } joinNode;
 
 #define TRANSITIVE_PROPERTY_NAME(PROPERTY) \
-  , #PROPERTY
+  , "INTERFACE_" #PROPERTY
 
 //----------------------------------------------------------------------------
 static const char* targetPropertyTransitiveWhitelist[] = {
@@ -627,9 +798,11 @@ static const char* targetPropertyTransitiveWhitelist[] = {
   CM_FOR_EACH_TRANSITIVE_PROPERTY_NAME(TRANSITIVE_PROPERTY_NAME)
 };
 
+#undef TRANSITIVE_PROPERTY_NAME
+
 std::string getLinkedTargetsContent(const std::vector<std::string> &libraries,
-                                  cmTarget *target,
-                                  cmTarget *headTarget,
+                                  cmTarget const* target,
+                                  cmTarget const* headTarget,
                                   cmGeneratorExpressionContext *context,
                                   cmGeneratorExpressionDAGChecker *dagChecker,
                                   const std::string &interfacePropertyName)
@@ -649,7 +822,7 @@ std::string getLinkedTargetsContent(const std::vector<std::string> &libraries,
       // self-referencing loop.
       continue;
       }
-    if (context->Makefile->FindTargetToUse(it->c_str()))
+    if (context->Makefile->FindTargetToUse(*it))
       {
       depString +=
         sep + "$<TARGET_PROPERTY:" + *it + "," + interfacePropertyName + ">";
@@ -669,17 +842,6 @@ std::string getLinkedTargetsContent(const std::vector<std::string> &libraries,
     }
   return linkedTargetsContent;
 }
-
-//----------------------------------------------------------------------------
-struct TransitiveWhitelistCompare
-{
-  explicit TransitiveWhitelistCompare(const std::string &needle)
-    : Needle(needle) {}
-  bool operator() (const char *item)
-  { return strcmp(item, this->Needle.c_str()) == 0; }
-private:
-  std::string Needle;
-};
 
 //----------------------------------------------------------------------------
 static const struct TargetPropertyNode : public cmGeneratorExpressionNode
@@ -704,7 +866,7 @@ static const struct TargetPropertyNode : public cmGeneratorExpressionNode
     cmsys::RegularExpression propertyNameValidator;
     propertyNameValidator.compile("^[A-Za-z0-9_]+$");
 
-    cmTarget* target = context->HeadTarget;
+    cmTarget const* target = context->HeadTarget;
     std::string propertyName = *parameters.begin();
 
     if (!target && parameters.size() == 1)
@@ -750,18 +912,16 @@ static const struct TargetPropertyNode : public cmGeneratorExpressionNode
         }
       if(propertyName == "ALIASED_TARGET")
         {
-        if(context->Makefile->IsAlias(targetName.c_str()))
+        if(context->Makefile->IsAlias(targetName))
           {
-          if(cmTarget* tgt =
-                      context->Makefile->FindTargetToUse(targetName.c_str()))
+          if(cmTarget* tgt = context->Makefile->FindTargetToUse(targetName))
             {
             return tgt->GetName();
             }
           }
         return "";
         }
-      target = context->Makefile->FindTargetToUse(
-                                                targetName.c_str());
+      target = context->Makefile->FindTargetToUse(targetName);
 
       if (!target)
         {
@@ -821,18 +981,17 @@ static const struct TargetPropertyNode : public cmGeneratorExpressionNode
                                                content,
                                                dagCheckerParent);
 
-    switch (dagChecker.check())
+    switch (dagChecker.Check())
       {
     case cmGeneratorExpressionDAGChecker::SELF_REFERENCE:
-      dagChecker.reportError(context, content->GetOriginalExpression());
+      dagChecker.ReportError(context, content->GetOriginalExpression());
       return std::string();
     case cmGeneratorExpressionDAGChecker::CYCLIC_REFERENCE:
       // No error. We just skip cyclic references.
       return std::string();
     case cmGeneratorExpressionDAGChecker::ALREADY_SEEN:
       for (size_t i = 1;
-          i < (sizeof(targetPropertyTransitiveWhitelist) /
-                sizeof(*targetPropertyTransitiveWhitelist));
+          i < cmArraySize(targetPropertyTransitiveWhitelist);
           ++i)
         {
         if (targetPropertyTransitiveWhitelist[i] == propertyName)
@@ -866,41 +1025,44 @@ static const struct TargetPropertyNode : public cmGeneratorExpressionNode
                                             ASSERT_TRANSITIVE_PROPERTY_METHOD)
           false);
         }
+#undef ASSERT_TRANSITIVE_PROPERTY_METHOD
       }
 
     std::string linkedTargetsContent;
 
     std::string interfacePropertyName;
 
-    if (propertyName == "INTERFACE_INCLUDE_DIRECTORIES"
-        || propertyName == "INCLUDE_DIRECTORIES")
-      {
-      interfacePropertyName = "INTERFACE_INCLUDE_DIRECTORIES";
-      }
-    else if (propertyName == "INTERFACE_SYSTEM_INCLUDE_DIRECTORIES")
-      {
-      interfacePropertyName = "INTERFACE_SYSTEM_INCLUDE_DIRECTORIES";
-      }
-    else if (propertyName == "INTERFACE_COMPILE_DEFINITIONS"
-        || propertyName == "COMPILE_DEFINITIONS"
-        || strncmp(propertyName.c_str(), "COMPILE_DEFINITIONS_", 20) == 0)
-      {
-      interfacePropertyName = "INTERFACE_COMPILE_DEFINITIONS";
-      }
-    else if (propertyName == "INTERFACE_COMPILE_OPTIONS"
-        || propertyName == "COMPILE_OPTIONS")
-      {
-      interfacePropertyName = "INTERFACE_COMPILE_OPTIONS";
-      }
+#define POPULATE_INTERFACE_PROPERTY_NAME(prop) \
+    if (propertyName == #prop || propertyName == "INTERFACE_" #prop) \
+      { \
+      interfacePropertyName = "INTERFACE_" #prop; \
+      } \
+    else
 
-    cmTarget *headTarget = context->HeadTarget ? context->HeadTarget : target;
+    CM_FOR_EACH_TRANSITIVE_PROPERTY_NAME(POPULATE_INTERFACE_PROPERTY_NAME)
+      // Note that the above macro terminates with an else
+    /* else */ if (cmHasLiteralPrefix(propertyName.c_str(),
+                           "COMPILE_DEFINITIONS_"))
+      {
+      cmPolicies::PolicyStatus polSt =
+                      context->Makefile->GetPolicyStatus(cmPolicies::CMP0043);
+      if (polSt == cmPolicies::WARN || polSt == cmPolicies::OLD)
+        {
+        interfacePropertyName = "INTERFACE_COMPILE_DEFINITIONS";
+        }
+      }
+#undef POPULATE_INTERFACE_PROPERTY_NAME
 
-    const char **transBegin = targetPropertyTransitiveWhitelist + 1;
-    const char **transEnd = targetPropertyTransitiveWhitelist
-              + (sizeof(targetPropertyTransitiveWhitelist) /
-              sizeof(*targetPropertyTransitiveWhitelist));
+    cmTarget const* headTarget = context->HeadTarget
+                               ? context->HeadTarget : target;
+
+    const char * const *transBegin =
+                        cmArrayBegin(targetPropertyTransitiveWhitelist) + 1;
+    const char * const *transEnd =
+                        cmArrayEnd(targetPropertyTransitiveWhitelist);
+
     if (std::find_if(transBegin, transEnd,
-              TransitiveWhitelistCompare(propertyName)) != transEnd)
+                     cmStrCmp(propertyName)) != transEnd)
       {
 
       std::vector<std::string> libs;
@@ -916,7 +1078,7 @@ static const struct TargetPropertyNode : public cmGeneratorExpressionNode
         }
       }
     else if (std::find_if(transBegin, transEnd,
-              TransitiveWhitelistCompare(interfacePropertyName)) != transEnd)
+                          cmStrCmp(interfacePropertyName)) != transEnd)
       {
       const cmTarget::LinkImplementation *impl = target->GetLinkImplementation(
                                                     context->Config,
@@ -936,7 +1098,8 @@ static const struct TargetPropertyNode : public cmGeneratorExpressionNode
 
     if (!prop)
       {
-      if (target->IsImported())
+      if (target->IsImported()
+          || target->GetType() == cmTarget::INTERFACE_LIBRARY)
         {
         return linkedTargetsContent;
         }
@@ -958,13 +1121,56 @@ static const struct TargetPropertyNode : public cmGeneratorExpressionNode
                                                 context->Config);
         return propContent ? propContent : "";
         }
+      if (target->IsLinkInterfaceDependentNumberMinProperty(propertyName,
+                                                         context->Config))
+        {
+        context->HadContextSensitiveCondition = true;
+        const char *propContent =
+                          target->GetLinkInterfaceDependentNumberMinProperty(
+                                                propertyName,
+                                                context->Config);
+        return propContent ? propContent : "";
+        }
+      if (target->IsLinkInterfaceDependentNumberMaxProperty(propertyName,
+                                                         context->Config))
+        {
+        context->HadContextSensitiveCondition = true;
+        const char *propContent =
+                          target->GetLinkInterfaceDependentNumberMaxProperty(
+                                                propertyName,
+                                                context->Config);
+        return propContent ? propContent : "";
+        }
 
       return linkedTargetsContent;
       }
 
+    if (!target->IsImported()
+        && dagCheckerParent && !dagCheckerParent->EvaluatingLinkLibraries())
+      {
+      if (target->IsLinkInterfaceDependentNumberMinProperty(propertyName,
+                                                        context->Config))
+        {
+        context->HadContextSensitiveCondition = true;
+        const char *propContent =
+                            target->GetLinkInterfaceDependentNumberMinProperty(
+                                                propertyName,
+                                                context->Config);
+        return propContent ? propContent : "";
+        }
+      if (target->IsLinkInterfaceDependentNumberMaxProperty(propertyName,
+                                                        context->Config))
+        {
+        context->HadContextSensitiveCondition = true;
+        const char *propContent =
+                            target->GetLinkInterfaceDependentNumberMaxProperty(
+                                                propertyName,
+                                                context->Config);
+        return propContent ? propContent : "";
+        }
+      }
     for (size_t i = 1;
-         i < (sizeof(targetPropertyTransitiveWhitelist) /
-              sizeof(*targetPropertyTransitiveWhitelist));
+         i < cmArraySize(targetPropertyTransitiveWhitelist);
          ++i)
       {
       if (targetPropertyTransitiveWhitelist[i] == interfacePropertyName)
@@ -1026,7 +1232,8 @@ static const char* targetPolicyWhitelist[] = {
 #undef TARGET_POLICY_STRING
 };
 
-cmPolicies::PolicyStatus statusForTarget(cmTarget *tgt, const char *policy)
+cmPolicies::PolicyStatus statusForTarget(cmTarget const* tgt,
+                                         const char *policy)
 {
 #define RETURN_POLICY(POLICY) \
   if (strcmp(policy, #POLICY) == 0) \
@@ -1080,10 +1287,7 @@ static const struct TargetPolicyNode : public cmGeneratorExpressionNode
 
     context->HadContextSensitiveCondition = true;
 
-    for (size_t i = 1;
-         i < (sizeof(targetPolicyWhitelist) /
-              sizeof(*targetPolicyWhitelist));
-         ++i)
+    for (size_t i = 1; i < cmArraySize(targetPolicyWhitelist); ++i)
       {
       const char *policy = targetPolicyWhitelist[i];
       if (parameters.front() == policy)
@@ -1270,7 +1474,7 @@ struct TargetFilesystemArtifact : public cmGeneratorExpressionNode
                     "Expression syntax not recognized.");
       return std::string();
       }
-    cmTarget* target = context->Makefile->FindTargetToUse(name.c_str());
+    cmTarget* target = context->Makefile->FindTargetToUse(name);
     if(!target)
       {
       ::reportError(context, content->GetOriginalExpression(),
@@ -1356,6 +1560,8 @@ cmGeneratorExpressionNode* GetNode(const std::string &identifier)
     return &cCompilerVersionNode;
   else if (identifier == "CXX_COMPILER_VERSION")
     return &cxxCompilerVersionNode;
+  else if (identifier == "PLATFORM_ID")
+    return &platformIdNode;
   else if (identifier == "CONFIGURATION")
     return &configurationNode;
   else if (identifier == "CONFIG")
@@ -1380,6 +1586,14 @@ cmGeneratorExpressionNode* GetNode(const std::string &identifier)
     return &targetSoNameFileDirNode;
   else if (identifier == "STREQUAL")
     return &strEqualNode;
+  else if (identifier == "EQUAL")
+    return &equalNode;
+  else if (identifier == "LOWER_CASE")
+    return &lowerCaseNode;
+  else if (identifier == "UPPER_CASE")
+    return &upperCaseNode;
+  else if (identifier == "MAKE_C_IDENTIFIER")
+    return &makeCIdentifierNode;
   else if (identifier == "BOOL")
     return &boolNode;
   else if (identifier == "ANGLE-R")
@@ -1411,7 +1625,7 @@ cmGeneratorExpressionNode* GetNode(const std::string &identifier)
 //----------------------------------------------------------------------------
 GeneratorExpressionContent::GeneratorExpressionContent(
                                                     const char *startContent,
-                                                    unsigned int length)
+                                                    size_t length)
   : StartContent(startContent), ContentLength(length)
 {
 
@@ -1524,14 +1738,6 @@ std::string GeneratorExpressionContent::Evaluate(
     return std::string();
     }
 
-  if (node->NumExpectedParameters() == 1
-        && node->AcceptsArbitraryContentParameter())
-    {
-    return this->ProcessArbitraryContent(node, identifier, context,
-                                         dagChecker,
-                                         this->ParamChildren.begin());
-    }
-
   std::vector<std::string> parameters;
   this->EvaluateParameters(node, identifier, context, dagChecker, parameters);
   if (context->HadError)
@@ -1559,32 +1765,34 @@ std::string GeneratorExpressionContent::EvaluateParameters(
                                         pend = this->ParamChildren.end();
   const bool acceptsArbitraryContent
                                   = node->AcceptsArbitraryContentParameter();
-  for ( ; pit != pend; ++pit)
+  int counter = 1;
+  for ( ; pit != pend; ++pit, ++counter)
     {
-    std::string parameter;
-    std::vector<cmGeneratorExpressionEvaluator*>::const_iterator it =
-                                                              pit->begin();
-    const std::vector<cmGeneratorExpressionEvaluator*>::const_iterator end =
-                                                              pit->end();
-    for ( ; it != end; ++it)
+    if (acceptsArbitraryContent && counter == numExpected)
       {
-      parameter += (*it)->Evaluate(context, dagChecker);
-      if (context->HadError)
-        {
-        return std::string();
-        }
-      }
-    parameters.push_back(parameter);
-    if (acceptsArbitraryContent
-        && parameters.size() == (unsigned int)numExpected - 1)
-      {
-      assert(pit != pend);
       std::string lastParam = this->ProcessArbitraryContent(node, identifier,
                                                             context,
                                                             dagChecker,
-                                                            pit + 1);
+                                                            pit);
       parameters.push_back(lastParam);
       return std::string();
+      }
+    else
+      {
+      std::string parameter;
+      std::vector<cmGeneratorExpressionEvaluator*>::const_iterator it =
+                                                                pit->begin();
+      const std::vector<cmGeneratorExpressionEvaluator*>::const_iterator end =
+                                                                pit->end();
+      for ( ; it != end; ++it)
+        {
+        parameter += (*it)->Evaluate(context, dagChecker);
+        if (context->HadError)
+          {
+          return std::string();
+          }
+        }
+      parameters.push_back(parameter);
       }
     }
   }
@@ -1620,6 +1828,12 @@ std::string GeneratorExpressionContent::EvaluateParameters(
     {
     reportError(context, this->GetOriginalExpression(), "$<" + identifier
                       + "> expression requires at least one parameter.");
+    }
+  if (numExpected == cmGeneratorExpressionNode::OneOrZeroParameters
+      && parameters.size() > 1)
+    {
+    reportError(context, this->GetOriginalExpression(), "$<" + identifier
+                      + "> expression requires one or zero parameters.");
     }
   return std::string();
 }

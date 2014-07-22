@@ -41,6 +41,7 @@ endif()
 if(${CMAKE_GENERATOR} MATCHES "Visual Studio")
 elseif("${CMAKE_GENERATOR}" MATCHES "Xcode")
   set(CMAKE_CXX_COMPILER_XCODE_TYPE sourcecode.cpp.cpp)
+  _cmake_find_compiler_path(CXX)
 else()
   if(NOT CMAKE_CXX_COMPILER)
     set(CMAKE_CXX_COMPILER_INIT NOTFOUND)
@@ -70,32 +71,7 @@ else()
 
     _cmake_find_compiler(CXX)
   else()
-
-    # we only get here if CMAKE_CXX_COMPILER was specified using -D or a pre-made CMakeCache.txt
-    # (e.g. via ctest) or set in CMAKE_TOOLCHAIN_FILE
-    #
-    # if CMAKE_CXX_COMPILER is a list of length 2, use the first item as
-    # CMAKE_CXX_COMPILER and the 2nd one as CMAKE_CXX_COMPILER_ARG1
-
-    list(LENGTH CMAKE_CXX_COMPILER _CMAKE_CXX_COMPILER_LIST_LENGTH)
-    if("${_CMAKE_CXX_COMPILER_LIST_LENGTH}" EQUAL 2)
-      list(GET CMAKE_CXX_COMPILER 1 CMAKE_CXX_COMPILER_ARG1)
-      list(GET CMAKE_CXX_COMPILER 0 CMAKE_CXX_COMPILER)
-    endif()
-
-    # if a compiler was specified by the user but without path,
-    # now try to find it with the full path
-    # if it is found, force it into the cache,
-    # if not, don't overwrite the setting (which was given by the user) with "NOTFOUND"
-    # if the CXX compiler already had a path, reuse it for searching the C compiler
-    get_filename_component(_CMAKE_USER_CXX_COMPILER_PATH "${CMAKE_CXX_COMPILER}" PATH)
-    if(NOT _CMAKE_USER_CXX_COMPILER_PATH)
-      find_program(CMAKE_CXX_COMPILER_WITH_PATH NAMES ${CMAKE_CXX_COMPILER})
-      mark_as_advanced(CMAKE_CXX_COMPILER_WITH_PATH)
-      if(CMAKE_CXX_COMPILER_WITH_PATH)
-        set(CMAKE_CXX_COMPILER ${CMAKE_CXX_COMPILER_WITH_PATH} CACHE STRING "CXX compiler" FORCE)
-      endif()
-    endif()
+    _cmake_find_compiler_path(CXX)
   endif()
   mark_as_advanced(CMAKE_CXX_COMPILER)
 
@@ -145,17 +121,23 @@ endif ()
 # e.g. powerpc-linux-g++, arm-elf-g++ or i586-mingw32msvc-g++ , optionally
 # with a 3-component version number at the end (e.g. arm-eabi-gcc-4.5.2).
 # The other tools of the toolchain usually have the same prefix
-# NAME_WE cannot be used since then this test will fail for names lile
+# NAME_WE cannot be used since then this test will fail for names like
 # "arm-unknown-nto-qnx6.3.0-gcc.exe", where BASENAME would be
 # "arm-unknown-nto-qnx6" instead of the correct "arm-unknown-nto-qnx6.3.0-"
 
 
 if (CMAKE_CROSSCOMPILING  AND NOT  _CMAKE_TOOLCHAIN_PREFIX)
 
-  if("${CMAKE_CXX_COMPILER_ID}" MATCHES "GNU")
+  if("${CMAKE_CXX_COMPILER_ID}" MATCHES "GNU" OR "${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
     get_filename_component(COMPILER_BASENAME "${CMAKE_CXX_COMPILER}" NAME)
-    if (COMPILER_BASENAME MATCHES "^(.+-)[gc]\\+\\+(-[0-9]+\\.[0-9]+\\.[0-9]+)?(\\.exe)?$")
+    if (COMPILER_BASENAME MATCHES "^(.+-)(clan)?[gc]\\+\\+(-[0-9]+\\.[0-9]+\\.[0-9]+)?(\\.exe)?$")
       set(_CMAKE_TOOLCHAIN_PREFIX ${CMAKE_MATCH_1})
+    elseif("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
+      set(_CMAKE_TOOLCHAIN_PREFIX ${CMAKE_CXX_COMPILER_TARGET}-)
+    elseif(COMPILER_BASENAME MATCHES "QCC(\\.exe)?$")
+      if(CMAKE_CXX_COMPILER_TARGET MATCHES "gcc_nto([^_le]+)(le)?.*$")
+        set(_CMAKE_TOOLCHAIN_PREFIX nto${CMAKE_MATCH_1}-)
+      endif()
     endif ()
 
     # if "llvm-" is part of the prefix, remove it, since llvm doesn't have its own binutils
@@ -175,16 +157,17 @@ if (CMAKE_CROSSCOMPILING  AND NOT  _CMAKE_TOOLCHAIN_PREFIX)
 
 endif ()
 
-include(${CMAKE_ROOT}/Modules/CMakeClDeps.cmake)
 include(CMakeFindBinUtils)
 if(MSVC_CXX_ARCHITECTURE_ID)
+  include(${CMAKE_ROOT}/Modules/CMakeClDeps.cmake)
   set(SET_MSVC_CXX_ARCHITECTURE_ID
     "set(MSVC_CXX_ARCHITECTURE_ID ${MSVC_CXX_ARCHITECTURE_ID})")
 endif()
+
 # configure all variables set in this file
 configure_file(${CMAKE_ROOT}/Modules/CMakeCXXCompiler.cmake.in
   ${CMAKE_PLATFORM_INFO_DIR}/CMakeCXXCompiler.cmake
-  @ONLY IMMEDIATE # IMMEDIATE must be here for compatibility mode <= 2.0
+  @ONLY
   )
 
 set(CMAKE_CXX_COMPILER_ENV_VAR "CXX")

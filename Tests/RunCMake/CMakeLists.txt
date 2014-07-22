@@ -1,39 +1,4 @@
-# This directory contains tests that run CMake to configure a project
-# but do not actually build anything.  To add a test:
-#
-# 1.) Add a subdirectory named for the test.
-#
-# 2.) Call add_RunCMake_test and pass the test directory name.
-#
-# 3.) Create a RunCMakeTest.cmake script in the directory containing
-#   include(RunCMake)
-#   run_cmake(SubTest1)
-#   ...
-#   run_cmake(SubTestN)
-# where SubTest1..SubTestN are sub-test names each corresponding to
-# an independent CMake run and project configuration.
-#
-# 3.) Create a CMakeLists.txt file in the directory containing
-#   cmake_minimum_required(...)
-#   project(${RunCMake_TEST} NONE) # or languages needed
-#   include(${RunCMake_TEST}.cmake)
-# where "${RunCMake_TEST}" is literal.  A value for RunCMake_TEST
-# will be passed to CMake by the run_cmake macro when running each
-# sub-test.
-#
-# 4.) Create a <SubTest>.cmake file for each sub-test named above
-# containing the actual test code.  Optionally create files
-# containing expected test results:
-#   <SubTest>-result.txt  = Process result expected if not "0"
-#   <SubTest>-stdout.txt  = Regex matching expected stdout content
-#   <SubTest>-stderr.txt  = Regex matching expected stderr content
-#   <SubTest>-check.cmake = Custom result check
-# Note that trailing newlines will be stripped from actual and expected test
-# output before matching against the stdout and stderr expressions.
-# The code in <SubTest>-check.cmake may use variables
-#   RunCMake_TEST_SOURCE_DIR = Top of test source tree
-#   RunCMake_TEST_BINARY_DIR = Top of test binary tree
-# and an failure must store a message in RunCMake_TEST_FAILED.
+# See adjacent README.rst for documentation of this test infrastructure.
 
 macro(add_RunCMake_test test)
   add_test(RunCMake.${test} ${CMAKE_CMAKE_COMMAND}
@@ -53,11 +18,29 @@ endif()
 
 add_RunCMake_test(CMP0019)
 add_RunCMake_test(CMP0022)
+add_RunCMake_test(CMP0026)
+add_RunCMake_test(CMP0027)
+add_RunCMake_test(CMP0028)
+add_RunCMake_test(CMP0037)
+add_RunCMake_test(CMP0038)
+add_RunCMake_test(CMP0039)
+add_RunCMake_test(CMP0040)
+add_RunCMake_test(CMP0041)
+if(CMAKE_SYSTEM_NAME MATCHES Darwin AND CMAKE_SHARED_LIBRARY_RUNTIME_C_FLAG)
+  add_RunCMake_test(CMP0042)
+endif()
+add_RunCMake_test(CMP0043)
+add_RunCMake_test(CMP0045)
+add_RunCMake_test(CMP0046)
+add_RunCMake_test(CMP0049)
+add_RunCMake_test(CMP0050)
 add_RunCMake_test(CTest)
 if(UNIX AND "${CMAKE_TEST_GENERATOR}" MATCHES "Unix Makefiles")
   add_RunCMake_test(CompilerChange)
 endif()
+add_RunCMake_test(CompilerNotFound)
 add_RunCMake_test(Configure)
+add_RunCMake_test(DisallowedCommands)
 add_RunCMake_test(ExternalData)
 add_RunCMake_test(FPHSA)
 add_RunCMake_test(GeneratorExpression)
@@ -84,22 +67,33 @@ if(NOT WIN32)
     add_RunCMake_test(VisibilityPreset)
   endif()
 endif()
+if (QT4_FOUND)
+  set(CompatibleInterface_ARGS -DQT_QMAKE_EXECUTABLE:FILEPATH=${QT_QMAKE_EXECUTABLE})
+endif()
 add_RunCMake_test(CompatibleInterface)
 add_RunCMake_test(Syntax)
 
 add_RunCMake_test(add_dependencies)
 add_RunCMake_test(build_command)
+add_RunCMake_test(export)
+add_RunCMake_test(cmake_minimum_required)
 add_RunCMake_test(find_package)
 add_RunCMake_test(get_filename_component)
 add_RunCMake_test(if)
 add_RunCMake_test(include)
 add_RunCMake_test(include_directories)
 add_RunCMake_test(list)
+add_RunCMake_test(message)
+add_RunCMake_test(project)
+add_RunCMake_test(string)
 add_RunCMake_test(try_compile)
+add_RunCMake_test(set)
 add_RunCMake_test(variable_watch)
 add_RunCMake_test(CMP0004)
 add_RunCMake_test(TargetPolicies)
 add_RunCMake_test(alias_targets)
+add_RunCMake_test(interface_library)
+add_RunCMake_test(no_install_prefix)
 
 find_package(Qt4 QUIET)
 find_package(Qt5Core QUIET)
@@ -119,3 +113,7 @@ endif()
 add_RunCMake_test(File_Generate)
 add_RunCMake_test(ExportWithoutLanguage)
 add_RunCMake_test(target_link_libraries)
+add_RunCMake_test(CheckModules)
+add_RunCMake_test(CommandLine)
+
+add_RunCMake_test(install)

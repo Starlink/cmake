@@ -53,7 +53,7 @@ cmGeneratorExpression::~cmGeneratorExpression()
 //----------------------------------------------------------------------------
 const char *cmCompiledGeneratorExpression::Evaluate(
   cmMakefile* mf, const char* config, bool quiet,
-  cmTarget *headTarget,
+  cmTarget const* headTarget,
   cmGeneratorExpressionDAGChecker *dagChecker) const
 {
   return this->Evaluate(mf,
@@ -67,11 +67,11 @@ const char *cmCompiledGeneratorExpression::Evaluate(
 //----------------------------------------------------------------------------
 const char *cmCompiledGeneratorExpression::Evaluate(
   cmMakefile* mf, const char* config, bool quiet,
-  cmTarget *headTarget,
-  cmTarget *currentTarget,
+  cmTarget const* headTarget,
+  cmTarget const* currentTarget,
   cmGeneratorExpressionDAGChecker *dagChecker) const
 {
-  if (!this->NeedsParsing)
+  if (!this->NeedsEvaluation)
     {
     return this->Input.c_str();
     }
@@ -129,9 +129,9 @@ cmCompiledGeneratorExpression::cmCompiledGeneratorExpression(
   cmGeneratorExpressionLexer l;
   std::vector<cmGeneratorExpressionToken> tokens =
                                               l.Tokenize(this->Input.c_str());
-  this->NeedsParsing = l.GetSawGeneratorExpression();
+  this->NeedsEvaluation = l.GetSawGeneratorExpression();
 
-  if (this->NeedsParsing)
+  if (this->NeedsEvaluation)
     {
     cmGeneratorExpressionParser p(tokens);
     p.Parse(this->Evaluators);
@@ -245,7 +245,7 @@ static void prefixItems(const std::string &content, std::string &result,
     result += sep;
     sep = ";";
     if (!cmSystemTools::FileIsFullPath(ei->c_str())
-        && cmGeneratorExpression::Find(*ei) == std::string::npos)
+        && cmGeneratorExpression::Find(*ei) != 0)
       {
       result += prefix;
       }

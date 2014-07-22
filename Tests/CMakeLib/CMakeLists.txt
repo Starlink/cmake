@@ -6,13 +6,14 @@ include_directories(
 
 set(CMakeLib_TESTS
   testGeneratedFileStream
+  testRST
   testSystemTools
   testUTF8
   testXMLParser
   testXMLSafe
   )
 
-if(WIN32 AND NOT UNIX) # Just if(WIN32) when CMake >= 2.8.4 is required
+if(WIN32)
   list(APPEND CMakeLib_TESTS
     testVisualStudioSlnParser
     )

@@ -113,10 +113,16 @@ cmCTestGenericHandler* cmCTestBuildCommand::InitializeHandler()
         this->GlobalGenerator =
           this->Makefile->GetCMakeInstance()->CreateGlobalGenerator(
             cmakeGeneratorName);
+        if(!this->GlobalGenerator)
+          {
+          std::string e = "could not create generator named \"";
+          e += cmakeGeneratorName;
+          e += "\"";
+          this->Makefile->IssueMessage(cmake::FATAL_ERROR, e);
+          cmSystemTools::SetFatalErrorOccured();
+          return 0;
+          }
         }
-      this->GlobalGenerator->FindMakeProgram(this->Makefile);
-      const char* cmakeMakeProgram
-        = this->Makefile->GetDefinition("CMAKE_MAKE_PROGRAM");
       if(strlen(cmakeBuildConfiguration) == 0)
         {
         const char* config = 0;
@@ -133,10 +139,8 @@ cmCTestGenericHandler* cmCTestBuildCommand::InitializeHandler()
       std::string dir = this->CTest->GetCTestConfiguration("BuildDirectory");
       std::string buildCommand
         = this->GlobalGenerator->
-        GenerateBuildCommand(cmakeMakeProgram,
-                             cmakeProjectName, dir.c_str(),
-                             cmakeBuildAdditionalFlags, cmakeBuildTarget,
-                             cmakeBuildConfiguration, true, false);
+        GenerateCMakeBuildCommand(cmakeBuildTarget, cmakeBuildConfiguration,
+                                  cmakeBuildAdditionalFlags, true);
       cmCTestLog(this->CTest, HANDLER_VERBOSE_OUTPUT,
                  "SetMakeCommand:"
                  << buildCommand.c_str() << "\n");

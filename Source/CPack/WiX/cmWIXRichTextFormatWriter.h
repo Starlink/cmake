@@ -13,7 +13,7 @@
 #ifndef cmWIXRichTextFormatWriter_h
 #define cmWIXRichTextFormatWriter_h
 
-#include <fstream>
+#include <cmsys/FStream.hxx>
 
 /** \class cmWIXRichtTextFormatWriter
  * \brief Helper class to generate Rich Text Format (RTF) documents
@@ -30,6 +30,7 @@ public:
 private:
   void WriteHeader();
   void WriteFontTable();
+  void WriteColorTable();
   void WriteGenerator();
 
   void WriteDocumentPrefix();
@@ -40,7 +41,12 @@ private:
   void StartGroup();
   void EndGroup();
 
-  std::ofstream file;
+  void EmitUnicodeCodepoint(int c);
+  void EmitUnicodeSurrogate(int c);
+
+  void EmitInvalidCodepoint(int c);
+
+  cmsys::ofstream File;
 };
 
 #endif

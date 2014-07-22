@@ -223,11 +223,6 @@ if(CMAKE_OSX_DEPLOYMENT_TARGET)
   endif()
 endif()
 
-if("${CMAKE_BACKWARDS_COMPATIBILITY}" MATCHES "^1\\.[0-6]$")
-  set(CMAKE_SHARED_MODULE_CREATE_C_FLAGS
-    "${CMAKE_SHARED_MODULE_CREATE_C_FLAGS} -flat_namespace -undefined suppress")
-endif()
-
 # Enable shared library versioning.
 set(CMAKE_SHARED_LIBRARY_SONAME_C_FLAG "-install_name")
 
@@ -268,6 +263,11 @@ set(CMAKE_C_CREATE_MACOSX_FRAMEWORK
 set(CMAKE_CXX_CREATE_MACOSX_FRAMEWORK
       "<CMAKE_CXX_COMPILER> <LANGUAGE_COMPILE_FLAGS> <CMAKE_SHARED_LIBRARY_CREATE_CXX_FLAGS> <LINK_FLAGS> -o <TARGET> <SONAME_FLAG> <TARGET_INSTALLNAME_DIR><TARGET_SONAME> <OBJECTS> <LINK_LIBRARIES>")
 
+# Set default framework search path flag for languages known to use a
+# preprocessor that may find headers in frameworks.
+set(CMAKE_C_FRAMEWORK_SEARCH_FLAG -F)
+set(CMAKE_CXX_FRAMEWORK_SEARCH_FLAG -F)
+set(CMAKE_Fortran_FRAMEWORK_SEARCH_FLAG -F)
 
 # default to searching for frameworks first
 if(NOT DEFINED CMAKE_FIND_FRAMEWORK)
@@ -341,7 +341,9 @@ foreach(_path
     list(APPEND _apps_paths "${_apps}")
   endif()
 endforeach()
-list(REMOVE_DUPLICATES _apps_paths)
+if(_apps_paths)
+  list(REMOVE_DUPLICATES _apps_paths)
+endif()
 set(CMAKE_SYSTEM_APPBUNDLE_PATH
   ${_apps_paths})
 unset(_apps_paths)

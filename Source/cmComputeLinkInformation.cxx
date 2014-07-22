@@ -239,8 +239,8 @@ because this need be done only for shared libraries without soname-s.
 
 //----------------------------------------------------------------------------
 cmComputeLinkInformation
-::cmComputeLinkInformation(cmTarget* target, const char* config,
-                           cmTarget *headTarget)
+::cmComputeLinkInformation(cmTarget const* target, const char* config,
+                           cmTarget const* headTarget)
 {
   // Store context information.
   this->Target = target;
@@ -477,7 +477,7 @@ std::vector<std::string> const& cmComputeLinkInformation::GetFrameworkPaths()
 }
 
 //----------------------------------------------------------------------------
-std::set<cmTarget*> const&
+std::set<cmTarget const*> const&
 cmComputeLinkInformation::GetSharedLibrariesLinked()
 {
   return this->SharedLibrariesLinked;
@@ -542,11 +542,11 @@ bool cmComputeLinkInformation::Compute()
     // For CMake 2.4 bug-compatibility we need to consider the output
     // directories of targets linked in another configuration as link
     // directories.
-    std::set<cmTarget*> const& wrongItems = cld.GetOldWrongConfigItems();
-    for(std::set<cmTarget*>::const_iterator i = wrongItems.begin();
+    std::set<cmTarget const*> const& wrongItems = cld.GetOldWrongConfigItems();
+    for(std::set<cmTarget const*>::const_iterator i = wrongItems.begin();
         i != wrongItems.end(); ++i)
       {
-      cmTarget* tgt = *i;
+      cmTarget const* tgt = *i;
       bool implib =
         (this->UseImportLibrary &&
          (tgt->GetType() == cmTarget::SHARED_LIBRARY));
@@ -620,7 +620,8 @@ void cmComputeLinkInformation::AddImplicitLinkInfo(std::string const& lang)
 }
 
 //----------------------------------------------------------------------------
-void cmComputeLinkInformation::AddItem(std::string const& item, cmTarget* tgt)
+void cmComputeLinkInformation::AddItem(std::string const& item,
+                                       cmTarget const* tgt)
 {
   // Compute the proper name to use to link this library.
   const char* config = this->Config;
@@ -655,6 +656,11 @@ void cmComputeLinkInformation::AddItem(std::string const& item, cmTarget* tgt)
         (this->UseImportLibrary &&
          (impexe || tgt->GetType() == cmTarget::SHARED_LIBRARY));
 
+      if(tgt->GetType() == cmTarget::INTERFACE_LIBRARY)
+        {
+        this->Items.push_back(Item(std::string(), true, tgt));
+        return;
+        }
       // Pass the full path to the target file.
       std::string lib = tgt->GetFullPath(config, implib, true);
       if(!this->LinkDependsNoShared ||
@@ -695,7 +701,7 @@ void cmComputeLinkInformation::AddItem(std::string const& item, cmTarget* tgt)
 
 //----------------------------------------------------------------------------
 void cmComputeLinkInformation::AddSharedDepItem(std::string const& item,
-                                                cmTarget* tgt)
+                                                cmTarget const* tgt)
 {
   // If dropping shared library dependencies, ignore them.
   if(this->SharedDependencyMode == SharedDepModeNone)
@@ -1057,7 +1063,7 @@ void cmComputeLinkInformation::SetCurrentLinkType(LinkType lt)
 
 //----------------------------------------------------------------------------
 void cmComputeLinkInformation::AddTargetItem(std::string const& item,
-                                             cmTarget* target)
+                                             cmTarget const* target)
 {
   // This is called to handle a link item that is a full path to a target.
   // If the target is not a static library make sure the link type is
@@ -1739,14 +1745,14 @@ cmComputeLinkInformation::GetRuntimeSearchPath()
 //----------------------------------------------------------------------------
 void
 cmComputeLinkInformation::AddLibraryRuntimeInfo(std::string const& fullPath,
-                                                cmTarget* target)
+                                                cmTarget const* target)
 {
   // Ignore targets on Apple where install_name is not @rpath.
   // The dependenty library can be found with other means such as
   // @loader_path or full paths.
   if(this->Makefile->IsOn("CMAKE_PLATFORM_HAS_INSTALLNAME"))
     {
-    if(!target->HasMacOSXRpath(this->Config))
+    if(!target->HasMacOSXRpathInstallNameDir(this->Config))
       {
       return;
       }
@@ -1896,6 +1902,12 @@ void cmComputeLinkInformation::GetRPath(std::vector<std::string>& runtimeDirs,
     }
   if(use_build_rpath || use_link_rpath)
     {
+    std::string rootPath = this->Makefile->GetSafeDefinition("CMAKE_SYSROOT");
+    const char *stagePath
+                  = this->Makefile->GetDefinition("CMAKE_STAGING_PREFIX");
+    const char *installPrefix
+                  = this->Makefile->GetSafeDefinition("CMAKE_INSTALL_PREFIX");
+    cmSystemTools::ConvertToUnixSlashes(rootPath);
     std::vector<std::string> const& rdirs = this->GetRuntimeSearchPath();
     for(std::vector<std::string>::const_iterator ri = rdirs.begin();
         ri != rdirs.end(); ++ri)
@@ -1904,9 +1916,22 @@ void cmComputeLinkInformation::GetRPath(std::vector<std::string>& runtimeDirs,
       // support or if using the link path as an rpath.
       if(use_build_rpath)
         {
-        if(emitted.insert(*ri).second)
+        std::string d = *ri;
+        if (!rootPath.empty() && d.find(rootPath) == 0)
           {
-          runtimeDirs.push_back(*ri);
+          d = d.substr(rootPath.size());
+          }
+        else if (stagePath && *stagePath && d.find(stagePath) == 0)
+          {
+          std::string suffix = d.substr(strlen(stagePath));
+          d = installPrefix;
+          d += "/";
+          d += suffix;
+          cmSystemTools::ConvertToUnixSlashes(d);
+          }
+        if(emitted.insert(d).second)
+          {
+          runtimeDirs.push_back(d);
           }
         }
       else if(use_link_rpath)
@@ -1919,9 +1944,22 @@ void cmComputeLinkInformation::GetRPath(std::vector<std::string>& runtimeDirs,
            !cmSystemTools::IsSubDirectory(ri->c_str(), topSourceDir) &&
            !cmSystemTools::IsSubDirectory(ri->c_str(), topBinaryDir))
           {
-          if(emitted.insert(*ri).second)
+          std::string d = *ri;
+          if (!rootPath.empty() && d.find(rootPath) == 0)
             {
-            runtimeDirs.push_back(*ri);
+            d = d.substr(rootPath.size());
+            }
+          else if (stagePath && *stagePath && d.find(stagePath) == 0)
+            {
+            std::string suffix = d.substr(strlen(stagePath));
+            d = installPrefix;
+            d += "/";
+            d += suffix;
+            cmSystemTools::ConvertToUnixSlashes(d);
+            }
+          if(emitted.insert(d).second)
+            {
+            runtimeDirs.push_back(d);
             }
           }
         }

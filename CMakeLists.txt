@@ -9,8 +9,10 @@
 # implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 # See the License for more information.
 #=============================================================================
-cmake_minimum_required(VERSION 2.8.2 FATAL_ERROR)
-set(CMAKE_LEGACY_CYGWIN_WIN32 0) # Remove when CMake >= 2.8.4 is required
+cmake_minimum_required(VERSION 2.8.4 FATAL_ERROR)
+if(POLICY CMP0025)
+  cmake_policy(SET CMP0025 NEW)
+endif()
 project(CMake)
 
 if(CMAKE_BOOTSTRAP)
@@ -111,10 +113,6 @@ endif()
 # for testing. Simply to improve readability of the main script.
 #-----------------------------------------------------------------------
 macro(CMAKE_SETUP_TESTING)
-  if (NOT DART_ROOT)
-    set(MAKEPROGRAM ${CMAKE_MAKE_PROGRAM})
-  endif ()
-
   if(BUILD_TESTING)
     set(CMAKE_TEST_GENERATOR "" CACHE STRING
       "Generator used when running tests")
@@ -123,7 +121,6 @@ macro(CMAKE_SETUP_TESTING)
     if(NOT CMAKE_TEST_GENERATOR)
       set(CMAKE_TEST_GENERATOR "${CMAKE_GENERATOR}")
       set(CMAKE_TEST_GENERATOR_TOOLSET "${CMAKE_GENERATOR_TOOLSET}")
-      set(CMAKE_TEST_MAKEPROGRAM "${MAKEPROGRAM}")
     else()
       set(CMAKE_TEST_DIFFERENT_GENERATOR TRUE)
       set(CMAKE_TEST_GENERATOR_TOOLSET "")
@@ -193,15 +190,8 @@ mark_as_advanced(CMAKE_USE_FOLDERS)
 macro(CMAKE_SET_TARGET_FOLDER tgt folder)
   if(CMAKE_USE_FOLDERS)
     set_property(GLOBAL PROPERTY USE_FOLDERS ON)
-
-    # Really, I just want this to be an "if(TARGET ${tgt})" ...
-    # but I'm not sure that our min req'd., CMake 2.4.5 can handle
-    # that... so I'm just activating this for now, with a version
-    # compare, and only for MSVC builds.
-    if(MSVC)
-      if(NOT ${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION} LESS 2.8)
-        set_property(TARGET "${tgt}" PROPERTY FOLDER "${folder}")
-      endif()
+    if(MSVC AND TARGET ${tgt})
+      set_property(TARGET "${tgt}" PROPERTY FOLDER "${folder}")
     endif()
   else()
     set_property(GLOBAL PROPERTY USE_FOLDERS OFF)
@@ -323,11 +313,7 @@ macro (CMAKE_BUILD_UTILITIES)
   #---------------------------------------------------------------------
   # Build or use system libarchive for CMake and CTest.
   if(CMAKE_USE_SYSTEM_LIBARCHIVE)
-    if(EXISTS ${CMAKE_ROOT}/Modules/FindLibArchive.cmake) # added in 2.8.3
-      find_package(LibArchive)
-    else()
-      include(${CMake_SOURCE_DIR}/Modules/FindLibArchive.cmake)
-    endif()
+    find_package(LibArchive)
     if(NOT LibArchive_FOUND)
       message(FATAL_ERROR "CMAKE_USE_SYSTEM_LIBARCHIVE is ON but LibArchive is not found!")
     endif()
@@ -420,27 +406,8 @@ endif()
 # The main section of the CMakeLists file
 #
 #-----------------------------------------------------------------------
-include(Source/CMakeVersion.cmake)
-# Releases define a small tweak level.
-if("${CMake_VERSION_TWEAK}" VERSION_LESS 20000000)
-  set(CMake_VERSION_IS_RELEASE 1)
-  set(CMake_VERSION_SOURCE "")
-else()
-  set(CMake_VERSION_IS_RELEASE 0)
-  include(${CMake_SOURCE_DIR}/Source/CMakeVersionSource.cmake)
-endif()
-
-# Compute the full version string.
-set(CMake_VERSION ${CMake_VERSION_MAJOR}.${CMake_VERSION_MINOR}.${CMake_VERSION_PATCH})
-if(${CMake_VERSION_TWEAK} GREATER 0)
-  set(CMake_VERSION ${CMake_VERSION}.${CMake_VERSION_TWEAK})
-endif()
-if(CMake_VERSION_RC)
-  set(CMake_VERSION ${CMake_VERSION}-rc${CMake_VERSION_RC})
-endif()
-if(CMake_VERSION_SOURCE)
-  set(CMake_VERSION ${CMake_VERSION}-${CMake_VERSION_SOURCE})
-endif()
+# Compute CMake_VERSION, etc.
+include(Source/CMakeVersionCompute.cmake)
 
 # Include the standard Dart testing module
 enable_testing()
@@ -460,27 +427,8 @@ set(LIBRARY_OUTPUT_PATH "" CACHE INTERNAL
 # install tree.
 set(CMAKE_SKIP_RPATH ON CACHE INTERNAL "CMake does not need RPATHs.")
 
-set(CMAKE_DATA_DIR "share/cmake-${CMake_VERSION_MAJOR}.${CMake_VERSION_MINOR}" CACHE STRING
-  "Install location for data (relative to prefix).")
-set(CMAKE_DOC_DIR "doc/cmake-${CMake_VERSION_MAJOR}.${CMake_VERSION_MINOR}" CACHE STRING
-  "Install location for documentation (relative to prefix).")
-set(CMAKE_MAN_DIR "man" CACHE STRING
-  "Install location for man pages (relative to prefix).")
-mark_as_advanced(CMAKE_DATA_DIR CMAKE_DOC_DIR CMAKE_MAN_DIR)
-if(CYGWIN AND EXISTS "${CMAKE_ROOT}/Modules/CPack.cmake")
-  # Force doc, data and man dirs to conform to cygwin layout.
-  set(CMAKE_DOC_DIR  "share/doc/cmake-${CMake_VERSION}")
-  set(CMAKE_DATA_DIR "share/cmake-${CMake_VERSION}")
-  set(CMAKE_MAN_DIR  "share/man")
-  # let the user know we just forced these values
-  message(STATUS "Setup for Cygwin packaging")
-  message(STATUS "Override cache CMAKE_DOC_DIR = ${CMAKE_DOC_DIR}")
-  message(STATUS "Override cache CMAKE_DATA_DIR = ${CMAKE_DATA_DIR}")
-  message(STATUS "Override cache CMAKE_MAN_DIR = ${CMAKE_MAN_DIR}")
-endif()
-string(REGEX REPLACE "^/" "" CMAKE_DATA_DIR "${CMAKE_DATA_DIR}")
-string(REGEX REPLACE "^/" "" CMAKE_DOC_DIR "${CMAKE_DOC_DIR}")
-string(REGEX REPLACE "^/" "" CMAKE_MAN_DIR "${CMAKE_MAN_DIR}")
+# Load install destinations.
+include(Source/CMakeInstallDestinations.cmake)
 
 if(BUILD_TESTING)
   include(${CMake_SOURCE_DIR}/Tests/CMakeInstall.cmake)
@@ -529,8 +477,8 @@ endif()
 
 if(BUILD_QtDialog)
   if(APPLE)
-    set(CMAKE_BUNDLE_NAME
-      "CMake ${CMake_VERSION_MAJOR}.${CMake_VERSION_MINOR}-${CMake_VERSION_PATCH}")
+    set(CMAKE_BUNDLE_VERSION
+      "${CMake_VERSION_MAJOR}.${CMake_VERSION_MINOR}.${CMake_VERSION_PATCH}")
     set(CMAKE_BUNDLE_LOCATION "${CMAKE_INSTALL_PREFIX}")
     # make sure CMAKE_INSTALL_PREFIX ends in /
     string(LENGTH "${CMAKE_INSTALL_PREFIX}" LEN)
@@ -540,7 +488,7 @@ if(BUILD_QtDialog)
       set(CMAKE_INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}/")
     endif()
     set(CMAKE_INSTALL_PREFIX
-      "${CMAKE_INSTALL_PREFIX}${CMAKE_BUNDLE_NAME}.app/Contents")
+      "${CMAKE_INSTALL_PREFIX}CMake.app/Contents")
   endif()
 
   set(QT_NEED_RPATH FALSE)
@@ -582,10 +530,6 @@ configure_file(
   "${CMAKE_CURRENT_BINARY_DIR}/DartLocal.conf"
   COPYONLY)
 
-option(CMAKE_STRICT
-  "Perform strict testing to record property and variable access. Can be used to report any undefined properties or variables" OFF)
-mark_as_advanced(CMAKE_STRICT)
-
 if(NOT CMake_VERSION_IS_RELEASE)
   if("${CMAKE_C_COMPILER_ID}" STREQUAL "GNU" AND
       NOT "${CMAKE_C_COMPILER_VERSION}" VERSION_LESS 4.2)
@@ -619,7 +563,9 @@ if(BUILD_TESTING)
   CMAKE_SET_TARGET_FOLDER(CMakeLibTests "Tests")
 endif()
 CMAKE_SET_TARGET_FOLDER(cmw9xcom "Utilities/Win9xCompat")
-CMAKE_SET_TARGET_FOLDER(documentation "Documentation")
+if(TARGET documentation)
+  CMAKE_SET_TARGET_FOLDER(documentation "Documentation")
+endif()
 
 # add a test
 add_test(SystemInformationNew "${CMAKE_CMAKE_COMMAND}"
@@ -630,7 +576,7 @@ install(FILES Copyright.txt DESTINATION ${CMAKE_DOC_DIR})
 
 # Install script directories.
 install(
-  DIRECTORY Modules Templates
+  DIRECTORY Help Modules Templates
   DESTINATION ${CMAKE_DATA_DIR}
   FILE_PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ
   DIRECTORY_PERMISSIONS OWNER_READ OWNER_EXECUTE OWNER_WRITE
@@ -641,16 +587,5 @@ install(
                               WORLD_READ WORLD_EXECUTE
   )
 
-# process docs related install
-add_subdirectory(Docs)
-
-#-----------------------------------------------------------------------
-# End of the main section of the CMakeLists file
-#-----------------------------------------------------------------------
-
-# As a special case when building CMake itself, CMake 2.8.0 and below
-# look up EXECUTABLE_OUTPUT_PATH in the top-level CMakeLists.txt file
-# to compute the location of the "cmake" executable.  We set it here
-# so that those CMake versions can find it.  We wait until after all
-# the add_subdirectory() calls to avoid affecting the subdirectories.
-set(EXECUTABLE_OUTPUT_PATH ${CMake_BIN_DIR})
+# Install auxiliary files integrating with other tools.
+add_subdirectory(Auxiliary)

@@ -26,7 +26,7 @@ bool cmTargetPropCommandBase
     }
 
   // Lookup the target for which libraries are specified.
-  if (this->Makefile->IsAlias(args[0].c_str()))
+  if (this->Makefile->IsAlias(args[0]))
     {
     this->SetError("can not be used on an ALIAS target.");
     return false;
@@ -36,7 +36,7 @@ bool cmTargetPropCommandBase
     ->GetGlobalGenerator()->FindTarget(0, args[0].c_str());
   if(!this->Target)
     {
-    this->Target = this->Makefile->FindTargetToUse(args[0].c_str());
+    this->Target = this->Makefile->FindTargetToUse(args[0]);
     }
   if(!this->Target)
     {
@@ -47,6 +47,7 @@ bool cmTargetPropCommandBase
     && (this->Target->GetType() != cmTarget::STATIC_LIBRARY)
     && (this->Target->GetType() != cmTarget::OBJECT_LIBRARY)
     && (this->Target->GetType() != cmTarget::MODULE_LIBRARY)
+    && (this->Target->GetType() != cmTarget::INTERFACE_LIBRARY)
     && (this->Target->GetType() != cmTarget::EXECUTABLE))
     {
     this->SetError("called with non-compilable target type");
@@ -109,6 +110,14 @@ bool cmTargetPropCommandBase
   if(this->Target->IsImported())
     {
     this->HandleImportedTarget(args[0]);
+    return false;
+    }
+
+  if (this->Target->GetType() == cmTarget::INTERFACE_LIBRARY
+      && scope != "INTERFACE")
+    {
+    this->SetError("may only be set INTERFACE properties on INTERFACE "
+      "targets");
     return false;
     }
 

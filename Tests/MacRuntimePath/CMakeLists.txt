@@ -1,6 +1,8 @@
 cmake_minimum_required (VERSION 2.8)
 project(MacRuntimePath)
-
+if(NOT DEFINED CMAKE_TEST_MAKEPROGRAM AND NOT CMAKE_GENERATOR MATCHES "Visual Studio")
+  set(CMAKE_TEST_MAKEPROGRAM "${CMAKE_MAKE_PROGRAM}")
+endif()
 
 # Wipe out the install tree to make sure the exporter works.
 add_custom_command(
@@ -38,7 +40,6 @@ add_custom_command(
     --build-target install
     --build-generator ${CMAKE_GENERATOR}
     --build-generator-toolset "${CMAKE_GENERATOR_TOOLSET}"
-    --build-makeprogram ${CMAKE_MAKE_PROGRAM}
     --build-options -C${MacRuntimePath_BINARY_DIR}/InitialCache.cmake
   VERBATIM
   )
@@ -60,7 +61,6 @@ add_custom_command(
    --build-project MacRuntimePath_B
    --build-generator ${CMAKE_GENERATOR}
    --build-generator-toolset "${CMAKE_GENERATOR_TOOLSET}"
-   --build-makeprogram ${CMAKE_MAKE_PROGRAM}
    --build-options -C${MacRuntimePath_BINARY_DIR}/InitialCache.cmake
   VERBATIM
   )

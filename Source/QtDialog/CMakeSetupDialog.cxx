@@ -34,6 +34,7 @@
 #include "QCMakeCacheView.h"
 #include "AddCacheEntry.h"
 #include "FirstConfigure.h"
+#include "cmSystemTools.h"
 #include "cmVersion.h"
 
 QCMakeThread::QCMakeThread(QObject* p)
@@ -66,12 +67,13 @@ CMakeSetupDialog::CMakeSetupDialog()
   // create the GUI
   QSettings settings;
   settings.beginGroup("Settings/StartPath");
-  int h = settings.value("Height", 500).toInt();
-  int w = settings.value("Width", 700).toInt();
-  this->resize(w, h);
+  restoreGeometry(settings.value("geometry").toByteArray());
+  restoreState(settings.value("windowState").toByteArray());
 
-  this->AddVariableCompletions = settings.value("AddVariableCompletionEntries",
+  this->AddVariableNames = settings.value("AddVariableNames",
                            QStringList("CMAKE_INSTALL_PREFIX")).toStringList();
+  this->AddVariableTypes = settings.value("AddVariableTypes",
+                                           QStringList("PATH")).toStringList();
 
   QWidget* cont = new QWidget(this);
   this->setupUi(cont);
@@ -299,8 +301,8 @@ CMakeSetupDialog::~CMakeSetupDialog()
 {
   QSettings settings;
   settings.beginGroup("Settings/StartPath");
-  settings.setValue("Height", this->height());
-  settings.setValue("Width", this->width());
+  settings.setValue("windowState", QVariant(saveState()));
+  settings.setValue("geometry", QVariant(saveGeometry()));
   settings.setValue("SplitterSizes", this->Splitter->saveState());
 
   // wait for thread to stop
@@ -808,12 +810,26 @@ void CMakeSetupDialog::doDeleteCache()
 
 void CMakeSetupDialog::doAbout()
 {
-  QString msg = tr("CMake %1\n"
-                "Using Qt %2\n"
-                "www.cmake.org");
-
+  QString msg = tr(
+    "CMake %1 (cmake.org).\n"
+    "CMake suite maintained and supported by Kitware (kitware.com/cmake).\n"
+    "Distributed under terms of the BSD 3-Clause License.\n"
+    "\n"
+    "CMake GUI maintained by csimsoft,\n"
+    "built using Qt %2 (qt-project.org).\n"
+#ifdef CMake_GUI_DISTRIBUTE_WITH_Qt_LGPL
+    "\n"
+    "The Qt Toolkit is Copyright (C) Digia Plc and/or its subsidiary(-ies).\n"
+    "Qt is licensed under terms of the GNU LGPLv2.1, available at:\n"
+    " \"%3\""
+#endif
+    );
   msg = msg.arg(cmVersion::GetCMakeVersion());
   msg = msg.arg(qVersion());
+#ifdef CMake_GUI_DISTRIBUTE_WITH_Qt_LGPL
+  std::string lgpl = cmSystemTools::GetCMakeRoot()+"/Licenses/LGPLv2.1.txt";
+  msg = msg.arg(lgpl.c_str());
+#endif
 
   QDialog dialog;
   dialog.setWindowTitle(tr("About"));
@@ -947,6 +963,7 @@ void CMakeSetupDialog::saveBuildPaths(const QStringList& paths)
 void CMakeSetupDialog::setCacheModified()
 {
   this->CacheModified = true;
+  this->ConfigureNeeded = true;
   this->enterState(ReadyConfigure);
 }
 
@@ -1034,7 +1051,8 @@ void CMakeSetupDialog::addCacheEntry()
   dialog.resize(400, 200);
   dialog.setWindowTitle(tr("Add Cache Entry"));
   QVBoxLayout* l = new QVBoxLayout(&dialog);
-  AddCacheEntry* w = new AddCacheEntry(&dialog, this->AddVariableCompletions);
+  AddCacheEntry* w = new AddCacheEntry(&dialog, this->AddVariableNames,
+                                                this->AddVariableTypes);
   QDialogButtonBox* btns = new QDialogButtonBox(
       QDialogButtonBox::Ok | QDialogButtonBox::Cancel,
       Qt::Horizontal, &dialog);
@@ -1049,23 +1067,26 @@ void CMakeSetupDialog::addCacheEntry()
     m->insertProperty(w->type(), w->name(), w->description(), w->value(), false);
 
     // only add variable names to the completion which are new
-    if (!this->AddVariableCompletions.contains(w->name()))
+    if (!this->AddVariableNames.contains(w->name()))
       {
-      this->AddVariableCompletions << w->name();
+      this->AddVariableNames << w->name();
+      this->AddVariableTypes << w->typeString();
       // limit to at most 100 completion items
-      if (this->AddVariableCompletions.size() > 100)
+      if (this->AddVariableNames.size() > 100)
         {
-        this->AddVariableCompletions.removeFirst();
+        this->AddVariableNames.removeFirst();
+        this->AddVariableTypes.removeFirst();
         }
       // make sure CMAKE_INSTALL_PREFIX is always there
-      if (!this->AddVariableCompletions.contains("CMAKE_INSTALL_PREFIX"))
+      if (!this->AddVariableNames.contains("CMAKE_INSTALL_PREFIX"))
         {
-        this->AddVariableCompletions << QString("CMAKE_INSTALL_PREFIX");
+        this->AddVariableNames << "CMAKE_INSTALL_PREFIX";
+        this->AddVariableTypes << "PATH";
         }
       QSettings settings;
       settings.beginGroup("Settings/StartPath");
-      settings.setValue("AddVariableCompletionEntries",
-                        this->AddVariableCompletions);
+      settings.setValue("AddVariableNames", this->AddVariableNames);
+      settings.setValue("AddVariableTypes", this->AddVariableTypes);
       }
     }
 }
@@ -1231,7 +1252,7 @@ void CMakeSetupDialog::doOutputFindNext(bool directionForward)
 
   QString search = this->FindHistory.front();
 
-  QTextCursor cursor = this->Output->textCursor();
+  QTextCursor textCursor = this->Output->textCursor();
   QTextDocument* document = this->Output->document();
   QTextDocument::FindFlags flags;
   if (!directionForward)
@@ -1239,67 +1260,67 @@ void CMakeSetupDialog::doOutputFindNext(bool directionForward)
     flags |= QTextDocument::FindBackward;
     }
 
-  cursor = document->find(search, cursor, flags);
+  textCursor = document->find(search, textCursor, flags);
 
-  if (cursor.isNull())
+  if (textCursor.isNull())
     {
     // first search found nothing, wrap around and search again
-    cursor = this->Output->textCursor();
-    cursor.movePosition(directionForward ? QTextCursor::Start
-                                         : QTextCursor::End);
-    cursor = document->find(search, cursor, flags);
+    textCursor = this->Output->textCursor();
+    textCursor.movePosition(directionForward ? QTextCursor::Start
+                                             : QTextCursor::End);
+    textCursor = document->find(search, textCursor, flags);
     }
 
-  if (cursor.hasSelection())
+  if (textCursor.hasSelection())
     {
-    this->Output->setTextCursor(cursor);
+    this->Output->setTextCursor(textCursor);
     }
 }
 
 void CMakeSetupDialog::doOutputErrorNext()
 {
-  QTextCursor cursor = this->Output->textCursor();
+  QTextCursor textCursor = this->Output->textCursor();
   bool atEnd = false;
 
   // move cursor out of current error-block
-  if (cursor.blockCharFormat() == this->ErrorFormat)
+  if (textCursor.blockCharFormat() == this->ErrorFormat)
     {
-    atEnd = !cursor.movePosition(QTextCursor::NextBlock);
+    atEnd = !textCursor.movePosition(QTextCursor::NextBlock);
     }
 
   // move cursor to next error-block
-  while (cursor.blockCharFormat() != this->ErrorFormat && !atEnd)
+  while (textCursor.blockCharFormat() != this->ErrorFormat && !atEnd)
     {
-    atEnd = !cursor.movePosition(QTextCursor::NextBlock);
+    atEnd = !textCursor.movePosition(QTextCursor::NextBlock);
     }
 
   if (atEnd)
     {
     // first search found nothing, wrap around and search again
-    atEnd = !cursor.movePosition(QTextCursor::Start);
+    atEnd = !textCursor.movePosition(QTextCursor::Start);
 
     // move cursor to next error-block
-    while (cursor.blockCharFormat() != this->ErrorFormat && !atEnd)
+    while (textCursor.blockCharFormat() != this->ErrorFormat && !atEnd)
       {
-      atEnd = !cursor.movePosition(QTextCursor::NextBlock);
+      atEnd = !textCursor.movePosition(QTextCursor::NextBlock);
       }
     }
 
   if (!atEnd)
     {
-    cursor.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
+    textCursor.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
 
     QTextCharFormat selectionFormat;
     selectionFormat.setBackground(Qt::yellow);
-    QTextEdit::ExtraSelection extraSelection = {cursor, selectionFormat};
+    QTextEdit::ExtraSelection extraSelection = {textCursor, selectionFormat};
     this->Output->setExtraSelections(QList<QTextEdit::ExtraSelection>()
                                      << extraSelection);
 
     // make the whole error-block visible
-    this->Output->setTextCursor(cursor);
+    this->Output->setTextCursor(textCursor);
 
     // remove the selection to see the extraSelection
-    cursor.setPosition(cursor.anchor());
-    this->Output->setTextCursor(cursor);
+    textCursor.setPosition(textCursor.anchor());
+    this->Output->setTextCursor(textCursor);
     }
 }
