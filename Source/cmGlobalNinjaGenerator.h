@@ -64,6 +64,7 @@ public:
   static std::string EncodeIdent(const std::string &ident, std::ostream &vars);
   static std::string EncodeLiteral(const std::string &lit);
   static std::string EncodePath(const std::string &path);
+  static std::string EncodeDepfileSpace(const std::string &path);
 
   /**
    * Write the given @a comment to the output stream @a os. It
@@ -104,7 +105,7 @@ public:
                                const std::string& comment,
                                const cmNinjaDeps& outputs,
                                const cmNinjaDeps& deps = cmNinjaDeps(),
-                             const cmNinjaDeps& orderOnlyDeps = cmNinjaDeps());
+                               const cmNinjaDeps& orderOnly = cmNinjaDeps());
   void WriteMacOSXContentBuild(const std::string& input,
                                const std::string& output);
 
@@ -120,6 +121,7 @@ public:
                         const std::string& description,
                         const std::string& comment,
                         const std::string& depfile,
+                        const std::string& deptype,
                         const std::string& rspfile,
                         const std::string& rspcontent,
                         bool restat,
@@ -189,14 +191,16 @@ public:
                               bool optional);
 
   /// Overloaded methods. @see cmGlobalGenerator::GenerateBuildCommand()
-  virtual std::string GenerateBuildCommand(const char* makeProgram,
-                                           const char* projectName,
-                                           const char* projectDir,
-                                           const char* additionalOptions,
-                                           const char* targetName,
-                                           const char* config,
-                                           bool ignoreErrors,
-                                           bool fast);
+  virtual void GenerateBuildCommand(
+    std::vector<std::string>& makeCommand,
+    const char* makeProgram,
+    const char* projectName,
+    const char* projectDir,
+    const char* targetName,
+    const char* config,
+    bool fast,
+    std::vector<std::string> const& makeOptions = std::vector<std::string>()
+    );
 
   // Setup target names
   virtual const char* GetAllTargetName()           const { return "all"; }
@@ -239,11 +243,12 @@ public:
                const std::string& command,
                const std::string& description,
                const std::string& comment,
-               const std::string& depfile = "",
-               const std::string& rspfile = "",
-               const std::string& rspcontent = "",
-               bool restat = false,
-               bool generator = false);
+               const std::string& depfile,
+               const std::string& deptype,
+               const std::string& rspfile,
+               const std::string& rspcontent,
+               bool restat,
+               bool generator);
 
   bool HasRule(const std::string& name);
 
@@ -278,8 +283,8 @@ public:
     ASD.insert(deps.begin(), deps.end());
   }
 
-  void AppendTargetOutputs(cmTarget* target, cmNinjaDeps& outputs);
-  void AppendTargetDepends(cmTarget* target, cmNinjaDeps& outputs);
+  void AppendTargetOutputs(cmTarget const* target, cmNinjaDeps& outputs);
+  void AppendTargetDepends(cmTarget const* target, cmNinjaDeps& outputs);
   void AddDependencyToAll(cmTarget* target);
   void AddDependencyToAll(const std::string& input);
 
@@ -299,10 +304,11 @@ protected:
 
   /// Overloaded methods.
   /// @see cmGlobalGenerator::CheckALLOW_DUPLICATE_CUSTOM_TARGETS()
-  virtual bool CheckALLOW_DUPLICATE_CUSTOM_TARGETS() { return true; }
+  virtual bool CheckALLOW_DUPLICATE_CUSTOM_TARGETS() const { return true; }
 
 
 private:
+  virtual std::string GetEditCacheCommand() const;
 
   /// @see cmGlobalGenerator::ComputeTargetObjects
   virtual void ComputeTargetObjects(cmGeneratorTarget* gt) const;

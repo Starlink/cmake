@@ -1,3 +1,9 @@
+#.rst:
+# Qt4Macros
+# ---------
+#
+#
+#
 # This file is included by FindQt4.cmake, don't include it directly.
 
 #=============================================================================
@@ -97,7 +103,7 @@ endmacro()
 
 
 # helper macro to set up a moc rule
-macro (QT4_CREATE_MOC_COMMAND infile outfile moc_flags moc_options moc_target)
+function (QT4_CREATE_MOC_COMMAND infile outfile moc_flags moc_options moc_target)
   # For Windows, create a parameters file to work around command line length limit
   # Pass the parameters in a file.  Set the working directory to
   # be that containing the parameters file and reference it by
@@ -114,6 +120,7 @@ macro (QT4_CREATE_MOC_COMMAND infile outfile moc_flags moc_options moc_target)
   string (REPLACE ";" "\n" _moc_parameters "${_moc_parameters}")
 
   if(moc_target)
+    set (_moc_parameters_file ${_moc_parameters_file}$<$<BOOL:$<CONFIGURATION>>:_$<CONFIGURATION>>)
     set(targetincludes "$<TARGET_PROPERTY:${moc_target},INCLUDE_DIRECTORIES>")
     set(targetdefines "$<TARGET_PROPERTY:${moc_target},COMPILE_DEFINITIONS>")
 
@@ -133,11 +140,11 @@ macro (QT4_CREATE_MOC_COMMAND infile outfile moc_flags moc_options moc_target)
 
   set(_moc_extra_parameters_file @${_moc_parameters_file})
   add_custom_command(OUTPUT ${outfile}
-                      COMMAND ${QT_MOC_EXECUTABLE} ${_moc_extra_parameters_file}
+                      COMMAND Qt4::moc ${_moc_extra_parameters_file}
                       DEPENDS ${infile}
                       ${_moc_working_dir}
                       VERBATIM)
-endmacro ()
+endfunction ()
 
 
 macro (QT4_GENERATE_MOC infile outfile )
@@ -184,7 +191,7 @@ macro (QT4_WRAP_UI outfiles )
     get_filename_component(infile ${it} ABSOLUTE)
     set(outfile ${CMAKE_CURRENT_BINARY_DIR}/ui_${outfile}.h)
     add_custom_command(OUTPUT ${outfile}
-      COMMAND ${QT_UIC_EXECUTABLE}
+      COMMAND Qt4::uic
       ARGS ${ui_options} -o ${outfile} ${infile}
       MAIN_DEPENDENCY ${infile} VERBATIM)
     set(${outfiles} ${${outfiles}} ${outfile})
@@ -231,7 +238,7 @@ macro (QT4_ADD_RESOURCES outfiles )
     endif()
 
     add_custom_command(OUTPUT ${outfile}
-      COMMAND ${QT_RCC_EXECUTABLE}
+      COMMAND Qt4::rcc
       ARGS ${rcc_options} -name ${outfilename} -o ${outfile} ${infile}
       MAIN_DEPENDENCY ${infile}
       DEPENDS ${_RC_DEPENDS} "${out_depends}" VERBATIM)
@@ -265,7 +272,7 @@ macro(QT4_ADD_DBUS_INTERFACE _sources _interface _basename)
   endif()
 
   add_custom_command(OUTPUT "${_impl}" "${_header}"
-      COMMAND ${QT_DBUSXML2CPP_EXECUTABLE} ${_params} -p ${_basename} ${_infile}
+      COMMAND Qt4::qdbusxml2cpp ${_params} -p ${_basename} ${_infile}
       DEPENDS ${_infile} VERBATIM)
 
   set_source_files_properties("${_impl}" PROPERTIES SKIP_AUTOMOC TRUE)
@@ -311,7 +318,7 @@ macro(QT4_GENERATE_DBUS_INTERFACE _header) # _customName OPTIONS -some -options 
   endif ()
 
   add_custom_command(OUTPUT ${_target}
-      COMMAND ${QT_DBUSCPP2XML_EXECUTABLE} ${_qt4_dbus_options} ${_in_file} -o ${_target}
+      COMMAND Qt4::qdbuscpp2xml ${_qt4_dbus_options} ${_in_file} -o ${_target}
       DEPENDS ${_in_file} VERBATIM
   )
 endmacro()
@@ -335,12 +342,12 @@ macro(QT4_ADD_DBUS_ADAPTOR _sources _xml_file _include _parentClass) # _optional
 
   if(_optionalClassName)
     add_custom_command(OUTPUT "${_impl}" "${_header}"
-       COMMAND ${QT_DBUSXML2CPP_EXECUTABLE} -m -a ${_basename} -c ${_optionalClassName} -i ${_include} -l ${_parentClass} ${_infile}
+       COMMAND Qt4::qdbusxml2cpp -m -a ${_basename} -c ${_optionalClassName} -i ${_include} -l ${_parentClass} ${_infile}
        DEPENDS ${_infile} VERBATIM
     )
   else()
     add_custom_command(OUTPUT "${_impl}" "${_header}"
-       COMMAND ${QT_DBUSXML2CPP_EXECUTABLE} -m -a ${_basename} -i ${_include} -l ${_parentClass} ${_infile}
+       COMMAND Qt4::qdbusxml2cpp -m -a ${_basename} -i ${_include} -l ${_parentClass} ${_infile}
        DEPENDS ${_infile} VERBATIM
      )
   endif()
@@ -355,15 +362,7 @@ endmacro()
 
 macro(QT4_AUTOMOC)
   if(NOT CMAKE_MINIMUM_REQUIRED_VERSION VERSION_LESS 2.8.11)
-    if(CMAKE_WARN_DEPRECATED)
-      set(messageType WARNING)
-    endif()
-    if(CMAKE_ERROR_DEPRECATED)
-      set(messageType FATAL_ERROR)
-    endif()
-    if(messageType)
-      message(${messageType} "The qt4_automoc macro is obsolete. Use the CMAKE_AUTOMOC feature instead.")
-    endif()
+    message(DEPRECATION "The qt4_automoc macro is obsolete. Use the CMAKE_AUTOMOC feature instead.")
   endif()
   QT4_GET_MOC_FLAGS(_moc_INCS)
 
@@ -434,18 +433,19 @@ macro(QT4_CREATE_TRANSLATION _qm_files)
        set(_ts_pro ${CMAKE_CURRENT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/${_ts_name}_lupdate.pro)
        set(_pro_srcs)
        foreach(_pro_src ${_my_sources})
-         set(_pro_srcs "${_pro_srcs} \"${_pro_src}\"")
+         set(_pro_srcs "${_pro_srcs} \\\n  \"${_pro_src}\"")
        endforeach()
        set(_pro_includes)
        get_directory_property(_inc_DIRS INCLUDE_DIRECTORIES)
+       list(REMOVE_DUPLICATES _inc_DIRS)
        foreach(_pro_include ${_inc_DIRS})
          get_filename_component(_abs_include "${_pro_include}" ABSOLUTE)
-         set(_pro_includes "${_pro_includes} \"${_abs_include}\"")
+         set(_pro_includes "${_pro_includes} \\\n  \"${_abs_include}\"")
        endforeach()
-       file(WRITE ${_ts_pro} "SOURCES = ${_pro_srcs}\nINCLUDEPATH = ${_pro_includes}\n")
+       file(WRITE ${_ts_pro} "SOURCES =${_pro_srcs}\nINCLUDEPATH =${_pro_includes}\n")
      endif()
      add_custom_command(OUTPUT ${_ts_file}
-        COMMAND ${QT_LUPDATE_EXECUTABLE}
+        COMMAND Qt4::lupdate
         ARGS ${_lupdate_options} ${_ts_pro} ${_my_dirs} -ts ${_ts_file}
         DEPENDS ${_my_sources} ${_ts_pro} VERBATIM)
    endforeach()
@@ -466,7 +466,7 @@ macro(QT4_ADD_TRANSLATION _qm_files)
     endif()
 
     add_custom_command(OUTPUT ${qm}
-       COMMAND ${QT_LRELEASE_EXECUTABLE}
+       COMMAND Qt4::lrelease
        ARGS ${_abs_FILE} -qm ${qm}
        DEPENDS ${_abs_FILE} VERBATIM
     )
@@ -476,15 +476,7 @@ endmacro()
 
 function(qt4_use_modules _target _link_type)
   if(NOT CMAKE_MINIMUM_REQUIRED_VERSION VERSION_LESS 2.8.11)
-    if(CMAKE_WARN_DEPRECATED)
-      set(messageType WARNING)
-    endif()
-    if(CMAKE_ERROR_DEPRECATED)
-      set(messageType FATAL_ERROR)
-    endif()
-    if(messageType)
-      message(${messageType} "The qt4_use_modules function is obsolete. Use target_link_libraries with IMPORTED targets instead.")
-    endif()
+    message(DEPRECATION "The qt4_use_modules function is obsolete. Use target_link_libraries with IMPORTED targets instead.")
   endif()
   if ("${_link_type}" STREQUAL "LINK_PUBLIC" OR "${_link_type}" STREQUAL "LINK_PRIVATE")
     set(modules ${ARGN})

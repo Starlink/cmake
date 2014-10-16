@@ -13,8 +13,9 @@
 #define cmExportBuildFileGenerator_h
 
 #include "cmExportFileGenerator.h"
+#include "cmListFileCache.h"
 
-class cmExportCommand;
+class cmExportSet;
 
 /** \class cmExportBuildFileGenerator
  * \brief Generate a file exporting targets from a build tree.
@@ -31,14 +32,22 @@ public:
   cmExportBuildFileGenerator();
 
   /** Set the list of targets to export.  */
-  void SetExports(std::vector<cmTarget*> const* exports)
-    { this->Exports = exports; }
+  void SetTargets(std::vector<std::string> const& targets)
+    { this->Targets = targets; }
+  void GetTargets(std::vector<std::string> &targets) const;
+  void AppendTargets(std::vector<std::string> const& targets)
+    { this->Targets.insert(this->Targets.end(),
+      targets.begin(), targets.end()); }
+  void SetExportSet(cmExportSet*);
 
   /** Set whether to append generated code to the output file.  */
   void SetAppendMode(bool append) { this->AppendMode = append; }
 
-  /** Set the command instance through which errors should be reported.  */
-  void SetCommand(cmExportCommand* cmd) { this->ExportCommand = cmd; }
+  void SetMakefile(cmMakefile *mf) {
+    this->Makefile = mf;
+    this->Makefile->GetBacktrace(this->Backtrace);
+  }
+
 protected:
   // Implement virtual methods from the superclass.
   virtual bool GenerateMainFile(std::ostream& os);
@@ -53,7 +62,8 @@ protected:
                                    cmTarget* dependee);
 
   void ComplainAboutMissingTarget(cmTarget* depender,
-                                  cmTarget* dependee);
+                                  cmTarget* dependee,
+                                  int occurrences);
 
   /** Fill in properties indicating built file locations.  */
   void SetImportLocationProperty(const char* config,
@@ -63,8 +73,14 @@ protected:
 
   std::string InstallNameDir(cmTarget* target, const std::string& config);
 
-  std::vector<cmTarget*> const* Exports;
-  cmExportCommand* ExportCommand;
+  std::vector<std::string>
+  FindNamespaces(cmMakefile* mf, const std::string& name);
+
+  std::vector<std::string> Targets;
+  cmExportSet *ExportSet;
+  std::vector<cmTarget*> Exports;
+  cmMakefile* Makefile;
+  cmListFileBacktrace Backtrace;
 };
 
 #endif

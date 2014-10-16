@@ -18,6 +18,7 @@
 #include <cmsys/RegularExpression.hxx>
 #include <cmsys/ios/sstream>
 #include <cmsys/Process.h>
+#include <cmsys/FStream.hxx>
 
 #include <sys/types.h>
 #include <time.h>
@@ -200,7 +201,7 @@ bool cmCTestGIT::UpdateByFetchAndReset()
   std::string sha1;
   {
   std::string fetch_head = this->FindGitDir() + "/FETCH_HEAD";
-  std::ifstream fin(fetch_head.c_str(), std::ios::in | std::ios::binary);
+  cmsys::ifstream fin(fetch_head.c_str(), std::ios::in | std::ios::binary);
   if(!fin)
     {
     this->Log << "Unable to open " << fetch_head << "\n";
@@ -536,11 +537,11 @@ private:
   void DoHeaderLine()
     {
     // Look for header fields that we need.
-    if(strncmp(this->Line.c_str(), "commit ", 7) == 0)
+    if(cmHasLiteralPrefix(this->Line.c_str(), "commit "))
       {
       this->Rev.Rev = this->Line.c_str()+7;
       }
-    else if(strncmp(this->Line.c_str(), "author ", 7) == 0)
+    else if(cmHasLiteralPrefix(this->Line.c_str(), "author "))
       {
       Person author;
       this->ParsePerson(this->Line.c_str()+7, author);
@@ -548,7 +549,7 @@ private:
       this->Rev.EMail = author.EMail;
       this->Rev.Date = this->FormatDateTime(author);
       }
-    else if(strncmp(this->Line.c_str(), "committer ", 10) == 0)
+    else if(cmHasLiteralPrefix(this->Line.c_str(), "committer "))
       {
       Person committer;
       this->ParsePerson(this->Line.c_str()+10, committer);

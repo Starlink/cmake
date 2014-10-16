@@ -224,8 +224,9 @@ public:
                              bool stripImplicitInclDirs = true);
   void AddCompileOptions(std::string& flags, cmTarget* target,
                          const char* lang, const char* config);
-  void AddCompileDefinitions(std::set<std::string>& defines, cmTarget* target,
-                         const char* config);
+  void AddCompileDefinitions(std::set<std::string>& defines,
+                             cmTarget const* target,
+                             const char* config);
 
   /** Compute the language used to compile the given source file.  */
   const char* GetSourceFileLanguage(const cmSourceFile& source);
@@ -266,6 +267,7 @@ public:
     const char* Defines;
     const char* RuleLauncher;
     const char* DependencyFile;
+    const char* FilterPrefix;
   };
 
   /** Set whether to treat conversions to SHELL as a link script shell.  */
@@ -319,14 +321,12 @@ public:
    *
    * and is monotonically increasing with the CMake version.
    */
-  unsigned int GetBackwardsCompatibility();
+  cmIML_INT_uint64_t GetBackwardsCompatibility();
 
   /**
    * Test whether compatibility is set to a given version or lower.
    */
-  bool NeedBackwardsCompatibility(unsigned int major,
-                                  unsigned int minor,
-                                  unsigned int patch = 0xFFu);
+  bool NeedBackwardsCompatibility_2_4();
 
   /**
    * Generate a Mac OS X application bundle Info.plist file.
@@ -460,7 +460,7 @@ protected:
   bool RelativePathsConfigured;
   bool PathConversionsSetup;
 
-  unsigned int BackwardsCompatibility;
+  cmIML_INT_uint64_t BackwardsCompatibility;
   bool BackwardsCompatibilityFinal;
 private:
   std::string ConvertToOutputForExistingCommon(const char* remote,

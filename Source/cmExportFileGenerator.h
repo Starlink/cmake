@@ -15,6 +15,20 @@
 #include "cmCommand.h"
 #include "cmGeneratorExpression.h"
 
+#include "cmVersionMacros.h"
+#include "cmVersion.h"
+
+#define STRINGIFY_HELPER(X) #X
+#define STRINGIFY(X) STRINGIFY_HELPER(X)
+
+#define DEVEL_CMAKE_VERSION(major, minor) ( \
+  CMake_VERSION_ENCODE(major, minor, 0) > \
+  CMake_VERSION_ENCODE(CMake_VERSION_MAJOR, CMake_VERSION_MINOR, 0) ?  \
+    STRINGIFY(CMake_VERSION_MAJOR) "." STRINGIFY(CMake_VERSION_MINOR) "." \
+    STRINGIFY(CMake_VERSION_PATCH) \
+  : #major "." #minor ".0" \
+  )
+
 class cmTargetExport;
 
 /** \class cmExportFileGenerator
@@ -33,9 +47,11 @@ public:
 
   /** Set the full path to the export file to generate.  */
   void SetExportFile(const char* mainFile);
+  const char *GetMainExportFileName() const;
 
   /** Set the namespace in which to place exported target names.  */
   void SetNamespace(const char* ns) { this->Namespace = ns; }
+  std::string GetNamespace() const { return this->Namespace; }
 
   void SetExportOld(bool exportOld) { this->ExportOld = exportOld; }
 
@@ -58,9 +74,9 @@ protected:
   void GenerateImportHeaderCode(std::ostream& os, const char* config = 0);
   void GenerateImportFooterCode(std::ostream& os);
   void GenerateImportVersionCode(std::ostream& os);
-  void GenerateImportTargetCode(std::ostream& os, cmTarget* target);
+  void GenerateImportTargetCode(std::ostream& os, cmTarget const* target);
   void GenerateImportPropertyCode(std::ostream& os, const char* config,
-                                  cmTarget* target,
+                                  cmTarget const* target,
                                   ImportPropertyMap const& properties);
   void GenerateImportedFileChecksCode(std::ostream& os, cmTarget* target,
                                       ImportPropertyMap const& properties,
@@ -80,7 +96,7 @@ protected:
                                  std::vector<std::string>& missingTargets);
   void SetImportLinkProperty(std::string const& suffix,
                              cmTarget* target, const char* propName,
-                             std::vector<std::string> const& libs,
+                             std::vector<std::string> const& entries,
                              ImportPropertyMap& properties,
                              std::vector<std::string>& missingTargets);
 
@@ -113,7 +129,7 @@ protected:
                                  ImportPropertyMap &properties);
   void PopulateCompatibleInterfaceProperties(cmTarget *target,
                                  ImportPropertyMap &properties);
-  void GenerateInterfaceProperties(cmTarget *target, std::ostream& os,
+  void GenerateInterfaceProperties(cmTarget const* target, std::ostream& os,
                                    const ImportPropertyMap &properties);
   void PopulateIncludeDirectoriesInterface(
                       cmTargetExport *target,

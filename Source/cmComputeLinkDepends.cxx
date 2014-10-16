@@ -172,7 +172,8 @@ satisfy dependencies.
 
 //----------------------------------------------------------------------------
 cmComputeLinkDepends
-::cmComputeLinkDepends(cmTarget* target, const char* config, cmTarget* head)
+::cmComputeLinkDepends(cmTarget const* target, const char* config,
+                       cmTarget const* head)
 {
   // Store context information.
   this->Target = target;
@@ -355,8 +356,15 @@ void cmComputeLinkDepends::FollowLinkEntry(BFSEntry const& qe)
     if(cmTarget::LinkInterface const* iface =
        entry.Target->GetLinkInterface(this->Config, this->HeadTarget))
       {
+      const bool isIface =
+                      entry.Target->GetType() == cmTarget::INTERFACE_LIBRARY;
       // This target provides its own link interface information.
       this->AddLinkEntries(depender_index, iface->Libraries);
+
+      if (isIface)
+        {
+        return;
+        }
 
       // Handle dependent shared libraries.
       this->FollowSharedDeps(depender_index, iface);
@@ -611,19 +619,19 @@ cmComputeLinkDepends::AddLinkEntries(int depender_index,
 }
 
 //----------------------------------------------------------------------------
-cmTarget* cmComputeLinkDepends::FindTargetToLink(int depender_index,
+cmTarget const* cmComputeLinkDepends::FindTargetToLink(int depender_index,
                                                  const char* name)
 {
   // Look for a target in the scope of the depender.
   cmMakefile* mf = this->Makefile;
   if(depender_index >= 0)
     {
-    if(cmTarget* depender = this->EntryList[depender_index].Target)
+    if(cmTarget const* depender = this->EntryList[depender_index].Target)
       {
       mf = depender->GetMakefile();
       }
     }
-  cmTarget* tgt = mf->FindTargetToUse(name);
+  cmTarget const* tgt = mf->FindTargetToUse(name);
 
   // Skip targets that will not really be linked.  This is probably a
   // name conflict between an external library and an executable
@@ -942,7 +950,7 @@ int cmComputeLinkDepends::ComputeComponentCount(NodeList const& nl)
   int count = 2;
   for(NodeList::const_iterator ni = nl.begin(); ni != nl.end(); ++ni)
     {
-    if(cmTarget* target = this->EntryList[*ni].Target)
+    if(cmTarget const* target = this->EntryList[*ni].Target)
       {
       if(cmTarget::LinkInterface const* iface =
          target->GetLinkInterface(this->Config, this->HeadTarget))
@@ -989,7 +997,8 @@ void cmComputeLinkDepends::CheckWrongConfigItem(int depender_index,
   // For CMake 2.4 bug-compatibility we need to consider the output
   // directories of targets linked in another configuration as link
   // directories.
-  if(cmTarget* tgt = this->FindTargetToLink(depender_index, item.c_str()))
+  if(cmTarget const* tgt
+                      = this->FindTargetToLink(depender_index, item.c_str()))
     {
     if(!tgt->IsImported())
       {

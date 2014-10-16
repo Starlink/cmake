@@ -38,6 +38,12 @@ configure_file(
   "${CMake_BINARY_DIR}/Source/CPack/cmCPackConfigure.h"
   )
 
+# Tell CMake executable in the build tree where to find the source tree.
+configure_file(
+  "${CMake_SOURCE_DIR}/Source/CMakeSourceDir.txt.in"
+  "${CMake_BINARY_DIR}/CMakeFiles/CMakeSourceDir.txt" @ONLY
+  )
+
 # add the include path to find the .h
 include_directories(
   "${CMake_BINARY_DIR}/Source"
@@ -121,7 +127,7 @@ set(SRCS
   cmBootstrapCommands2.cxx
   cmCacheManager.cxx
   cmCacheManager.h
-  cmCommands.cxx
+  "${CMAKE_CURRENT_BINARY_DIR}/cmCommands.cxx"
   cmCommands.h
   cmCommandArgumentLexer.cxx
   cmCommandArgumentParser.cxx
@@ -159,16 +165,7 @@ set(SRCS
   cmDependsJavaParserHelper.h
   cmDocumentation.cxx
   cmDocumentationFormatter.cxx
-  cmDocumentationFormatterHTML.cxx
-  cmDocumentationFormatterDocbook.cxx
-  cmDocumentationFormatterMan.cxx
-  cmDocumentationFormatterText.cxx
-  cmDocumentationFormatterUsage.cxx
   cmDocumentationSection.cxx
-  cmDocumentCompileDefinitions.h
-  cmDocumentGeneratorExpressions.h
-  cmDocumentLocationUndefined.h
-  cmDocumentVariables.cxx
   cmDynamicLoader.cxx
   cmDynamicLoader.h
   ${ELF_SRCS}
@@ -189,8 +186,12 @@ set(SRCS
   cmExportSetMap.cxx
   cmExtraCodeBlocksGenerator.cxx
   cmExtraCodeBlocksGenerator.h
+  cmExtraCodeLiteGenerator.cxx
+  cmExtraCodeLiteGenerator.h
   cmExtraEclipseCDT4Generator.cxx
   cmExtraEclipseCDT4Generator.h
+  cmExtraKateGenerator.cxx
+  cmExtraKateGenerator.h
   cmExtraSublimeTextGenerator.cxx
   cmExtraSublimeTextGenerator.h
   cmFileTimeComparison.cxx
@@ -259,8 +260,10 @@ set(SRCS
   cmPropertyDefinitionMap.h
   cmPropertyMap.cxx
   cmPropertyMap.h
-  cmQtAutomoc.cxx
-  cmQtAutomoc.h
+  cmQtAutoGenerators.cxx
+  cmQtAutoGenerators.h
+  cmRST.cxx
+  cmRST.h
   cmScriptGenerator.h
   cmScriptGenerator.cxx
   cmSourceFile.cxx
@@ -288,14 +291,56 @@ set(SRCS
   cmXMLSafe.h
   cmake.cxx
   cmake.h
-  cmakewizard.cxx
-  cmakewizard.h
 
   cm_sha2.h
   cm_sha2.c
   cm_utf8.h
   cm_utf8.c
   )
+
+set(COMMAND_INCLUDES "#include \"cmTargetPropCommandBase.cxx\"\n")
+list(APPEND SRCS cmTargetPropCommandBase.cxx)
+set_property(SOURCE cmTargetPropCommandBase.cxx PROPERTY HEADER_FILE_ONLY ON)
+set(NEW_COMMANDS "")
+foreach(command_file
+    cmAddCompileOptionsCommand
+    cmAuxSourceDirectoryCommand
+    cmBuildNameCommand
+    cmCMakeHostSystemInformationCommand
+    cmElseIfCommand
+    cmExportCommand
+    cmExportLibraryDependenciesCommand
+    cmFLTKWrapUICommand
+    cmIncludeExternalMSProjectCommand
+    cmInstallProgramsCommand
+    cmLinkLibrariesCommand
+    cmLoadCacheCommand
+    cmOutputRequiredFilesCommand
+    cmQTWrapCPPCommand
+    cmQTWrapUICommand
+    cmRemoveCommand
+    cmRemoveDefinitionsCommand
+    cmSourceGroupCommand
+    cmSubdirDependsCommand
+    cmTargetCompileDefinitionsCommand
+    cmTargetCompileOptionsCommand
+    cmTargetIncludeDirectoriesCommand
+    cmUseMangledMesaCommand
+    cmUtilitySourceCommand
+    cmVariableRequiresCommand
+    cmVariableWatchCommand
+    cmWriteFileCommand
+    # This one must be last because it includes windows.h and
+    # windows.h #defines GetCurrentDirectory which is a member
+    # of cmMakefile
+    cmLoadCommandCommand
+    )
+  set(COMMAND_INCLUDES "${COMMAND_INCLUDES}#include \"${command_file}.cxx\"\n")
+  set(NEW_COMMANDS "${NEW_COMMANDS}commands.push_back(new ${command_file});\n")
+  list(APPEND SRCS ${command_file}.cxx)
+  set_property(SOURCE ${command_file}.cxx PROPERTY HEADER_FILE_ONLY ON)
+endforeach()
+configure_file(cmCommands.cxx.in ${CMAKE_CURRENT_BINARY_DIR}/cmCommands.cxx @ONLY)
 
 # Kdevelop only works on UNIX and not windows
 if(UNIX)
@@ -370,8 +415,6 @@ if (WIN32)
       cmVisualStudioSlnParser.cxx
       cmVisualStudioWCEPlatformParser.h
       cmVisualStudioWCEPlatformParser.cxx
-      cmWin32ProcessExecution.cxx
-      cmWin32ProcessExecution.h
       )
   endif()
 endif ()
@@ -439,6 +482,7 @@ set(CTEST_SRCS cmCTest.cxx
   CTest/cmParseCacheCoverage.cxx
   CTest/cmParseGTMCoverage.cxx
   CTest/cmParsePHPCoverage.cxx
+  CTest/cmParsePythonCoverage.cxx
   CTest/cmCTestEmptyBinaryDirectoryCommand.cxx
   CTest/cmCTestGenericHandler.cxx
   CTest/cmCTestHandlerCommand.cxx
@@ -475,6 +519,8 @@ set(CTEST_SRCS cmCTest.cxx
   CTest/cmCTestGIT.h
   CTest/cmCTestHG.cxx
   CTest/cmCTestHG.h
+  CTest/cmCTestP4.cxx
+  CTest/cmCTestP4.h
   )
 
 # Build CTestLib
@@ -496,8 +542,6 @@ set(CPACK_SRCS
   CPack/cmCPackTarBZip2Generator.cxx
   CPack/cmCPackTarCompressGenerator.cxx
   CPack/cmCPackZIPGenerator.cxx
-  CPack/cmCPackDocumentVariables.cxx
-  CPack/cmCPackDocumentMacros.cxx
   )
 
 if(CYGWIN)
@@ -519,6 +563,7 @@ if(WIN32)
     CPack/WiX/cmCPackWIXGenerator.cxx
     CPack/WiX/cmWIXSourceWriter.cxx
     CPack/WiX/cmWIXRichTextFormatWriter.cxx
+    CPack/WiX/cmWIXPatchParser.cxx
   )
 endif()
 
@@ -545,18 +590,8 @@ if(APPLE)
 endif()
 
 # Build CMake executable
-add_executable(cmake cmakemain.cxx)
+add_executable(cmake cmakemain.cxx cmcmd.cxx cmcmd.h)
 target_link_libraries(cmake CMakeLib)
-
-# Build special executable for running programs on Windows 98.
-# Included on any Windows (unconditional packaging required!).
-if(WIN32)
-  if(NOT UNIX)
-    add_executable(cmw9xcom cmw9xcom.cxx)
-    target_link_libraries(cmw9xcom CMakeLib)
-    install(TARGETS cmw9xcom DESTINATION bin)
-  endif()
-endif()
 
 # Build CTest executable
 add_executable(ctest ctest.cxx)

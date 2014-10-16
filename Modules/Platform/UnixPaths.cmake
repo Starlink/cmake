@@ -37,10 +37,19 @@ list(APPEND CMAKE_SYSTEM_PREFIX_PATH
 
   # CMake install location
   "${_CMAKE_INSTALL_DIR}"
-
-  # Project install destination.
-  "${CMAKE_INSTALL_PREFIX}"
   )
+if (NOT CMAKE_FIND_NO_INSTALL_PREFIX)
+  list(APPEND CMAKE_SYSTEM_PREFIX_PATH
+    # Project install destination.
+    "${CMAKE_INSTALL_PREFIX}"
+  )
+  if(CMAKE_STAGING_PREFIX)
+    list(APPEND CMAKE_SYSTEM_PREFIX_PATH
+      # User-supplied staging prefix.
+      "${CMAKE_STAGING_PREFIX}"
+    )
+  endif()
+endif()
 
 # List common include file locations not under the common prefixes.
 list(APPEND CMAKE_SYSTEM_INCLUDE_PATH
@@ -74,7 +83,7 @@ list(APPEND CMAKE_SYSTEM_PROGRAM_PATH
   )
 
 list(APPEND CMAKE_PLATFORM_IMPLICIT_LINK_DIRECTORIES
-  /lib /usr/lib /usr/lib32 /usr/lib64
+  /lib /lib32 /lib64 /usr/lib /usr/lib32 /usr/lib64
   )
 
 list(APPEND CMAKE_C_IMPLICIT_INCLUDE_DIRECTORIES

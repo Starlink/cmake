@@ -34,7 +34,7 @@ int cmCoreTryCompile::TryCompileCode(std::vector<std::string> const& argv)
   std::string outputVariable;
   std::string copyFile;
   std::string copyFileError;
-  std::vector<cmTarget*> targets;
+  std::vector<cmTarget const*> targets;
   std::string libsToLink = " ";
   bool useOldLinkLibs = true;
   char targetNameBuf[64];
@@ -93,12 +93,13 @@ int cmCoreTryCompile::TryCompileCode(std::vector<std::string> const& argv)
     else if(doing == DoingLinkLibraries)
       {
       libsToLink += "\"" + cmSystemTools::TrimWhitespace(argv[i]) + "\" ";
-      if(cmTarget *tgt = this->Makefile->FindTargetToUse(argv[i].c_str()))
+      if(cmTarget *tgt = this->Makefile->FindTargetToUse(argv[i]))
         {
         switch(tgt->GetType())
           {
           case cmTarget::SHARED_LIBRARY:
           case cmTarget::STATIC_LIBRARY:
+          case cmTarget::INTERFACE_LIBRARY:
           case cmTarget::UNKNOWN_LIBRARY:
             break;
           case cmTarget::EXECUTABLE:
@@ -277,7 +278,7 @@ int cmCoreTryCompile::TryCompileCode(std::vector<std::string> const& argv)
     sourceDirectory = this->BinaryDirectory.c_str();
 
     // now create a CMakeLists.txt file in that directory
-    FILE *fout = fopen(outFileName.c_str(),"w");
+    FILE *fout = cmsys::SystemTools::Fopen(outFileName.c_str(),"w");
     if (!fout)
       {
       cmOStringStream e;
@@ -294,7 +295,7 @@ int cmCoreTryCompile::TryCompileCode(std::vector<std::string> const& argv)
             cmVersion::GetPatchVersion(), cmVersion::GetTweakVersion());
     if(def)
       {
-      fprintf(fout, "SET(CMAKE_MODULE_PATH %s)\n", def);
+      fprintf(fout, "set(CMAKE_MODULE_PATH %s)\n", def);
       }
 
     std::string projectLangs;
@@ -307,35 +308,35 @@ int cmCoreTryCompile::TryCompileCode(std::vector<std::string> const& argv)
       if(const char* rulesOverridePath =
          this->Makefile->GetDefinition(rulesOverrideLang.c_str()))
         {
-        fprintf(fout, "SET(%s \"%s\")\n",
+        fprintf(fout, "set(%s \"%s\")\n",
                 rulesOverrideLang.c_str(), rulesOverridePath);
         }
       else if(const char* rulesOverridePath2 =
               this->Makefile->GetDefinition(rulesOverrideBase.c_str()))
         {
-        fprintf(fout, "SET(%s \"%s\")\n",
+        fprintf(fout, "set(%s \"%s\")\n",
                 rulesOverrideBase.c_str(), rulesOverridePath2);
         }
       }
-    fprintf(fout, "PROJECT(CMAKE_TRY_COMPILE%s)\n", projectLangs.c_str());
-    fprintf(fout, "SET(CMAKE_VERBOSE_MAKEFILE 1)\n");
+    fprintf(fout, "project(CMAKE_TRY_COMPILE%s)\n", projectLangs.c_str());
+    fprintf(fout, "set(CMAKE_VERBOSE_MAKEFILE 1)\n");
     for(std::set<std::string>::iterator li = testLangs.begin();
         li != testLangs.end(); ++li)
       {
       std::string langFlags = "CMAKE_" + *li + "_FLAGS";
       const char* flags = this->Makefile->GetDefinition(langFlags.c_str());
-      fprintf(fout, "SET(CMAKE_%s_FLAGS %s)\n", li->c_str(),
+      fprintf(fout, "set(CMAKE_%s_FLAGS %s)\n", li->c_str(),
               lg->EscapeForCMake(flags?flags:"").c_str());
-      fprintf(fout, "SET(CMAKE_%s_FLAGS \"${CMAKE_%s_FLAGS}"
+      fprintf(fout, "set(CMAKE_%s_FLAGS \"${CMAKE_%s_FLAGS}"
               " ${COMPILE_DEFINITIONS}\")\n", li->c_str(), li->c_str());
       }
-    fprintf(fout, "INCLUDE_DIRECTORIES(${INCLUDE_DIRECTORIES})\n");
-    fprintf(fout, "SET(CMAKE_SUPPRESS_REGENERATION 1)\n");
-    fprintf(fout, "LINK_DIRECTORIES(${LINK_DIRECTORIES})\n");
+    fprintf(fout, "include_directories(${INCLUDE_DIRECTORIES})\n");
+    fprintf(fout, "set(CMAKE_SUPPRESS_REGENERATION 1)\n");
+    fprintf(fout, "link_directories(${LINK_DIRECTORIES})\n");
     // handle any compile flags we need to pass on
     if (compileDefs.size())
       {
-      fprintf(fout, "ADD_DEFINITIONS( ");
+      fprintf(fout, "add_definitions( ");
       for (size_t i = 0; i < compileDefs.size(); ++i)
         {
         fprintf(fout,"%s ",compileDefs[i].c_str());
@@ -371,8 +372,8 @@ int cmCoreTryCompile::TryCompileCode(std::vector<std::string> const& argv)
       }
 
     /* for the TRY_COMPILEs we want to be able to specify the architecture.
-      So the user can set CMAKE_OSX_ARCHITECTURE to i386;ppc and then set
-      CMAKE_TRY_COMPILE_OSX_ARCHITECTURE first to i386 and then to ppc to
+      So the user can set CMAKE_OSX_ARCHITECTURES to i386;ppc and then set
+      CMAKE_TRY_COMPILE_OSX_ARCHITECTURES first to i386 and then to ppc to
       have the tests run for each specific architecture. Since
       cmLocalGenerator doesn't allow building for "the other"
       architecture only via CMAKE_OSX_ARCHITECTURES.
@@ -404,16 +405,51 @@ int cmCoreTryCompile::TryCompileCode(std::vector<std::string> const& argv)
       flag += this->Makefile->GetSafeDefinition("CMAKE_OSX_DEPLOYMENT_TARGET");
       cmakeFlags.push_back(flag);
       }
+    if (const char *cxxDef
+              = this->Makefile->GetDefinition("CMAKE_CXX_COMPILER_TARGET"))
+      {
+      std::string flag="-DCMAKE_CXX_COMPILER_TARGET=";
+      flag += cxxDef;
+      cmakeFlags.push_back(flag);
+      }
+    if (const char *cDef
+                = this->Makefile->GetDefinition("CMAKE_C_COMPILER_TARGET"))
+      {
+      std::string flag="-DCMAKE_C_COMPILER_TARGET=";
+      flag += cDef;
+      cmakeFlags.push_back(flag);
+      }
+    if (const char *tcxxDef = this->Makefile->GetDefinition(
+                                  "CMAKE_CXX_COMPILER_EXTERNAL_TOOLCHAIN"))
+      {
+      std::string flag="-DCMAKE_CXX_COMPILER_EXTERNAL_TOOLCHAIN=";
+      flag += tcxxDef;
+      cmakeFlags.push_back(flag);
+      }
+    if (const char *tcDef = this->Makefile->GetDefinition(
+                                    "CMAKE_C_COMPILER_EXTERNAL_TOOLCHAIN"))
+      {
+      std::string flag="-DCMAKE_C_COMPILER_EXTERNAL_TOOLCHAIN=";
+      flag += tcDef;
+      cmakeFlags.push_back(flag);
+      }
+    if (const char *rootDef
+              = this->Makefile->GetDefinition("CMAKE_SYSROOT"))
+      {
+      std::string flag="-DCMAKE_SYSROOT=";
+      flag += rootDef;
+      cmakeFlags.push_back(flag);
+      }
     if(this->Makefile->GetDefinition("CMAKE_POSITION_INDEPENDENT_CODE")!=0)
       {
-      fprintf(fout, "SET(CMAKE_POSITION_INDEPENDENT_CODE \"ON\")\n");
+      fprintf(fout, "set(CMAKE_POSITION_INDEPENDENT_CODE \"ON\")\n");
       }
 
     /* Put the executable at a known location (for COPY_FILE).  */
-    fprintf(fout, "SET(CMAKE_RUNTIME_OUTPUT_DIRECTORY \"%s\")\n",
+    fprintf(fout, "set(CMAKE_RUNTIME_OUTPUT_DIRECTORY \"%s\")\n",
             this->BinaryDirectory.c_str());
     /* Create the actual executable.  */
-    fprintf(fout, "ADD_EXECUTABLE(%s", targetName);
+    fprintf(fout, "add_executable(%s", targetName);
     for(std::vector<std::string>::iterator si = sources.begin();
         si != sources.end(); ++si)
       {
@@ -429,11 +465,11 @@ int cmCoreTryCompile::TryCompileCode(std::vector<std::string> const& argv)
     if (useOldLinkLibs)
       {
       fprintf(fout,
-              "TARGET_LINK_LIBRARIES(%s ${LINK_LIBRARIES})\n",targetName);
+              "target_link_libraries(%s ${LINK_LIBRARIES})\n",targetName);
       }
     else
       {
-      fprintf(fout, "TARGET_LINK_LIBRARIES(%s %s)\n",
+      fprintf(fout, "target_link_libraries(%s %s)\n",
               targetName,
               libsToLink.c_str());
       }
@@ -549,15 +585,20 @@ void cmCoreTryCompile::CleanupFiles(const char* binDir)
           }
         else
           {
+#ifdef _WIN32
           // Sometimes anti-virus software hangs on to new files so we
           // cannot delete them immediately.  Try a few times.
-          int tries = 5;
+          cmSystemTools::WindowsFileRetry retry =
+            cmSystemTools::GetWindowsFileRetry();
           while(!cmSystemTools::RemoveFile(fullPath.c_str()) &&
-                --tries && cmSystemTools::FileExists(fullPath.c_str()))
+                --retry.Count && cmSystemTools::FileExists(fullPath.c_str()))
             {
-            cmSystemTools::Delay(500);
+            cmSystemTools::Delay(retry.Delay);
             }
-          if(tries == 0)
+          if(retry.Count == 0)
+#else
+          if(!cmSystemTools::RemoveFile(fullPath.c_str()))
+#endif
             {
             std::string m = "Remove failed on file: " + fullPath;
             cmSystemTools::ReportLastSystemError(m.c_str());

@@ -12,6 +12,7 @@
 #include "cmTryRunCommand.h"
 #include "cmCacheManager.h"
 #include "cmTryCompileCommand.h"
+#include <cmsys/FStream.hxx>
 
 // cmTryRunCommand
 bool cmTryRunCommand
@@ -302,7 +303,7 @@ void cmTryRunCommand::DoNotRunExecutable(const std::string& runArgs,
   if (error)
     {
     static bool firstTryRun = true;
-    std::ofstream file(resultFileName.c_str(),
+    cmsys::ofstream file(resultFileName.c_str(),
                                   firstTryRun ? std::ios::out : std::ios::app);
     if ( file )
       {
@@ -353,13 +354,13 @@ void cmTryRunCommand::DoNotRunExecutable(const std::string& runArgs,
       cmsys::SystemTools::ReplaceString(comment, "\n", "\n# ");
       file << comment << "\n\n";
 
-      file << "SET( " << this->RunResultVariable << " \n     \""
+      file << "set( " << this->RunResultVariable << " \n     \""
            << this->Makefile->GetDefinition(this->RunResultVariable.c_str())
            << "\"\n     CACHE STRING \"Result from TRY_RUN\" FORCE)\n\n";
 
       if (out!=0)
         {
-        file << "SET( " << internalRunOutputName << " \n     \""
+        file << "set( " << internalRunOutputName << " \n     \""
              << this->Makefile->GetDefinition(internalRunOutputName.c_str())
              << "\"\n     CACHE STRING \"Output from TRY_RUN\" FORCE)\n\n";
         }

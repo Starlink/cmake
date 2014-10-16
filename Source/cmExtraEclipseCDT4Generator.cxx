@@ -40,6 +40,7 @@ cmExtraEclipseCDT4Generator
   this->SupportsVirtualFolders = true;
   this->GenerateLinkedResources = true;
   this->SupportsGmakeErrorParser = true;
+  this->SupportsMachO64Parser = true;
 }
 
 //----------------------------------------------------------------------------
@@ -48,13 +49,29 @@ void cmExtraEclipseCDT4Generator
 {
   entry.Name = this->GetName();
   entry.Brief = "Generates Eclipse CDT 4.0 project files.";
-  entry.Full =
-    "Project files for Eclipse will be created in the top directory. "
-    "In out of source builds, a linked resource to the top level source "
-    "directory will be created. "
-    "Additionally a hierarchy of makefiles is generated into the "
-    "build tree. The appropriate make program can build the project through "
-    "the default make target. A \"make install\" target is also provided.";
+}
+
+//----------------------------------------------------------------------------
+void cmExtraEclipseCDT4Generator
+::EnableLanguage(std::vector<std::string> const& languages,
+                 cmMakefile *, bool)
+{
+  for (std::vector<std::string>::const_iterator lit = languages.begin();
+       lit != languages.end(); ++lit)
+    {
+    if (*lit == "CXX")
+      {
+      this->Natures.insert("org.eclipse.cdt.core.ccnature");
+      }
+    else if (*lit == "C")
+      {
+      this->Natures.insert("org.eclipse.cdt.core.cnature");
+      }
+    else if (*lit == "Java")
+      {
+      this->Natures.insert("org.eclipse.jdt.core.javanature");
+      }
+    }
 }
 
 //----------------------------------------------------------------------------
@@ -77,6 +94,7 @@ void cmExtraEclipseCDT4Generator::Generate()
       if (version < 3006) // 3.6 is Helios
         {
         this->SupportsVirtualFolders = false;
+        this->SupportsMachO64Parser = false;
         }
       if (version < 3007) // 3.7 is Indigo
         {
@@ -440,13 +458,28 @@ void cmExtraEclipseCDT4Generator::CreateProjectFile()
   // set natures for c/c++ projects
   fout <<
     "\t<natures>\n"
-    // TODO: ccnature only if it is c++ ???
-    "\t\t<nature>org.eclipse.cdt.core.ccnature</nature>\n"
     "\t\t<nature>org.eclipse.cdt.make.core.makeNature</nature>\n"
-    "\t\t<nature>org.eclipse.cdt.make.core.ScannerConfigNature</nature>\n"
-    "\t\t<nature>org.eclipse.cdt.core.cnature</nature>\n"
-    "\t</natures>\n"
-    ;
+    "\t\t<nature>org.eclipse.cdt.make.core.ScannerConfigNature</nature>\n";
+
+  for (std::set<std::string>::const_iterator nit=this->Natures.begin();
+       nit != this->Natures.end(); ++nit)
+    {
+    fout << "\t\t<nature>" << *nit << "</nature>\n";
+    }
+
+  if (const char *extraNaturesProp = mf->GetCMakeInstance()->
+        GetProperty("ECLIPSE_EXTRA_NATURES", cmProperty::GLOBAL))
+    {
+    std::vector<std::string> extraNatures;
+    cmSystemTools::ExpandListArgument(extraNaturesProp, extraNatures);
+    for (std::vector<std::string>::const_iterator nit = extraNatures.begin();
+         nit != extraNatures.end(); ++nit)
+      {
+      fout << "\t\t<nature>" << *nit << "</nature>\n";
+      }
+    }
+
+  fout << "\t</natures>\n";
 
   fout << "\t<linkedResources>\n";
   // create linked resources
@@ -526,16 +559,17 @@ void cmExtraEclipseCDT4Generator::CreateLinksForTargets(
           std::vector<cmSourceGroup> sourceGroups=makefile->GetSourceGroups();
           // get the files from the source lists then add them to the groups
           cmTarget* tgt = const_cast<cmTarget*>(&ti->second);
-          std::vector<cmSourceFile*>const & files = tgt->GetSourceFiles();
+          std::vector<cmSourceFile*> files;
+          tgt->GetSourceFiles(files);
           for(std::vector<cmSourceFile*>::const_iterator sfIt = files.begin();
               sfIt != files.end();
               sfIt++)
             {
             // Add the file to the list of sources.
             std::string source = (*sfIt)->GetFullPath();
-            cmSourceGroup& sourceGroup =
+            cmSourceGroup* sourceGroup =
                        makefile->FindSourceGroup(source.c_str(), sourceGroups);
-            sourceGroup.AssignSource(*sfIt);
+            sourceGroup->AssignSource(*sfIt);
             }
 
           for(std::vector<cmSourceGroup>::iterator sgIt = sourceGroups.begin();
@@ -723,7 +757,9 @@ void cmExtraEclipseCDT4Generator::CreateCProjectFile() const
       }
     else if (systemName == "Darwin")
       {
-      fout << "<extension id=\"org.eclipse.cdt.core.MachO\""
+      fout << "<extension id=\"" <<
+           (this->SupportsMachO64Parser ? "org.eclipse.cdt.core.MachO64"
+                                        : "org.eclipse.cdt.core.MachO") << "\""
               " point=\"org.eclipse.cdt.core.BinaryParser\">\n"
               "<attribute key=\"c++filt\" value=\"c++filt\"/>\n"
               "</extension>\n"
@@ -805,11 +841,16 @@ void cmExtraEclipseCDT4Generator::CreateCProjectFile() const
       {
       // Expand the list.
       std::vector<std::string> defs;
-      cmSystemTools::ExpandListArgument(cdefs, defs);
+      cmGeneratorExpression::Split(cdefs, defs);
 
       for(std::vector<std::string>::const_iterator di = defs.begin();
           di != defs.end(); ++di)
         {
+        if (cmGeneratorExpression::Find(*di) != std::string::npos)
+          {
+          continue;
+          }
+
         std::string::size_type equals = di->find('=', 0);
         std::string::size_type enddef = di->length();
 
@@ -1002,29 +1043,9 @@ void cmExtraEclipseCDT4Generator::CreateCProjectFile() const
         {
         case cmTarget::GLOBAL_TARGET:
           {
-          bool insertTarget = false;
           // Only add the global targets from CMAKE_BINARY_DIR,
           // not from the subdirs
           if (subdir.empty())
-           {
-           insertTarget = true;
-           // only add the "edit_cache" target if it's not ccmake, because
-           // this will not work within the IDE
-           if (ti->first == "edit_cache")
-             {
-             const char* editCommand = makefile->GetDefinition
-                                                        ("CMAKE_EDIT_COMMAND");
-             if (editCommand == 0)
-               {
-               insertTarget = false;
-               }
-             else if (strstr(editCommand, "ccmake")!=NULL)
-               {
-               insertTarget = false;
-               }
-             }
-           }
-         if (insertTarget)
            {
            this->AppendTarget(fout, ti->first, make, makeArgs, subdir, ": ");
            }
@@ -1139,7 +1160,7 @@ cmExtraEclipseCDT4Generator::GetEclipsePath(const std::string& path)
 #if defined(__CYGWIN__)
   std::string cmd = "cygpath -m " + path;
   std::string out;
-  if (!cmSystemTools::RunCommand(cmd.c_str(), out, 0, false))
+  if (!cmSystemTools::RunSingleCommand(cmd.c_str(), &out))
     {
     return path;
     }

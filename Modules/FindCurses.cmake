@@ -1,16 +1,26 @@
-# - Find the curses include file and library
+#.rst:
+# FindCurses
+# ----------
 #
-#  CURSES_FOUND - system has Curses
-#  CURSES_INCLUDE_DIR - the Curses include directory
-#  CURSES_LIBRARIES - The libraries needed to use Curses
-#  CURSES_HAVE_CURSES_H - true if curses.h is available
-#  CURSES_HAVE_NCURSES_H - true if ncurses.h is available
-#  CURSES_HAVE_NCURSES_NCURSES_H - true if ncurses/ncurses.h is available
-#  CURSES_HAVE_NCURSES_CURSES_H - true if ncurses/curses.h is available
-#  CURSES_LIBRARY - set for backwards compatibility with 2.4 CMake
+# Find the curses include file and library
 #
-# Set CURSES_NEED_NCURSES to TRUE before the find_package() command if NCurses
-# functionality is required.
+#
+#
+# ::
+#
+#   CURSES_FOUND - system has Curses
+#   CURSES_INCLUDE_DIR - the Curses include directory
+#   CURSES_LIBRARIES - The libraries needed to use Curses
+#   CURSES_HAVE_CURSES_H - true if curses.h is available
+#   CURSES_HAVE_NCURSES_H - true if ncurses.h is available
+#   CURSES_HAVE_NCURSES_NCURSES_H - true if ncurses/ncurses.h is available
+#   CURSES_HAVE_NCURSES_CURSES_H - true if ncurses/curses.h is available
+#   CURSES_LIBRARY - set for backwards compatibility with 2.4 CMake
+#
+#
+#
+# Set CURSES_NEED_NCURSES to TRUE before the find_package() command if
+# NCurses functionality is required.
 
 #=============================================================================
 # Copyright 2001-2009 Kitware, Inc.
@@ -30,7 +40,7 @@ find_library(CURSES_CURSES_LIBRARY NAMES curses )
 find_library(CURSES_NCURSES_LIBRARY NAMES ncurses )
 set(CURSES_USE_NCURSES FALSE)
 
-if(CURSES_NCURSES_LIBRARY  AND NOT  CURSES_CURSES_LIBRARY)
+if(CURSES_NCURSES_LIBRARY  AND ((NOT CURSES_CURSES_LIBRARY) OR CURSES_NEED_NCURSES))
   set(CURSES_USE_NCURSES TRUE)
 endif()
 # http://cygwin.com/ml/cygwin-announce/2010-01/msg00002.html
@@ -125,10 +135,20 @@ else()
       CACHE FILEPATH "The curses library" ${FORCE_IT})
   endif()
 
+  CHECK_LIBRARY_EXISTS("${CURSES_NCURSES_LIBRARY}"
+    cbreak "" CURSES_NCURSES_HAS_CBREAK)
+  if(NOT CURSES_NCURSES_HAS_CBREAK)
+    find_library(CURSES_EXTRA_LIBRARY tinfo HINTS "${_cursesLibDir}")
+    find_library(CURSES_EXTRA_LIBRARY tinfo )
+    CHECK_LIBRARY_EXISTS("${CURSES_EXTRA_LIBRARY}"
+      cbreak "" CURSES_TINFO_HAS_CBREAK)
+  endif()
 endif()
 
-find_library(CURSES_EXTRA_LIBRARY cur_colr HINTS "${_cursesLibDir}")
-find_library(CURSES_EXTRA_LIBRARY cur_colr )
+if (NOT CURSES_TINFO_HAS_CBREAK)
+  find_library(CURSES_EXTRA_LIBRARY cur_colr HINTS "${_cursesLibDir}")
+  find_library(CURSES_EXTRA_LIBRARY cur_colr )
+endif()
 
 find_library(CURSES_FORM_LIBRARY form HINTS "${_cursesLibDir}")
 find_library(CURSES_FORM_LIBRARY form )
@@ -172,5 +192,7 @@ mark_as_advanced(
   CURSES_INCLUDE_DIR
   CURSES_CURSES_HAS_WSYNCUP
   CURSES_NCURSES_HAS_WSYNCUP
+  CURSES_NCURSES_HAS_CBREAK
+  CURSES_TINFO_HAS_CBREAK
   )
 

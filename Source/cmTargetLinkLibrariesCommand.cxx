@@ -31,7 +31,7 @@ bool cmTargetLinkLibrariesCommand
     return false;
     }
 
-  if (this->Makefile->IsAlias(args[0].c_str()))
+  if (this->Makefile->IsAlias(args[0]))
     {
     this->SetError("can not be used on an ALIAS target.");
     return false;
@@ -101,6 +101,38 @@ bool cmTargetLinkLibrariesCommand
     return true;
     }
 
+  if (this->Target->GetType() == cmTarget::UTILITY)
+    {
+    cmOStringStream e;
+    const char *modal = 0;
+    cmake::MessageType messageType = cmake::AUTHOR_WARNING;
+    switch(this->Makefile->GetPolicyStatus(cmPolicies::CMP0039))
+      {
+      case cmPolicies::WARN:
+        e << this->Makefile->GetPolicies()
+          ->GetPolicyWarning(cmPolicies::CMP0039) << "\n";
+        modal = "should";
+      case cmPolicies::OLD:
+        break;
+      case cmPolicies::REQUIRED_ALWAYS:
+      case cmPolicies::REQUIRED_IF_USED:
+      case cmPolicies::NEW:
+        modal = "must";
+        messageType = cmake::FATAL_ERROR;
+      }
+    if (modal)
+      {
+      e <<
+        "Utility target \"" << this->Target->GetName() << "\" " << modal
+        << " not be used as the target of a target_link_libraries call.";
+      this->Makefile->IssueMessage(messageType, e.str().c_str());
+      if(messageType == cmake::FATAL_ERROR)
+        {
+        return false;
+        }
+      }
+    }
+
   // but we might not have any libs after variable expansion
   if(args.size() < 2)
     {
@@ -151,7 +183,8 @@ bool cmTargetLinkLibrariesCommand
     else if(args[i] == "LINK_PUBLIC")
       {
       if(i != 1
-          && this->CurrentProcessingState != ProcessingPlainPrivateInterface)
+          && this->CurrentProcessingState != ProcessingPlainPrivateInterface
+          && this->CurrentProcessingState != ProcessingPlainPublicInterface)
         {
         this->Makefile->IssueMessage(
           cmake::FATAL_ERROR,
@@ -181,7 +214,8 @@ bool cmTargetLinkLibrariesCommand
     else if(args[i] == "LINK_PRIVATE")
       {
       if(i != 1
-          && this->CurrentProcessingState != ProcessingPlainPublicInterface)
+          && this->CurrentProcessingState != ProcessingPlainPublicInterface
+          && this->CurrentProcessingState != ProcessingPlainPrivateInterface)
         {
         this->Makefile->IssueMessage(
           cmake::FATAL_ERROR,
@@ -322,6 +356,15 @@ bool
 cmTargetLinkLibrariesCommand::HandleLibrary(const char* lib,
                                             cmTarget::LinkLibraryType llt)
 {
+  if(this->Target->GetType() == cmTarget::INTERFACE_LIBRARY
+      && this->CurrentProcessingState != ProcessingKeywordLinkInterface)
+    {
+    this->Makefile->IssueMessage(cmake::FATAL_ERROR,
+      "INTERFACE library can only be used with the INTERFACE keyword of "
+      "target_link_libraries");
+    return false;
+    }
+
   cmTarget::TLLSignature sig =
         (this->CurrentProcessingState == ProcessingPlainPrivateInterface
       || this->CurrentProcessingState == ProcessingPlainPublicInterface
@@ -331,11 +374,14 @@ cmTargetLinkLibrariesCommand::HandleLibrary(const char* lib,
         ? cmTarget::KeywordTLLSignature : cmTarget::PlainTLLSignature;
   if (!this->Target->PushTLLCommandTrace(sig))
     {
+    cmOStringStream e;
     const char *modal = 0;
     cmake::MessageType messageType = cmake::AUTHOR_WARNING;
     switch(this->Makefile->GetPolicyStatus(cmPolicies::CMP0023))
       {
       case cmPolicies::WARN:
+        e << this->Makefile->GetPolicies()
+          ->GetPolicyWarning(cmPolicies::CMP0023) << "\n";
         modal = "should";
       case cmPolicies::OLD:
         break;
@@ -348,14 +394,12 @@ cmTargetLinkLibrariesCommand::HandleLibrary(const char* lib,
 
       if(modal)
         {
-        cmOStringStream e;
         // If the sig is a keyword form and there is a conflict, the existing
         // form must be the plain form.
         const char *existingSig
                     = (sig == cmTarget::KeywordTLLSignature ? "plain"
                                                             : "keyword");
-        e << this->Makefile->GetPolicies()
-                              ->GetPolicyWarning(cmPolicies::CMP0023) << "\n"
+          e <<
             "The " << existingSig << " signature for target_link_libraries "
             "has already been used with the target \""
           << this->Target->GetName() << "\".  All uses of "
@@ -414,6 +458,11 @@ cmTargetLinkLibrariesCommand::HandleLibrary(const char* lib,
 
   if (policy22Status != cmPolicies::OLD
       && policy22Status != cmPolicies::WARN)
+    {
+    return true;
+    }
+
+  if (this->Target->GetType() == cmTarget::INTERFACE_LIBRARY)
     {
     return true;
     }

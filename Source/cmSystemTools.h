@@ -49,6 +49,9 @@ public:
   ///! Escape quotes in a string.
   static std::string EscapeQuotes(const char* str);
 
+  /** Map help document name to file name.  */
+  static std::string HelpFileName(std::string);
+
   /**
    * Returns a string that has whitespace removed from the start and the end.
    */
@@ -188,23 +191,6 @@ public:
   static std::string ComputeStringMD5(const char* input);
 
   /**
-   * Run an executable command and put the stdout in output.
-   * A temporary file is created in the binaryDir for storing the
-   * output because windows does not have popen.
-   *
-   * If verbose is false, no user-viewable output from the program
-   * being run will be generated.
-   *
-   * If timeout is specified, the command will be terminated after
-   * timeout expires.
-   */
-  static bool RunCommand(const char* command, std::string& output,
-                         const char* directory = 0,
-                         bool verbose = true, int timeout = 0);
-  static bool RunCommand(const char* command, std::string& output,
-                         int &retVal, const char* directory = 0,
-                         bool verbose = true, int timeout = 0);
-  /**
    * Run a single executable command
    *
    * Output is controlled with outputflag. If outputflag is OUTPUT_NONE, no
@@ -242,11 +228,18 @@ public:
    * the command to run, and each argument to the command should
    * be in comand[1]...command[command.size()]
    */
+  static bool RunSingleCommand(std::vector<std::string> const& command,
+                               std::string* output = 0,
+                               int* retVal = 0, const char* dir = 0,
+                               OutputOption outputflag = OUTPUT_MERGE,
+                               double timeout = 0.0);
   static bool RunSingleCommand(std::vector<cmStdString> const& command,
                                std::string* output = 0,
                                int* retVal = 0, const char* dir = 0,
                                OutputOption outputflag = OUTPUT_MERGE,
                                double timeout = 0.0);
+
+  static std::string PrintSingleCommand(std::vector<std::string> const&);
 
   /**
    * Parse arguments out of a single string command
@@ -308,14 +301,6 @@ public:
    * Determine the file type based on the extension
    */
   static FileFormat GetFileFormat(const char* ext);
-
-  /**
-   * On Windows 9x we need a comspec (command.com) substitute to run
-   * programs correctly. This string has to be constant available
-   * through the running of program. This method does not create a copy.
-   */
-  static void SetWindows9xComspecSubstitute(const char*);
-  static const char* GetWindows9xComspecSubstitute();
 
   /** Windows if this is true, the CreateProcess in RunCommand will
    *  not show new consol windows when running programs.
@@ -428,13 +413,16 @@ public:
   /** Random seed generation.  */
   static unsigned int RandomSeed();
 
-  /** Find the directory containing the running executable.  Save it
-   in a global location to be queried by GetExecutableDirectory
-   later.  */
-  static void FindExecutableDirectory(const char* argv0);
+  /** Find the directory containing CMake executables.  */
+  static void FindCMakeResources(const char* argv0);
 
-  /** Get the directory containing the currently running executable.  */
-  static const char* GetExecutableDirectory();
+  /** Get the CMake resource paths, after FindCMakeResources.  */
+  static std::string const& GetCTestCommand();
+  static std::string const& GetCPackCommand();
+  static std::string const& GetCMakeCommand();
+  static std::string const& GetCMakeGUICommand();
+  static std::string const& GetCMakeCursesCommand();
+  static std::string const& GetCMakeRoot();
 
 #if defined(CMAKE_BUILD_WITH_CMAKE)
   /** Echo a message in color using KWSys's Terminal cprintf.  */
@@ -472,6 +460,15 @@ public:
   /** Tokenize a string */
   static std::vector<std::string> tokenize(const std::string& str,
                                            const std::string& sep);
+
+#ifdef _WIN32
+  struct WindowsFileRetry
+  {
+    unsigned int Count;
+    unsigned int Delay;
+  };
+  static WindowsFileRetry GetWindowsFileRetry();
+#endif
 private:
   static bool s_ForceUnixPaths;
   static bool s_RunCommandHideConsole;
@@ -485,8 +482,6 @@ private:
   static void* s_ErrorCallbackClientData;
   static void* s_StdoutCallbackClientData;
   static void* s_InterruptCallbackClientData;
-
-  static std::string s_Windows9xComspecSubstitute;
 };
 
 #endif

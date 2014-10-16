@@ -32,10 +32,12 @@ static cmInstallTargetGenerator* CreateInstallTargetGenerator(cmTarget& target,
 }
 
 static cmInstallFilesGenerator* CreateInstallFilesGenerator(
+  cmMakefile* mf,
     const std::vector<std::string>& absFiles,
     const cmInstallCommandArguments& args, bool programs)
 {
-  return new cmInstallFilesGenerator(absFiles, args.GetDestination().c_str(),
+  return new cmInstallFilesGenerator(mf,
+                        absFiles, args.GetDestination().c_str(),
                         programs, args.GetPermissions().c_str(),
                         args.GetConfigurations(), args.GetComponent().c_str(),
                         args.GetRename().c_str(), args.GetOptional());
@@ -363,7 +365,7 @@ bool cmInstallCommand::HandleTargetsMode(std::vector<std::string> const& args)
       ++targetIt)
     {
 
-    if (this->Makefile->IsAlias(targetIt->c_str()))
+    if (this->Makefile->IsAlias(*targetIt))
       {
       cmOStringStream e;
       e << "TARGETS given target \"" << (*targetIt)
@@ -372,14 +374,15 @@ bool cmInstallCommand::HandleTargetsMode(std::vector<std::string> const& args)
       return false;
       }
     // Lookup this target in the current directory.
-    if(cmTarget* target=this->Makefile->FindTarget(targetIt->c_str()))
+    if(cmTarget* target=this->Makefile->FindTarget(*targetIt))
       {
       // Found the target.  Check its type.
       if(target->GetType() != cmTarget::EXECUTABLE &&
          target->GetType() != cmTarget::STATIC_LIBRARY &&
          target->GetType() != cmTarget::SHARED_LIBRARY &&
          target->GetType() != cmTarget::MODULE_LIBRARY &&
-         target->GetType() != cmTarget::OBJECT_LIBRARY)
+         target->GetType() != cmTarget::OBJECT_LIBRARY &&
+         target->GetType() != cmTarget::INTERFACE_LIBRARY)
         {
         cmOStringStream e;
         e << "TARGETS given target \"" << (*targetIt)
@@ -626,6 +629,11 @@ bool cmInstallCommand::HandleTargetsMode(std::vector<std::string> const& args)
           }
         }
         break;
+      case cmTarget::INTERFACE_LIBRARY:
+          // Nothing to do. An INTERFACE_LIBRARY can be installed, but the
+          // only effect of that is to make it exportable. It installs no
+          // other files itself.
+        break;
       default:
         // This should never happen due to the above type check.
         // Ignore the case.
@@ -639,7 +647,8 @@ bool cmInstallCommand::HandleTargetsMode(std::vector<std::string> const& args)
     // generators for them.
     bool createInstallGeneratorsForTargetFileSets = true;
 
-    if(target.IsFrameworkOnApple())
+    if(target.IsFrameworkOnApple()
+        || target.GetType() == cmTarget::INTERFACE_LIBRARY)
       {
       createInstallGeneratorsForTargetFileSets = false;
       }
@@ -661,7 +670,8 @@ bool cmInstallCommand::HandleTargetsMode(std::vector<std::string> const& args)
         if (!privateHeaderArgs.GetDestination().empty())
           {
           privateHeaderGenerator =
-            CreateInstallFilesGenerator(absFiles, privateHeaderArgs, false);
+            CreateInstallFilesGenerator(this->Makefile, absFiles,
+                                        privateHeaderArgs, false);
           }
         else
           {
@@ -687,7 +697,8 @@ bool cmInstallCommand::HandleTargetsMode(std::vector<std::string> const& args)
         if (!publicHeaderArgs.GetDestination().empty())
           {
           publicHeaderGenerator =
-            CreateInstallFilesGenerator(absFiles, publicHeaderArgs, false);
+            CreateInstallFilesGenerator(this->Makefile, absFiles,
+                                        publicHeaderArgs, false);
           }
         else
           {
@@ -712,8 +723,8 @@ bool cmInstallCommand::HandleTargetsMode(std::vector<std::string> const& args)
         // Create the files install generator.
         if (!resourceArgs.GetDestination().empty())
           {
-          resourceGenerator = CreateInstallFilesGenerator(absFiles,
-                                                          resourceArgs, false);
+          resourceGenerator = CreateInstallFilesGenerator(
+            this->Makefile, absFiles, resourceArgs, false);
           }
         else
           {
@@ -881,7 +892,7 @@ bool cmInstallCommand::HandleFilesMode(std::vector<std::string> const& args)
 
   // Create the files install generator.
   this->Makefile->AddInstallGenerator(
-                         CreateInstallFilesGenerator(absFiles, ica, programs));
+    CreateInstallFilesGenerator(this->Makefile, absFiles, ica, programs));
 
   //Tell the global generator about any installation component names specified.
   this->Makefile->GetLocalGenerator()->GetGlobalGenerator()
@@ -1344,7 +1355,8 @@ bool cmInstallCommand::MakeFilesFullPath(const char* modeName,
       ++fileIt)
     {
     std::string file = (*fileIt);
-    if(!cmSystemTools::FileIsFullPath(file.c_str()))
+    std::string::size_type gpos = cmGeneratorExpression::Find(file);
+    if(gpos != 0 && !cmSystemTools::FileIsFullPath(file.c_str()))
       {
       file = this->Makefile->GetCurrentDirectory();
       file += "/";
@@ -1352,7 +1364,7 @@ bool cmInstallCommand::MakeFilesFullPath(const char* modeName,
       }
 
     // Make sure the file is not a directory.
-    if(cmSystemTools::FileIsDirectory(file.c_str()))
+    if(gpos == file.npos && cmSystemTools::FileIsDirectory(file.c_str()))
       {
       cmOStringStream e;
       e << modeName << " given directory \"" << (*fileIt) << "\" to install.";

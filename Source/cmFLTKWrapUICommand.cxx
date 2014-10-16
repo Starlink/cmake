@@ -120,7 +120,7 @@ void cmFLTKWrapUICommand::FinalPass()
   // people should add the srcs to the target themselves, but the old command
   // didn't support that, so check and see if they added the files in and if
   // they didn;t then print a warning and add then anyhow
-  cmTarget* target = this->Makefile->FindTarget(this->Target.c_str());
+  cmTarget* target = this->Makefile->FindTarget(this->Target);
   if(!target)
     {
     std::string msg =
@@ -132,8 +132,8 @@ void cmFLTKWrapUICommand::FinalPass()
     cmSystemTools::Message(msg.c_str(),"Warning");
     return;
     }
-  std::vector<cmSourceFile*> const& srcs =
-    target->GetSourceFiles();
+  std::vector<cmSourceFile*> srcs;
+  target->GetSourceFiles(srcs);
   bool found = false;
   for (unsigned int i = 0; i < srcs.size(); ++i)
     {

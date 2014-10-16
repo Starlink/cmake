@@ -51,22 +51,7 @@ public:
    */
   virtual const char* GetName() const { return "find_package";}
 
-  /**
-   * Succinct documentation.
-   */
-  virtual const char* GetTerseDocumentation() const
-    {
-    return "Load settings for an external project.";
-    }
-
-  /**
-   * More documentation.
-   */
-  virtual const char* GetFullDocumentation() const;
-
   cmTypeMacro(cmFindPackageCommand, cmFindCommon);
-protected:
-  virtual void GenerateDocumentation();
 private:
   void AppendSuccessInformation();
   void AppendToFoundProperty(bool found);
@@ -113,7 +98,6 @@ private:
   struct OriginalDef { bool exists; std::string value; };
   std::map<cmStdString, OriginalDef> OriginalDefs;
 
-  std::string CommandDocumentation;
   cmStdString Name;
   cmStdString Variable;
   cmStdString Version;
@@ -130,10 +114,9 @@ private:
   unsigned int VersionFoundPatch;
   unsigned int VersionFoundTweak;
   unsigned int VersionFoundCount;
-  unsigned int RequiredCMakeVersion;
+  cmIML_INT_uint64_t RequiredCMakeVersion;
   bool Quiet;
   bool Required;
-  bool Compatibility_1_6;
   bool UseConfigFiles;
   bool UseFindModules;
   bool NoUserRegistry;

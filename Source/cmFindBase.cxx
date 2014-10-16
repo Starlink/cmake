@@ -20,106 +20,6 @@ cmFindBase::cmFindBase()
 }
 
 //----------------------------------------------------------------------------
-void cmFindBase::GenerateDocumentation()
-{
-  this->cmFindCommon::GenerateDocumentation();
-  cmSystemTools::ReplaceString(this->GenericDocumentationPathsOrder,
-                               "FIND_ARGS_XXX", "<VAR> NAMES name");
-  this->GenericDocumentation =
-    "   FIND_XXX(<VAR> name1 [path1 path2 ...])\n"
-    "This is the short-hand signature for the command that "
-    "is sufficient in many cases.  It is the same "
-    "as FIND_XXX(<VAR> name1 [PATHS path1 path2 ...])\n"
-    "   FIND_XXX(\n"
-    "             <VAR>\n"
-    "             name | NAMES name1 [name2 ...]\n"
-    "             [HINTS path1 [path2 ... ENV var]]\n"
-    "             [PATHS path1 [path2 ... ENV var]]\n"
-    "             [PATH_SUFFIXES suffix1 [suffix2 ...]]\n"
-    "             [DOC \"cache documentation string\"]\n"
-    "             [NO_DEFAULT_PATH]\n"
-    "             [NO_CMAKE_ENVIRONMENT_PATH]\n"
-    "             [NO_CMAKE_PATH]\n"
-    "             [NO_SYSTEM_ENVIRONMENT_PATH]\n"
-    "             [NO_CMAKE_SYSTEM_PATH]\n"
-    "             [CMAKE_FIND_ROOT_PATH_BOTH |\n"
-    "              ONLY_CMAKE_FIND_ROOT_PATH |\n"
-    "              NO_CMAKE_FIND_ROOT_PATH]\n"
-    "            )\n"
-    ""
-    "This command is used to find a SEARCH_XXX_DESC. "
-    "A cache entry named by <VAR> is created to store the result "
-    "of this command.  "
-    "If the SEARCH_XXX is found the result is stored in the variable "
-    "and the search will not be repeated unless the variable is cleared.  "
-    "If nothing is found, the result will be "
-    "<VAR>-NOTFOUND, and the search will be attempted again the "
-    "next time FIND_XXX is invoked with the same variable.  "
-    "The name of the SEARCH_XXX that "
-    "is searched for is specified by the names listed "
-    "after the NAMES argument.   Additional search locations "
-    "can be specified after the PATHS argument.  If ENV var is "
-    "found in the HINTS or PATHS section the environment variable var "
-    "will be read and converted from a system environment variable to "
-    "a cmake style list of paths.  For example ENV PATH would be a way "
-    "to list the system path variable. The argument "
-    "after DOC will be used for the documentation string in "
-    "the cache.  "
-    "PATH_SUFFIXES specifies additional subdirectories to check below "
-    "each search path."
-    "\n"
-    "If NO_DEFAULT_PATH is specified, then no additional paths are "
-    "added to the search. "
-    "If NO_DEFAULT_PATH is not specified, the search process is as follows:\n"
-    "1. Search paths specified in cmake-specific cache variables.  "
-    "These are intended to be used on the command line with a -DVAR=value.  "
-    "This can be skipped if NO_CMAKE_PATH is passed.\n"
-    "XXX_EXTRA_PREFIX_ENTRY"
-    "   <prefix>/XXX_SUBDIR for each <prefix> in CMAKE_PREFIX_PATH\n"
-    "   CMAKE_XXX_PATH\n"
-    "   CMAKE_XXX_MAC_PATH\n"
-    "2. Search paths specified in cmake-specific environment variables.  "
-    "These are intended to be set in the user's shell configuration.  "
-    "This can be skipped if NO_CMAKE_ENVIRONMENT_PATH is passed.\n"
-    "XXX_EXTRA_PREFIX_ENTRY"
-    "   <prefix>/XXX_SUBDIR for each <prefix> in CMAKE_PREFIX_PATH\n"
-    "   CMAKE_XXX_PATH\n"
-    "   CMAKE_XXX_MAC_PATH\n"
-    "3. Search the paths specified by the HINTS option.  "
-    "These should be paths computed by system introspection, such as a "
-    "hint provided by the location of another item already found.  "
-    "Hard-coded guesses should be specified with the PATHS option.\n"
-    "4. Search the standard system environment variables. "
-    "This can be skipped if NO_SYSTEM_ENVIRONMENT_PATH is an argument.\n"
-    "   PATH\n"
-    "   XXX_SYSTEM\n"  // replace with "", LIB, or INCLUDE
-    "5. Search cmake variables defined in the Platform files "
-    "for the current system.  This can be skipped if NO_CMAKE_SYSTEM_PATH "
-    "is passed.\n"
-    "XXX_EXTRA_PREFIX_ENTRY"
-    "   <prefix>/XXX_SUBDIR for each <prefix> in CMAKE_SYSTEM_PREFIX_PATH\n"
-    "   CMAKE_SYSTEM_XXX_PATH\n"
-    "   CMAKE_SYSTEM_XXX_MAC_PATH\n"
-    "6. Search the paths specified by the PATHS option "
-    "or in the short-hand version of the command.  "
-    "These are typically hard-coded guesses.\n"
-    ;
-  this->GenericDocumentation += this->GenericDocumentationMacPolicy;
-  this->GenericDocumentation += this->GenericDocumentationRootPath;
-  this->GenericDocumentation += this->GenericDocumentationPathsOrder;
-}
-
-//----------------------------------------------------------------------------
-const char* cmFindBase::GetFullDocumentation() const
-{
-  if(this->GenericDocumentation.empty())
-    {
-    const_cast<cmFindBase *>(this)->GenerateDocumentation();
-    }
-  return this->GenericDocumentation.c_str();
-}
-
-//----------------------------------------------------------------------------
 bool cmFindBase::ParseArguments(std::vector<std::string> const& argsIn)
 {
   if(argsIn.size() < 2 )
@@ -127,11 +27,6 @@ bool cmFindBase::ParseArguments(std::vector<std::string> const& argsIn)
     this->SetError("called with incorrect number of arguments");
     return false;
     }
-
-  // CMake versions below 2.3 did not search all these extra
-  // locations.  Preserve compatibility unless a modern argument is
-  // passed.
-  bool compatibility = this->Makefile->NeedBackwardsCompatibility(2,3);
 
   // copy argsIn into args so it can be modified,
   // in the process extract the DOC "documentation"
@@ -212,7 +107,6 @@ bool cmFindBase::ParseArguments(std::vector<std::string> const& argsIn)
     else if (args[j] == "PATH_SUFFIXES")
       {
       doing = DoingPathSuffixes;
-      compatibility = false;
       newStyle = true;
       }
     else if (args[j] == "NAMES_PER_DIR")
@@ -236,7 +130,6 @@ bool cmFindBase::ParseArguments(std::vector<std::string> const& argsIn)
     else if (this->CheckCommonArgument(args[j]))
       {
       doing = DoingNone;
-      compatibility = false;
       // Some common arguments were accidentally supported by CMake
       // 2.4 and 2.6.0 in the short-hand form of the command, so we
       // must support it even though it is not documented.
@@ -257,17 +150,6 @@ bool cmFindBase::ParseArguments(std::vector<std::string> const& argsIn)
       {
       this->AddPathSuffix(args[j]);
       }
-    }
-
-  // Now that arguments have been parsed check the compatibility
-  // setting.  If we need to be compatible with CMake 2.2 and earlier
-  // do not add the CMake system paths.  It is safe to add the CMake
-  // environment paths and system environment paths because that
-  // existed in 2.2.  It is safe to add the CMake user variable paths
-  // because the user or project has explicitly set them.
-  if(compatibility)
-    {
-    this->NoCMakeSystemPath = true;
     }
 
   if(this->VariableDocumentation.size() == 0)

@@ -45,6 +45,7 @@ private:
   std::string OptionTargetName;
   std::string OptionTargetType;
   std::string OptionBuildDir;
+  std::string OptionFilterPrefix;
   bool ParseArguments(int argc, const char* const* argv);
 
   // The real command line appearing after launcher arguments.
@@ -87,6 +88,7 @@ private:
   bool ScrapeLog(std::string const& fname);
   bool Match(std::string const& line,
              std::vector<cmsys::RegularExpression>& regexps);
+  bool MatchesFilterPrefix(std::string const& line) const;
 
   // Methods to generate the xml fragment.
   void WriteXML();

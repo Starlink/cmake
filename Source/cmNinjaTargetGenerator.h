@@ -30,7 +30,7 @@ class cmNinjaTargetGenerator
 {
 public:
   /// Create a cmNinjaTargetGenerator according to the @a target's type.
-  static cmNinjaTargetGenerator* New(cmTarget* target);
+  static cmNinjaTargetGenerator* New(cmGeneratorTarget* target);
 
   /// Build a NinjaTargetGenerator.
   cmNinjaTargetGenerator(cmTarget* target);
@@ -41,6 +41,8 @@ public:
   virtual void Generate() = 0;
 
   std::string GetTargetName() const;
+
+  bool needsDepFile(const std::string& lang);
 
 protected:
 
@@ -134,12 +136,15 @@ protected:
   };
   friend struct MacOSXContentGeneratorType;
 
-protected:
+
   MacOSXContentGeneratorType* MacOSXContentGenerator;
   // Properly initialized by sub-classes.
   cmOSXBundleGenerator* OSXBundleGenerator;
   std::set<cmStdString> MacContentFolders;
 
+  void addPoolNinjaVariable(const char* pool_property,
+                            cmTarget* target,
+                            cmNinjaVars& vars);
 
 private:
   cmTarget* Target;
@@ -148,6 +153,9 @@ private:
   cmLocalNinjaGenerator* LocalGenerator;
   /// List of object files for this target.
   cmNinjaDeps Objects;
+
+  typedef std::map<std::string, std::string> LanguageFlagMap;
+  LanguageFlagMap LanguageFlags;
 
   // The windows module definition source file (.def), if any.
   std::string ModuleDefinitionFile;

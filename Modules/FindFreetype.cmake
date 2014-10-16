@@ -1,16 +1,25 @@
-# - Locate FreeType library
-# This module defines
-#  FREETYPE_LIBRARIES, the library to link against
-#  FREETYPE_FOUND, if false, do not try to link to FREETYPE
-#  FREETYPE_INCLUDE_DIRS, where to find headers.
-#  FREETYPE_VERSION_STRING, the version of freetype found (since CMake 2.8.8)
-#  This is the concatenation of the paths:
-#  FREETYPE_INCLUDE_DIR_ft2build
-#  FREETYPE_INCLUDE_DIR_freetype2
+#.rst:
+# FindFreetype
+# ------------
 #
-# $FREETYPE_DIR is an environment variable that would
-# correspond to the ./configure --prefix=$FREETYPE_DIR
-# used in building FREETYPE.
+# Locate FreeType library
+#
+# This module defines
+#
+# ::
+#
+#   FREETYPE_LIBRARIES, the library to link against
+#   FREETYPE_FOUND, if false, do not try to link to FREETYPE
+#   FREETYPE_INCLUDE_DIRS, where to find headers.
+#   FREETYPE_VERSION_STRING, the version of freetype found (since CMake 2.8.8)
+#   This is the concatenation of the paths:
+#   FREETYPE_INCLUDE_DIR_ft2build
+#   FREETYPE_INCLUDE_DIR_freetype2
+#
+#
+#
+# $FREETYPE_DIR is an environment variable that would correspond to the
+# ./configure --prefix=$FREETYPE_DIR used in building FREETYPE.
 
 #=============================================================================
 # Copyright 2007-2009 Kitware, Inc.
@@ -56,7 +65,10 @@ find_path(FREETYPE_INCLUDE_DIR_ft2build ft2build.h
   PATH_SUFFIXES include/freetype2 include
 )
 
-find_path(FREETYPE_INCLUDE_DIR_freetype2 freetype/config/ftheader.h
+find_path(FREETYPE_INCLUDE_DIR_freetype2
+  NAMES
+    freetype/config/ftheader.h
+    config/ftheader.h
   HINTS
     ENV FREETYPE_DIR
   PATHS
@@ -88,11 +100,18 @@ find_library(FREETYPE_LIBRARY
 # set the user variables
 if(FREETYPE_INCLUDE_DIR_ft2build AND FREETYPE_INCLUDE_DIR_freetype2)
   set(FREETYPE_INCLUDE_DIRS "${FREETYPE_INCLUDE_DIR_ft2build};${FREETYPE_INCLUDE_DIR_freetype2}")
+  list(REMOVE_DUPLICATES FREETYPE_INCLUDE_DIRS)
 endif()
 set(FREETYPE_LIBRARIES "${FREETYPE_LIBRARY}")
 
-if(FREETYPE_INCLUDE_DIR_freetype2 AND EXISTS "${FREETYPE_INCLUDE_DIR_freetype2}/freetype/freetype.h")
-    file(STRINGS "${FREETYPE_INCLUDE_DIR_freetype2}/freetype/freetype.h" freetype_version_str
+if(EXISTS "${FREETYPE_INCLUDE_DIR_freetype2}/freetype/freetype.h")
+  set(FREETYPE_H "${FREETYPE_INCLUDE_DIR_freetype2}/freetype/freetype.h")
+elseif(EXISTS "${FREETYPE_INCLUDE_DIR_freetype2}/freetype.h")
+  set(FREETYPE_H "${FREETYPE_INCLUDE_DIR_freetype2}/freetype.h")
+endif()
+
+if(FREETYPE_INCLUDE_DIR_freetype2 AND FREETYPE_H)
+    file(STRINGS "${FREETYPE_H}" freetype_version_str
          REGEX "^#[\t ]*define[\t ]+FREETYPE_(MAJOR|MINOR|PATCH)[\t ]+[0-9]+$")
 
     unset(FREETYPE_VERSION_STRING)

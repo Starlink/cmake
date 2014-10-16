@@ -90,6 +90,11 @@ void cmInstallTargetGenerator::GenerateScriptForConfig(std::ostream& os,
     case cmTarget::STATIC_LIBRARY: type = cmInstallType_STATIC_LIBRARY; break;
     case cmTarget::SHARED_LIBRARY: type = cmInstallType_SHARED_LIBRARY; break;
     case cmTarget::MODULE_LIBRARY: type = cmInstallType_MODULE_LIBRARY; break;
+    case cmTarget::INTERFACE_LIBRARY:
+      // Not reachable. We never create a cmInstallTargetGenerator for
+      // an INTERFACE_LIBRARY.
+      assert(!"INTERFACE_LIBRARY targets have no installable outputs.");
+      break;
     case cmTarget::OBJECT_LIBRARY:
     case cmTarget::UTILITY:
     case cmTarget::GLOBAL_TARGET:
@@ -204,6 +209,20 @@ void cmInstallTargetGenerator::GenerateScriptForConfig(std::ostream& os,
 
       // Tweaks apply to the binary inside the bundle.
       std::string to1 = toDir + targetNameReal;
+
+      filesFrom.push_back(from1);
+      filesTo.push_back(to1);
+      }
+    else if(this->Target->IsCFBundleOnApple())
+      {
+      // Install the whole app bundle directory.
+      type = cmInstallType_DIRECTORY;
+      literal_args += " USE_SOURCE_PERMISSIONS";
+
+      std::string targetNameBase = targetName.substr(0, targetName.find('/'));
+
+      std::string from1 = fromDirConfig + targetNameBase;
+      std::string to1 = toDir + targetName;
 
       filesFrom.push_back(from1);
       filesTo.push_back(to1);
@@ -323,9 +342,10 @@ cmInstallTargetGenerator::GetInstallFilename(const char* config) const
 }
 
 //----------------------------------------------------------------------------
-std::string cmInstallTargetGenerator::GetInstallFilename(cmTarget* target,
-                                                         const char* config,
-                                                         NameType nameType)
+std::string
+cmInstallTargetGenerator::GetInstallFilename(cmTarget const* target,
+                                             const char* config,
+                                             NameType nameType)
 {
   std::string fname;
   // Compute the name of the library.
@@ -407,10 +427,10 @@ cmInstallTargetGenerator
   std::string tws = tw.str();
   if(!tws.empty())
     {
-    os << indent << "IF(EXISTS \"" << file << "\" AND\n"
+    os << indent << "if(EXISTS \"" << file << "\" AND\n"
        << indent << "   NOT IS_SYMLINK \"" << file << "\")\n";
     os << tws;
-    os << indent << "ENDIF()\n";
+    os << indent << "endif()\n";
     }
 }
 
@@ -434,7 +454,7 @@ cmInstallTargetGenerator
     if(!tws.empty())
       {
       Indent indent2 = indent.Next().Next();
-      os << indent << "FOREACH(file\n";
+      os << indent << "foreach(file\n";
       for(std::vector<std::string>::const_iterator i = files.begin();
           i != files.end(); ++i)
         {
@@ -442,7 +462,7 @@ cmInstallTargetGenerator
         }
       os << indent2 << ")\n";
       os << tws;
-      os << indent << "ENDFOREACH()\n";
+      os << indent << "endforeach()\n";
       }
     }
 }
@@ -510,11 +530,12 @@ cmInstallTargetGenerator
   std::map<cmStdString, cmStdString> install_name_remap;
   if(cmComputeLinkInformation* cli = this->Target->GetLinkInformation(config))
     {
-    std::set<cmTarget*> const& sharedLibs = cli->GetSharedLibrariesLinked();
-    for(std::set<cmTarget*>::const_iterator j = sharedLibs.begin();
+    std::set<cmTarget const*> const& sharedLibs
+                                            = cli->GetSharedLibrariesLinked();
+    for(std::set<cmTarget const*>::const_iterator j = sharedLibs.begin();
         j != sharedLibs.end(); ++j)
       {
-      cmTarget* tgt = *j;
+      cmTarget const* tgt = *j;
 
       // The install_name of an imported target does not change.
       if(tgt->IsImported())
@@ -577,7 +598,7 @@ cmInstallTargetGenerator
   // install_name value and references.
   if(!new_id.empty() || !install_name_remap.empty())
     {
-    os << indent << "EXECUTE_PROCESS(COMMAND \"" << installNameTool;
+    os << indent << "execute_process(COMMAND \"" << installNameTool;
     os << "\"";
     if(!new_id.empty())
       {
@@ -626,7 +647,7 @@ cmInstallTargetGenerator
   // Write a rule to remove the installed file if its rpath is not the
   // new rpath.  This is needed for existing build/install trees when
   // the installed rpath changes but the file is not rebuilt.
-  os << indent << "FILE(RPATH_CHECK\n"
+  os << indent << "file(RPATH_CHECK\n"
      << indent << "     FILE \"" << toDestDirPath << "\"\n"
      << indent << "     RPATH \"" << newRpath << "\")\n";
 }
@@ -662,22 +683,36 @@ cmInstallTargetGenerator
     cli->GetRPath(oldRuntimeDirs, false);
     cli->GetRPath(newRuntimeDirs, true);
 
-    // Note: These are separate commands to avoid install_name_tool
-    // corruption on 10.6.
+    // Note: These paths are kept unique to avoid install_name_tool corruption.
+    std::set<std::string> runpaths;
     for(std::vector<std::string>::const_iterator i = oldRuntimeDirs.begin();
         i != oldRuntimeDirs.end(); ++i)
       {
-      os << indent << "execute_process(COMMAND " << installNameTool << "\n";
-      os << indent << "  -delete_rpath \"" << *i << "\"\n";
-      os << indent << "  \"" << toDestDirPath << "\")\n";
+      std::string runpath = this->Target->GetMakefile()->GetLocalGenerator()->
+        GetGlobalGenerator()->ExpandCFGIntDir(*i, config);
+
+      if(runpaths.find(runpath) == runpaths.end())
+        {
+        runpaths.insert(runpath);
+        os << indent << "execute_process(COMMAND " << installNameTool << "\n";
+        os << indent << "  -delete_rpath \"" << runpath << "\"\n";
+        os << indent << "  \"" << toDestDirPath << "\")\n";
+        }
       }
 
+    runpaths.clear();
     for(std::vector<std::string>::const_iterator i = newRuntimeDirs.begin();
         i != newRuntimeDirs.end(); ++i)
       {
-      os << indent << "execute_process(COMMAND " << installNameTool << "\n";
-      os << indent << "  -add_rpath \"" << *i << "\"\n";
-      os << indent << "  \"" << toDestDirPath << "\")\n";
+      std::string runpath = this->Target->GetMakefile()->GetLocalGenerator()->
+        GetGlobalGenerator()->ExpandCFGIntDir(*i, config);
+
+      if(runpaths.find(runpath) == runpaths.end())
+        {
+        os << indent << "execute_process(COMMAND " << installNameTool << "\n";
+        os << indent << "  -add_rpath \"" << runpath << "\"\n";
+        os << indent << "  \"" << toDestDirPath << "\")\n";
+        }
       }
     }
   else
@@ -697,12 +732,12 @@ cmInstallTargetGenerator
     // Write a rule to run chrpath to set the install-tree RPATH
     if(newRpath.empty())
       {
-      os << indent << "FILE(RPATH_REMOVE\n"
+      os << indent << "file(RPATH_REMOVE\n"
          << indent << "     FILE \"" << toDestDirPath << "\")\n";
       }
     else
       {
-      os << indent << "FILE(RPATH_CHANGE\n"
+      os << indent << "file(RPATH_CHANGE\n"
          << indent << "     FILE \"" << toDestDirPath << "\"\n"
          << indent << "     OLD_RPATH \"" << oldRpath << "\"\n"
          << indent << "     NEW_RPATH \"" << newRpath << "\")\n";
@@ -736,11 +771,11 @@ cmInstallTargetGenerator::AddStripRule(std::ostream& os,
     return;
     }
 
-  os << indent << "IF(CMAKE_INSTALL_DO_STRIP)\n";
-  os << indent << "  EXECUTE_PROCESS(COMMAND \""
+  os << indent << "if(CMAKE_INSTALL_DO_STRIP)\n";
+  os << indent << "  execute_process(COMMAND \""
      << this->Target->GetMakefile()->GetDefinition("CMAKE_STRIP")
      << "\" \"" << toDestDirPath << "\")\n";
-  os << indent << "ENDIF(CMAKE_INSTALL_DO_STRIP)\n";
+  os << indent << "endif()\n";
 }
 
 //----------------------------------------------------------------------------
@@ -769,6 +804,6 @@ cmInstallTargetGenerator::AddRanlibRule(std::ostream& os,
     return;
     }
 
-  os << indent << "EXECUTE_PROCESS(COMMAND \""
+  os << indent << "execute_process(COMMAND \""
      << ranlib << "\" \"" << toDestDirPath << "\")\n";
 }

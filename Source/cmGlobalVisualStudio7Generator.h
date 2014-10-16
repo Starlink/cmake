@@ -27,6 +27,8 @@ class cmGlobalVisualStudio7Generator : public cmGlobalVisualStudioGenerator
 {
 public:
   cmGlobalVisualStudio7Generator(const char* platformName = NULL);
+  ~cmGlobalVisualStudio7Generator();
+
   static cmGlobalGeneratorFactory* NewFactory() {
     return new cmGlobalGeneratorSimpleFactory
       <cmGlobalVisualStudio7Generator>(); }
@@ -58,14 +60,16 @@ public:
    * Try running cmake and building a file. This is used for dynamically
    * loaded commands, not as part of the usual build process.
    */
-  virtual std::string GenerateBuildCommand(const char* makeProgram,
-                                           const char *projectName,
-                                           const char *projectDir,
-                                           const char* additionalOptions,
-                                           const char *targetName,
-                                           const char* config,
-                                           bool ignoreErrors,
-                                           bool fast);
+  virtual void GenerateBuildCommand(
+    std::vector<std::string>& makeCommand,
+    const char* makeProgram,
+    const char* projectName,
+    const char* projectDir,
+    const char* targetName,
+    const char* config,
+    bool fast,
+    std::vector<std::string> const& makeOptions = std::vector<std::string>()
+    );
 
   /**
    * Generate the all required files for building this project/tree. This
@@ -101,8 +105,17 @@ public:
       LinkLibraryDependencies and link to .sln dependencies. */
   virtual bool NeedLinkLibraryDependencies(cmTarget&) { return false; }
 
+  const char* GetIntelProjectVersion();
+
+  virtual void FindMakeProgram(cmMakefile*);
+
 protected:
   virtual const char* GetIDEVersion() { return "7.0"; }
+
+  std::string const& GetDevEnvCommand();
+  virtual std::string FindDevEnvCommand();
+
+  static const char* ExternalProjectType(const char* location);
 
   static cmIDEFlagTable const* GetExtraFlagTableVS7();
   virtual void OutputSLNFile(cmLocalGenerator* root,
@@ -110,9 +123,11 @@ protected:
   virtual void WriteSLNFile(std::ostream& fout, cmLocalGenerator* root,
                             std::vector<cmLocalGenerator*>& generators);
   virtual void WriteProject(std::ostream& fout,
-                            const char* name, const char* path, cmTarget &t);
+                            const char* name, const char* path,
+                            cmTarget const& t);
   virtual void WriteProjectDepends(std::ostream& fout,
-                           const char* name, const char* path, cmTarget &t);
+                           const char* name, const char* path,
+                           cmTarget const&t);
   virtual void WriteProjectConfigurations(
     std::ostream& fout, const char* name, cmTarget::TargetType type,
     const std::set<std::string>& configsPartOfDefaultBuild,
@@ -121,7 +136,7 @@ protected:
                                       cmLocalGenerator* root);
   virtual void WriteSLNFooter(std::ostream& fout);
   virtual void WriteSLNHeader(std::ostream& fout);
-  virtual std::string WriteUtilityDepend(cmTarget* target);
+  virtual std::string WriteUtilityDepend(cmTarget const* target);
 
   virtual void WriteTargetsToSolution(
     std::ostream& fout,
@@ -147,7 +162,7 @@ protected:
   std::string ConvertToSolutionPath(const char* path);
 
   std::set<std::string> IsPartOfDefaultBuild(const char* project,
-                                             cmTarget* target);
+                                             cmTarget const* target);
   std::vector<std::string> Configurations;
   std::map<cmStdString, cmStdString> GUIDMap;
 
@@ -159,6 +174,12 @@ protected:
   // There is one SLN file per project.
   std::string CurrentProject;
   std::string PlatformName;
+
+private:
+  char* IntelProjectVersion;
+  std::string DevEnvCommand;
+  bool DevEnvCommandInitialized;
+  virtual std::string GetVSMakeProgram() { return this->GetDevEnvCommand(); }
 };
 
 #define CMAKE_CHECK_BUILD_SYSTEM_TARGET "ZERO_CHECK"

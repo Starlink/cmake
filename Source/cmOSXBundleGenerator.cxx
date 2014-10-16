@@ -18,10 +18,10 @@
 
 //----------------------------------------------------------------------------
 cmOSXBundleGenerator::
-cmOSXBundleGenerator(cmTarget* target,
+cmOSXBundleGenerator(cmGeneratorTarget* target,
                      const char* configName)
- : Target(target)
- , Makefile(target->GetMakefile())
+ : Target(target->Target)
+ , Makefile(target->Target->GetMakefile())
  , LocalGenerator(Makefile->GetLocalGenerator())
  , ConfigName(configName)
  , MacContentFolders(0)
@@ -178,7 +178,7 @@ void cmOSXBundleGenerator::CreateCFBundle(const std::string& targetName,
 
   // Configure the Info.plist file.  Note that it needs the executable name
   // to be set.
-  std::string plist =
+  std::string plist = root + "/" +
     this->Target->GetCFBundleDirectory(this->ConfigName, true);
   plist += "/Info.plist";
   this->LocalGenerator->GenerateAppleInfoPList(this->Target,

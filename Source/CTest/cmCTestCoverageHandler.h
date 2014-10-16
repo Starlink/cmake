@@ -70,6 +70,10 @@ private:
 
   //! Handle coverage using xdebug php coverage
   int HandlePHPCoverage(cmCTestCoverageHandlerContainer* cont);
+
+  //! Handle coverage for Python with coverage.py
+  int HandlePythonCoverage(cmCTestCoverageHandlerContainer* cont);
+
   //! Handle coverage for mumps
   int HandleMumpsCoverage(cmCTestCoverageHandlerContainer* cont);
 
@@ -128,7 +132,7 @@ private:
   // Label reading and writing methods.
   void LoadLabels();
   void LoadLabels(const char* dir);
-  void WriteXMLLabels(std::ofstream& os, std::string const& source);
+  void WriteXMLLabels(std::ostream& os, std::string const& source);
 
   // Label-based filtering.
   std::set<int> LabelFilter;

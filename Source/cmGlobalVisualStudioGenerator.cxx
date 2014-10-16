@@ -17,6 +17,7 @@
 #include "cmMakefile.h"
 #include "cmSourceFile.h"
 #include "cmTarget.h"
+#include <cmsys/Encoding.hxx>
 
 //----------------------------------------------------------------------------
 cmGlobalVisualStudioGenerator::cmGlobalVisualStudioGenerator()
@@ -128,9 +129,11 @@ cmGlobalVisualStudioGenerator
   // Count the number of object files with each name.  Note that
   // windows file names are not case sensitive.
   std::map<cmStdString, int> counts;
+  std::vector<cmSourceFile*> objectSources;
+  gt->GetObjectSources(objectSources);
   for(std::vector<cmSourceFile*>::const_iterator
-        si = gt->ObjectSources.begin();
-      si != gt->ObjectSources.end(); ++si)
+        si = objectSources.begin();
+      si != objectSources.end(); ++si)
     {
     cmSourceFile* sf = *si;
     std::string objectNameLower = cmSystemTools::LowerCase(
@@ -142,8 +145,8 @@ cmGlobalVisualStudioGenerator
   // For all source files producing duplicate names we need unique
   // object name computation.
   for(std::vector<cmSourceFile*>::const_iterator
-        si = gt->ObjectSources.begin();
-      si != gt->ObjectSources.end(); ++si)
+        si = objectSources.begin();
+      si != objectSources.end(); ++si)
     {
     cmSourceFile* sf = *si;
     std::string objectName =
@@ -151,10 +154,10 @@ cmGlobalVisualStudioGenerator
     objectName += ".obj";
     if(counts[cmSystemTools::LowerCase(objectName)] > 1)
       {
-      gt->ExplicitObjectName.insert(sf);
+      gt->AddExplicitObjectName(sf);
       objectName = lg->GetObjectFileNameWithoutTarget(*sf, dir_max);
       }
-    gt->Objects[sf] = objectName;
+    gt->AddObject(sf, objectName);
     }
 
   std::string dir = gt->Makefile->GetCurrentOutputDirectory();
@@ -314,7 +317,7 @@ std::string cmGlobalVisualStudioGenerator::GetUserMacrosRegKeyBase()
 }
 
 //----------------------------------------------------------------------------
-void cmGlobalVisualStudioGenerator::FillLinkClosure(cmTarget* target,
+void cmGlobalVisualStudioGenerator::FillLinkClosure(cmTarget const* target,
                                                     TargetSet& linked)
 {
   if(linked.insert(target).second)
@@ -347,8 +350,12 @@ cmGlobalVisualStudioGenerator::GetTargetLinkClosure(cmTarget* target)
 
 //----------------------------------------------------------------------------
 void cmGlobalVisualStudioGenerator::FollowLinkDepends(
-  cmTarget* target, std::set<cmTarget*>& linked)
+  cmTarget const* target, std::set<cmTarget const*>& linked)
 {
+  if(target->GetType() == cmTarget::INTERFACE_LIBRARY)
+    {
+    return;
+    }
   if(linked.insert(target).second &&
      target->GetType() == cmTarget::STATIC_LIBRARY)
     {
@@ -392,7 +399,7 @@ bool cmGlobalVisualStudioGenerator::ComputeTargetDepends()
 }
 
 //----------------------------------------------------------------------------
-static bool VSLinkable(cmTarget* t)
+static bool VSLinkable(cmTarget const* t)
 {
   return t->IsLinkable() || t->GetType() == cmTarget::OBJECT_LIBRARY;
 }
@@ -434,7 +441,7 @@ void cmGlobalVisualStudioGenerator::ComputeVSTargetDepends(cmTarget& target)
   // Collect implicit link dependencies (target_link_libraries).
   // Static libraries cannot depend on their link implementation
   // due to behavior (2), but they do not really need to.
-  std::set<cmTarget*> linkDepends;
+  std::set<cmTarget const*> linkDepends;
   if(target.GetType() != cmTarget::STATIC_LIBRARY)
     {
     for(TargetDependSet::const_iterator di = depends.begin();
@@ -449,7 +456,7 @@ void cmGlobalVisualStudioGenerator::ComputeVSTargetDepends(cmTarget& target)
     }
 
   // Collect explicit util dependencies (add_dependencies).
-  std::set<cmTarget*> utilDepends;
+  std::set<cmTarget const*> utilDepends;
   for(TargetDependSet::const_iterator di = depends.begin();
       di != depends.end(); ++di)
     {
@@ -469,18 +476,18 @@ void cmGlobalVisualStudioGenerator::ComputeVSTargetDepends(cmTarget& target)
     }
 
   // Emit link dependencies.
-  for(std::set<cmTarget*>::iterator di = linkDepends.begin();
+  for(std::set<cmTarget const*>::iterator di = linkDepends.begin();
       di != linkDepends.end(); ++di)
     {
-    cmTarget* dep = *di;
+    cmTarget const* dep = *di;
     vsTargetDepend.insert(dep->GetName());
     }
 
   // Emit util dependencies.  Possibly use intermediate targets.
-  for(std::set<cmTarget*>::iterator di = utilDepends.begin();
+  for(std::set<cmTarget const*>::iterator di = utilDepends.begin();
       di != utilDepends.end(); ++di)
     {
-    cmTarget* dep = *di;
+    cmTarget const* dep = *di;
     if(allowLinkable || !VSLinkable(dep) || linked.count(dep))
       {
       // Direct dependency allowed.
@@ -496,6 +503,19 @@ void cmGlobalVisualStudioGenerator::ComputeVSTargetDepends(cmTarget& target)
 }
 
 //----------------------------------------------------------------------------
+void cmGlobalVisualStudioGenerator::FindMakeProgram(cmMakefile* mf)
+{
+  // Visual Studio generators know how to lookup their build tool
+  // directly instead of needing a helper module to do it, so we
+  // do not actually need to put CMAKE_MAKE_PROGRAM into the cache.
+  if(cmSystemTools::IsOff(mf->GetDefinition("CMAKE_MAKE_PROGRAM")))
+    {
+    mf->AddDefinition("CMAKE_MAKE_PROGRAM",
+                      this->GetVSMakeProgram().c_str());
+    }
+}
+
+//----------------------------------------------------------------------------
 void cmGlobalVisualStudioGenerator::AddPlatformDefinitions(cmMakefile* mf)
 {
   if(this->AdditionalPlatformDefinition)
@@ -505,7 +525,8 @@ void cmGlobalVisualStudioGenerator::AddPlatformDefinitions(cmMakefile* mf)
 }
 
 //----------------------------------------------------------------------------
-std::string cmGlobalVisualStudioGenerator::GetUtilityDepend(cmTarget* target)
+std::string
+cmGlobalVisualStudioGenerator::GetUtilityDepend(cmTarget const* target)
 {
   UtilityDependsMap::iterator i = this->UtilityDepends.find(target);
   if(i == this->UtilityDepends.end())
@@ -542,52 +563,53 @@ bool IsVisualStudioMacrosFileRegistered(const std::string& macrosFile,
 
   keyname = regKeyBase + "\\OtherProjects7";
   hkey = NULL;
-  result = RegOpenKeyEx(HKEY_CURRENT_USER, keyname.c_str(),
-                        0, KEY_READ, &hkey);
+  result = RegOpenKeyExW(HKEY_CURRENT_USER,
+                         cmsys::Encoding::ToWide(keyname).c_str(),
+                         0, KEY_READ, &hkey);
   if (ERROR_SUCCESS == result)
     {
     // Iterate the subkeys and look for the values of interest in each subkey:
-    CHAR subkeyname[256];
-    DWORD cch_subkeyname = sizeof(subkeyname)/sizeof(subkeyname[0]);
-    CHAR keyclass[256];
-    DWORD cch_keyclass = sizeof(keyclass)/sizeof(keyclass[0]);
+    wchar_t subkeyname[256];
+    DWORD cch_subkeyname = sizeof(subkeyname)*sizeof(subkeyname[0]);
+    wchar_t keyclass[256];
+    DWORD cch_keyclass = sizeof(keyclass)*sizeof(keyclass[0]);
     FILETIME lastWriteTime;
     lastWriteTime.dwHighDateTime = 0;
     lastWriteTime.dwLowDateTime = 0;
 
-    while (ERROR_SUCCESS == RegEnumKeyEx(hkey, index, subkeyname,
+    while (ERROR_SUCCESS == RegEnumKeyExW(hkey, index, subkeyname,
                                          &cch_subkeyname,
       0, keyclass, &cch_keyclass, &lastWriteTime))
       {
       // Open the subkey and query the values of interest:
       HKEY hsubkey = NULL;
-      result = RegOpenKeyEx(hkey, subkeyname, 0, KEY_READ, &hsubkey);
+      result = RegOpenKeyExW(hkey, subkeyname, 0, KEY_READ, &hsubkey);
       if (ERROR_SUCCESS == result)
         {
         DWORD valueType = REG_SZ;
-        CHAR data1[256];
-        DWORD cch_data1 = sizeof(data1)/sizeof(data1[0]);
-        RegQueryValueEx(hsubkey, "Path", 0, &valueType,
+        wchar_t data1[256];
+        DWORD cch_data1 = sizeof(data1)*sizeof(data1[0]);
+        RegQueryValueExW(hsubkey, L"Path", 0, &valueType,
                         (LPBYTE) &data1[0], &cch_data1);
 
         DWORD data2 = 0;
         DWORD cch_data2 = sizeof(data2);
-        RegQueryValueEx(hsubkey, "Security", 0, &valueType,
+        RegQueryValueExW(hsubkey, L"Security", 0, &valueType,
                         (LPBYTE) &data2, &cch_data2);
 
         DWORD data3 = 0;
         DWORD cch_data3 = sizeof(data3);
-        RegQueryValueEx(hsubkey, "StorageFormat", 0, &valueType,
+        RegQueryValueExW(hsubkey, L"StorageFormat", 0, &valueType,
                         (LPBYTE) &data3, &cch_data3);
 
-        s2 = cmSystemTools::LowerCase(data1);
+        s2 = cmSystemTools::LowerCase(cmsys::Encoding::ToNarrow(data1));
         cmSystemTools::ConvertToUnixSlashes(s2);
         if (s2 == s1)
           {
           macrosRegistered = true;
           }
 
-        std::string fullname(data1);
+        std::string fullname = cmsys::Encoding::ToNarrow(data1);
         std::string filename;
         std::string filepath;
         std::string filepathname;
@@ -619,8 +641,8 @@ bool IsVisualStudioMacrosFileRegistered(const std::string& macrosFile,
         }
 
       ++index;
-      cch_subkeyname = sizeof(subkeyname)/sizeof(subkeyname[0]);
-      cch_keyclass = sizeof(keyclass)/sizeof(keyclass[0]);
+      cch_subkeyname = sizeof(subkeyname)*sizeof(subkeyname[0]);
+      cch_keyclass = sizeof(keyclass)*sizeof(keyclass[0]);
       lastWriteTime.dwHighDateTime = 0;
       lastWriteTime.dwLowDateTime = 0;
       }
@@ -645,27 +667,28 @@ bool IsVisualStudioMacrosFileRegistered(const std::string& macrosFile,
 
   keyname = regKeyBase + "\\RecordingProject7";
   hkey = NULL;
-  result = RegOpenKeyEx(HKEY_CURRENT_USER, keyname.c_str(),
-                        0, KEY_READ, &hkey);
+  result = RegOpenKeyExW(HKEY_CURRENT_USER,
+                         cmsys::Encoding::ToWide(keyname).c_str(),
+                         0, KEY_READ, &hkey);
   if (ERROR_SUCCESS == result)
     {
     DWORD valueType = REG_SZ;
-    CHAR data1[256];
-    DWORD cch_data1 = sizeof(data1)/sizeof(data1[0]);
-    RegQueryValueEx(hkey, "Path", 0, &valueType,
+    wchar_t data1[256];
+    DWORD cch_data1 = sizeof(data1)*sizeof(data1[0]);
+    RegQueryValueExW(hkey, L"Path", 0, &valueType,
                     (LPBYTE) &data1[0], &cch_data1);
 
     DWORD data2 = 0;
     DWORD cch_data2 = sizeof(data2);
-    RegQueryValueEx(hkey, "Security", 0, &valueType,
+    RegQueryValueExW(hkey, L"Security", 0, &valueType,
                     (LPBYTE) &data2, &cch_data2);
 
     DWORD data3 = 0;
     DWORD cch_data3 = sizeof(data3);
-    RegQueryValueEx(hkey, "StorageFormat", 0, &valueType,
+    RegQueryValueExW(hkey, L"StorageFormat", 0, &valueType,
                     (LPBYTE) &data3, &cch_data3);
 
-    s2 = cmSystemTools::LowerCase(data1);
+    s2 = cmSystemTools::LowerCase(cmsys::Encoding::ToNarrow(data1));
     cmSystemTools::ConvertToUnixSlashes(s2);
     if (s2 == s1)
       {
@@ -697,24 +720,27 @@ void WriteVSMacrosFileRegistryEntry(
 {
   std::string keyname = regKeyBase + "\\OtherProjects7";
   HKEY hkey = NULL;
-  LONG result = RegOpenKeyEx(HKEY_CURRENT_USER, keyname.c_str(), 0,
+  LONG result = RegOpenKeyExW(HKEY_CURRENT_USER,
+    cmsys::Encoding::ToWide(keyname).c_str(), 0,
     KEY_READ|KEY_WRITE, &hkey);
   if (ERROR_SUCCESS == result)
     {
     // Create the subkey and set the values of interest:
     HKEY hsubkey = NULL;
-    char lpClass[] = "";
-    result = RegCreateKeyEx(hkey, nextAvailableSubKeyName.c_str(), 0,
-                            lpClass, 0, KEY_READ|KEY_WRITE, 0, &hsubkey, 0);
+    wchar_t lpClass[] = L"";
+    result = RegCreateKeyExW(hkey,
+      cmsys::Encoding::ToWide(nextAvailableSubKeyName).c_str(), 0,
+      lpClass, 0, KEY_READ|KEY_WRITE, 0, &hsubkey, 0);
     if (ERROR_SUCCESS == result)
       {
       DWORD dw = 0;
 
       std::string s(macrosFile);
       cmSystemTools::ReplaceString(s, "/", "\\");
+      std::wstring ws = cmsys::Encoding::ToWide(s);
 
-      result = RegSetValueEx(hsubkey, "Path", 0, REG_SZ, (LPBYTE) s.c_str(),
-        static_cast<DWORD>(strlen(s.c_str()) + 1));
+      result = RegSetValueExW(hsubkey, L"Path", 0, REG_SZ, (LPBYTE)ws.c_str(),
+        static_cast<DWORD>(ws.size() + 1)*sizeof(wchar_t));
       if (ERROR_SUCCESS != result)
         {
         std::cout << "error result 1: " << result << std::endl;
@@ -724,7 +750,7 @@ void WriteVSMacrosFileRegistryEntry(
       // Security value is always "1" for sample macros files (seems to be "2"
       // if you put the file somewhere outside the standard VSMacros folder)
       dw = 1;
-      result = RegSetValueEx(hsubkey, "Security",
+      result = RegSetValueExW(hsubkey, L"Security",
                              0, REG_DWORD, (LPBYTE) &dw, sizeof(DWORD));
       if (ERROR_SUCCESS != result)
         {
@@ -734,7 +760,7 @@ void WriteVSMacrosFileRegistryEntry(
 
       // StorageFormat value is always "0" for sample macros files
       dw = 0;
-      result = RegSetValueEx(hsubkey, "StorageFormat",
+      result = RegSetValueExW(hsubkey, L"StorageFormat",
                              0, REG_DWORD, (LPBYTE) &dw, sizeof(DWORD));
       if (ERROR_SUCCESS != result)
         {
@@ -822,7 +848,8 @@ void RegisterVisualStudioMacros(const std::string& macrosFile,
       }
     }
 }
-bool cmGlobalVisualStudioGenerator::TargetIsFortranOnly(cmTarget& target)
+bool
+cmGlobalVisualStudioGenerator::TargetIsFortranOnly(cmTarget const& target)
 {
   // check to see if this is a fortran build
   std::set<cmStdString> languages;
@@ -874,4 +901,21 @@ cmGlobalVisualStudioGenerator::OrderedTargetDependSet
     {
     this->insert(*ti);
     }
+}
+
+std::string cmGlobalVisualStudioGenerator::ExpandCFGIntDir(
+  const std::string& str,
+  const std::string& config) const
+{
+  std::string replace = GetCMakeCFGIntDir();
+
+  std::string tmp = str;
+  for(std::string::size_type i = tmp.find(replace);
+      i != std::string::npos;
+      i = tmp.find(replace, i))
+    {
+    tmp.replace(i, replace.size(), config);
+    i += config.size();
+    }
+  return tmp;
 }

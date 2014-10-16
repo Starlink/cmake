@@ -1,7 +1,7 @@
 #
 # A more complex test case
 #
-set(CMAKE_BACKWARDS_COMPATIBILITY 1.4)
+cmake_minimum_required(VERSION 2.4)
 project (Complex)
 
 # Try setting a new policy.  The IF test is for coverage.
@@ -198,12 +198,12 @@ make_directory("${Complex_BINARY_DIR}/make_dir")
 configure_file(
   ${Complex_SOURCE_DIR}/Library/dummy
   ${Complex_BINARY_DIR}/Library/dummylib.lib
-  COPYONLY IMMEDIATE)
+  COPYONLY)
 foreach (ext ${CMAKE_SHLIB_SUFFIX};.so;.a;.sl)
   configure_file(
     ${Complex_SOURCE_DIR}/Library/dummy
     ${Complex_BINARY_DIR}/Library/libdummylib${ext}
-    COPYONLY IMMEDIATE)
+    COPYONLY)
 endforeach ()
 
 find_library(FIND_DUMMY_LIB
@@ -251,7 +251,7 @@ if (WIN32)
     configure_file(
       ${Complex_SOURCE_DIR}/Library/dummy
       "${dir}/${file}"
-      COPYONLY IMMEDIATE)
+      COPYONLY)
     exec_program(${CMAKE_COMMAND} ARGS "-E write_regv \"${hkey}\" \"${dir}\"")
     find_path(REGISTRY_TEST_PATH
       ${file}

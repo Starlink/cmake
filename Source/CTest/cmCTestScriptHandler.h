@@ -110,7 +110,6 @@ public:
   void Initialize();
 
   void CreateCMake();
-  void GetCommandDocumentation(std::vector<cmDocumentationEntry>& v) const;
   cmake* GetCMake() { return this->CMake;}
 private:
   // reads in a script
@@ -135,6 +134,9 @@ private:
 
   // Add ctest command
   void AddCTestCommand(cmCTestCommand* command);
+
+  // Try to remove the binary directory once
+  static bool TryToRemoveBinaryDirectoryOnce(const std::string& directoryPath);
 
   std::vector<cmStdString> ConfigurationScripts;
   std::vector<bool> ScriptProcessScope;

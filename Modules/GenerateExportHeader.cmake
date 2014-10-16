@@ -1,133 +1,182 @@
-# - Function for generation of export macros for libraries
-# This module provides the function GENERATE_EXPORT_HEADER() and the
-# accompanying ADD_COMPILER_EXPORT_FLAGS() function.
+#.rst:
+# GenerateExportHeader
+# --------------------
 #
-# The GENERATE_EXPORT_HEADER function can be used to generate a file suitable
-# for preprocessor inclusion which contains EXPORT macros to be used in
-# library classes.
+# Function for generation of export macros for libraries
 #
-# GENERATE_EXPORT_HEADER( LIBRARY_TARGET
-#             [BASE_NAME <base_name>]
-#             [EXPORT_MACRO_NAME <export_macro_name>]
-#             [EXPORT_FILE_NAME <export_file_name>]
-#             [DEPRECATED_MACRO_NAME <deprecated_macro_name>]
-#             [NO_EXPORT_MACRO_NAME <no_export_macro_name>]
-#             [STATIC_DEFINE <static_define>]
-#             [NO_DEPRECATED_MACRO_NAME <no_deprecated_macro_name>]
-#             [DEFINE_NO_DEPRECATED]
-#             [PREFIX_NAME <prefix_name>]
-# )
+# This module provides the function GENERATE_EXPORT_HEADER().
 #
-# ADD_COMPILER_EXPORT_FLAGS( [<output_variable>] )
+# The ``GENERATE_EXPORT_HEADER`` function can be used to generate a file
+# suitable for preprocessor inclusion which contains EXPORT macros to be
+# used in library classes::
 #
-# By default GENERATE_EXPORT_HEADER() generates macro names in a file name
-# determined by the name of the library. The ADD_COMPILER_EXPORT_FLAGS function
-# adds -fvisibility=hidden to CMAKE_CXX_FLAGS if supported, and is a no-op on
-# Windows which does not need extra compiler flags for exporting support. You
-# may optionally pass a single argument to ADD_COMPILER_EXPORT_FLAGS that will
-# be populated with the required CXX_FLAGS required to enable visibility support
-# for the compiler/architecture in use.
+#    GENERATE_EXPORT_HEADER( LIBRARY_TARGET
+#              [BASE_NAME <base_name>]
+#              [EXPORT_MACRO_NAME <export_macro_name>]
+#              [EXPORT_FILE_NAME <export_file_name>]
+#              [DEPRECATED_MACRO_NAME <deprecated_macro_name>]
+#              [NO_EXPORT_MACRO_NAME <no_export_macro_name>]
+#              [STATIC_DEFINE <static_define>]
+#              [NO_DEPRECATED_MACRO_NAME <no_deprecated_macro_name>]
+#              [DEFINE_NO_DEPRECATED]
+#              [PREFIX_NAME <prefix_name>]
+#    )
 #
-# This means that in the simplest case, users of these functions will be
-# equivalent to:
 #
-#   add_compiler_export_flags()
-#   add_library(somelib someclass.cpp)
-#   generate_export_header(somelib)
-#   install(TARGETS somelib DESTINATION ${LIBRARY_INSTALL_DIR})
-#   install(FILES
-#    someclass.h
-#    ${PROJECT_BINARY_DIR}/somelib_export.h DESTINATION ${INCLUDE_INSTALL_DIR}
-#   )
+# The target properties :prop_tgt:`CXX_VISIBILITY_PRESET <<LANG>_VISIBILITY_PRESET>`
+# and :prop_tgt:`VISIBILITY_INLINES_HIDDEN` can be used to add the appropriate
+# compile flags for targets.  See the documentation of those target properties,
+# and the convenience variables
+# :variable:`CMAKE_CXX_VISIBILITY_PRESET <CMAKE_<LANG>_VISIBILITY_PRESET>` and
+# :variable:`CMAKE_VISIBILITY_INLINES_HIDDEN`.
+#
+# By default ``GENERATE_EXPORT_HEADER()`` generates macro names in a file
+# name determined by the name of the library.  This means that in the
+# simplest case, users of ``GenerateExportHeader`` will be equivalent to:
+#
+# .. code-block:: cmake
+#
+#    set(CMAKE_CXX_VISIBILITY_PRESET hidden)
+#    set(CMAKE_VISIBILITY_INLINES_HIDDEN 1)
+#    add_library(somelib someclass.cpp)
+#    generate_export_header(somelib)
+#    install(TARGETS somelib DESTINATION ${LIBRARY_INSTALL_DIR})
+#    install(FILES
+#     someclass.h
+#     ${PROJECT_BINARY_DIR}/somelib_export.h DESTINATION ${INCLUDE_INSTALL_DIR}
+#    )
+#
 #
 # And in the ABI header files:
 #
-#   #include "somelib_export.h"
-#   class SOMELIB_EXPORT SomeClass {
-#     ...
-#   };
+# .. code-block:: c++
 #
-# The CMake fragment will generate a file in the ${CMAKE_CURRENT_BINARY_DIR}
-# called somelib_export.h containing the macros SOMELIB_EXPORT, SOMELIB_NO_EXPORT,
-# SOMELIB_DEPRECATED, SOMELIB_DEPRECATED_EXPORT and SOMELIB_DEPRECATED_NO_EXPORT.
-# The resulting file should be installed with other headers in the library.
+#    #include "somelib_export.h"
+#    class SOMELIB_EXPORT SomeClass {
+#      ...
+#    };
 #
-# The BASE_NAME argument can be used to override the file name and the names
-# used for the macros
 #
-#   add_library(somelib someclass.cpp)
-#   generate_export_header(somelib
-#     BASE_NAME other_name
-#   )
+# The CMake fragment will generate a file in the
+# ``${CMAKE_CURRENT_BINARY_DIR}`` called ``somelib_export.h`` containing the
+# macros ``SOMELIB_EXPORT``, ``SOMELIB_NO_EXPORT``, ``SOMELIB_DEPRECATED``,
+# ``SOMELIB_DEPRECATED_EXPORT`` and ``SOMELIB_DEPRECATED_NO_EXPORT``.  The
+# resulting file should be installed with other headers in the library.
 #
-# Generates a file called other_name_export.h containing the macros
-# OTHER_NAME_EXPORT, OTHER_NAME_NO_EXPORT and OTHER_NAME_DEPRECATED etc.
+# The ``BASE_NAME`` argument can be used to override the file name and the
+# names used for the macros:
 #
-# The BASE_NAME may be overridden by specifiying other options in the function.
-# For example:
+# .. code-block:: cmake
 #
-#   add_library(somelib someclass.cpp)
-#   generate_export_header(somelib
-#     EXPORT_MACRO_NAME OTHER_NAME_EXPORT
-#   )
+#    add_library(somelib someclass.cpp)
+#    generate_export_header(somelib
+#      BASE_NAME other_name
+#    )
 #
-# creates the macro OTHER_NAME_EXPORT instead of SOMELIB_EXPORT, but other macros
-# and the generated file name is as default.
 #
-#   add_library(somelib someclass.cpp)
-#   generate_export_header(somelib
-#     DEPRECATED_MACRO_NAME KDE_DEPRECATED
-#   )
+# Generates a file called ``other_name_export.h`` containing the macros
+# ``OTHER_NAME_EXPORT``, ``OTHER_NAME_NO_EXPORT`` and ``OTHER_NAME_DEPRECATED``
+# etc.
 #
-# creates the macro KDE_DEPRECATED instead of SOMELIB_DEPRECATED.
+# The ``BASE_NAME`` may be overridden by specifiying other options in the
+# function.  For example:
 #
-# If LIBRARY_TARGET is a static library, macros are defined without values.
+# .. code-block:: cmake
 #
-# If the same sources are used to create both a shared and a static library, the
-# uppercased symbol ${BASE_NAME}_STATIC_DEFINE should be used when building the
-# static library
+#    add_library(somelib someclass.cpp)
+#    generate_export_header(somelib
+#      EXPORT_MACRO_NAME OTHER_NAME_EXPORT
+#    )
 #
-#   add_library(shared_variant SHARED ${lib_SRCS})
-#   add_library(static_variant ${lib_SRCS})
-#   generate_export_header(shared_variant BASE_NAME libshared_and_static)
-#   set_target_properties(static_variant PROPERTIES
-#     COMPILE_FLAGS -DLIBSHARED_AND_STATIC_STATIC_DEFINE)
 #
-# This will cause the export macros to expand to nothing when building the
-# static library.
+# creates the macro ``OTHER_NAME_EXPORT`` instead of ``SOMELIB_EXPORT``, but
+# other macros and the generated file name is as default:
 #
-# If DEFINE_NO_DEPRECATED is specified, then a macro ${BASE_NAME}_NO_DEPRECATED
-# will be defined
-# This macro can be used to remove deprecated code from preprocessor output.
+# .. code-block:: cmake
 #
-#   option(EXCLUDE_DEPRECATED "Exclude deprecated parts of the library" FALSE)
-#   if (EXCLUDE_DEPRECATED)
-#     set(NO_BUILD_DEPRECATED DEFINE_NO_DEPRECATED)
-#   endif()
-#   generate_export_header(somelib ${NO_BUILD_DEPRECATED})
+#    add_library(somelib someclass.cpp)
+#    generate_export_header(somelib
+#      DEPRECATED_MACRO_NAME KDE_DEPRECATED
+#    )
+#
+#
+# creates the macro ``KDE_DEPRECATED`` instead of ``SOMELIB_DEPRECATED``.
+#
+# If ``LIBRARY_TARGET`` is a static library, macros are defined without
+# values.
+#
+# If the same sources are used to create both a shared and a static
+# library, the uppercased symbol ``${BASE_NAME}_STATIC_DEFINE`` should be
+# used when building the static library:
+#
+# .. code-block:: cmake
+#
+#    add_library(shared_variant SHARED ${lib_SRCS})
+#    add_library(static_variant ${lib_SRCS})
+#    generate_export_header(shared_variant BASE_NAME libshared_and_static)
+#    set_target_properties(static_variant PROPERTIES
+#      COMPILE_FLAGS -DLIBSHARED_AND_STATIC_STATIC_DEFINE)
+#
+# This will cause the export macros to expand to nothing when building
+# the static library.
+#
+# If ``DEFINE_NO_DEPRECATED`` is specified, then a macro
+# ``${BASE_NAME}_NO_DEPRECATED`` will be defined This macro can be used to
+# remove deprecated code from preprocessor output:
+#
+# .. code-block:: cmake
+#
+#    option(EXCLUDE_DEPRECATED "Exclude deprecated parts of the library" FALSE)
+#    if (EXCLUDE_DEPRECATED)
+#      set(NO_BUILD_DEPRECATED DEFINE_NO_DEPRECATED)
+#    endif()
+#    generate_export_header(somelib ${NO_BUILD_DEPRECATED})
+#
 #
 # And then in somelib:
 #
-#   class SOMELIB_EXPORT SomeClass
-#   {
-#   public:
-#   #ifndef SOMELIB_NO_DEPRECATED
-#     SOMELIB_DEPRECATED void oldMethod();
-#   #endif
-#   };
+# .. code-block:: c++
 #
-#   #ifndef SOMELIB_NO_DEPRECATED
-#   void SomeClass::oldMethod() {  }
-#   #endif
+#    class SOMELIB_EXPORT SomeClass
+#    {
+#    public:
+#    #ifndef SOMELIB_NO_DEPRECATED
+#      SOMELIB_DEPRECATED void oldMethod();
+#    #endif
+#    };
 #
-# If PREFIX_NAME is specified, the argument will be used as a prefix to all
-# generated macros.
+# .. code-block:: c++
+#
+#    #ifndef SOMELIB_NO_DEPRECATED
+#    void SomeClass::oldMethod() {  }
+#    #endif
+#
+#
+# If ``PREFIX_NAME`` is specified, the argument will be used as a prefix to
+# all generated macros.
 #
 # For example:
 #
-#   generate_export_header(somelib PREFIX_NAME VTK_)
+# .. code-block:: cmake
 #
-# Generates the macros VTK_SOMELIB_EXPORT etc.
+#    generate_export_header(somelib PREFIX_NAME VTK_)
+#
+# Generates the macros ``VTK_SOMELIB_EXPORT`` etc.
+#
+# ::
+#
+#    ADD_COMPILER_EXPORT_FLAGS( [<output_variable>] )
+#
+# The ``ADD_COMPILER_EXPORT_FLAGS`` function adds ``-fvisibility=hidden`` to
+# :variable:`CMAKE_CXX_FLAGS <CMAKE_<LANG>_FLAGS>` if supported, and is a no-op
+# on Windows which does not need extra compiler flags for exporting support.
+# You may optionally pass a single argument to ``ADD_COMPILER_EXPORT_FLAGS``
+# that will be populated with the ``CXX_FLAGS`` required to enable visibility
+# support for the compiler/architecture in use.
+#
+# This function is deprecated.  Set the target properties
+# :prop_tgt:`CXX_VISIBILITY_PRESET <<LANG>_VISIBILITY_PRESET>` and
+# :prop_tgt:`VISIBILITY_INLINES_HIDDEN` instead.
 
 #=============================================================================
 # Copyright 2011 Stephen Kelly <steveire@gmail.com>
@@ -326,6 +375,9 @@ function(GENERATE_EXPORT_HEADER TARGET_LIBRARY)
 endfunction()
 
 function(add_compiler_export_flags)
+  if(NOT CMAKE_MINIMUM_REQUIRED_VERSION VERSION_LESS 2.8.12)
+    message(DEPRECATION "The add_compiler_export_flags function is obsolete. Use the CXX_VISIBILITY_PRESET and VISIBILITY_INLINES_HIDDEN target properties instead.")
+  endif()
 
   _test_compiler_hidden_visibility()
   _test_compiler_has_deprecated()

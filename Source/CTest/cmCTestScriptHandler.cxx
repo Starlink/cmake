@@ -22,6 +22,7 @@
 
 //#include <cmsys/RegularExpression.hxx>
 #include <cmsys/Process.h>
+#include <cmsys/Directory.hxx>
 
 // used for sleep
 #ifdef _WIN32
@@ -221,13 +222,13 @@ int cmCTestScriptHandler::ExecuteScript(const std::string& total_script_arg)
   // execute the script passing in the arguments to the script as well as the
   // arguments from this invocation of cmake
   std::vector<const char*> argv;
-  argv.push_back(this->CTest->GetCTestExecutable());
+  argv.push_back(cmSystemTools::GetCTestCommand().c_str());
   argv.push_back("-SR");
   argv.push_back(total_script_arg.c_str());
 
   cmCTestLog(this->CTest, HANDLER_VERBOSE_OUTPUT,
              "Executable for CTest is: " <<
-             this->CTest->GetCTestExecutable() << "\n");
+             cmSystemTools::GetCTestCommand() << "\n");
 
   // now pass through all the other arguments
   std::vector<cmStdString> &initArgs =
@@ -361,12 +362,6 @@ void cmCTestScriptHandler::CreateCMake()
   this->AddCTestCommand(new cmCTestUploadCommand);
 }
 
-void cmCTestScriptHandler::GetCommandDocumentation(
-                                    std::vector<cmDocumentationEntry>& v) const
-{
-  this->CMake->GetCommandDocumentation(v);
-}
-
 //----------------------------------------------------------------------
 // this sets up some variables for the script to use, creates the required
 // cmake instance and generators, and then reads in the script
@@ -402,9 +397,9 @@ int cmCTestScriptHandler::ReadInScript(const std::string& total_script_arg)
   this->Makefile->AddDefinition("CTEST_SCRIPT_NAME",
                             cmSystemTools::GetFilenameName(script).c_str());
   this->Makefile->AddDefinition("CTEST_EXECUTABLE_NAME",
-                            this->CTest->GetCTestExecutable());
+                                cmSystemTools::GetCTestCommand().c_str());
   this->Makefile->AddDefinition("CMAKE_EXECUTABLE_NAME",
-                            this->CTest->GetCMakeExecutable());
+                                cmSystemTools::GetCMakeCommand().c_str());
   this->Makefile->AddDefinition("CTEST_RUN_CURRENT_SCRIPT", true);
   this->UpdateElapsedTime();
 
@@ -1062,15 +1057,71 @@ bool cmCTestScriptHandler::EmptyBinaryDirectory(const char *sname)
     return false;
     }
 
+  // consider non existing target directory a success
+  if(!cmSystemTools::FileExists(sname))
+    {
+    return true;
+    }
+
   // try to avoid deleting directories that we shouldn't
   std::string check = sname;
   check += "/CMakeCache.txt";
-  if(cmSystemTools::FileExists(check.c_str()) &&
-     !cmSystemTools::RemoveADirectory(sname))
+
+  if(!cmSystemTools::FileExists(check.c_str()))
     {
     return false;
     }
-  return true;
+
+  for(int i = 0; i < 5; ++i)
+    {
+    if(TryToRemoveBinaryDirectoryOnce(sname))
+      {
+      return true;
+      }
+    cmSystemTools::Delay(100);
+    }
+
+  return false;
+}
+
+//-------------------------------------------------------------------------
+bool cmCTestScriptHandler::TryToRemoveBinaryDirectoryOnce(
+  const std::string& directoryPath)
+{
+  cmsys::Directory directory;
+  directory.Load(directoryPath.c_str());
+
+  for(unsigned long i = 0; i < directory.GetNumberOfFiles(); ++i)
+    {
+    std::string path = directory.GetFile(i);
+
+    if(path == "." || path == ".." || path == "CMakeCache.txt")
+      {
+      continue;
+      }
+
+    std::string fullPath = directoryPath + std::string("/") + path;
+
+    bool isDirectory = cmSystemTools::FileIsDirectory(fullPath.c_str()) &&
+      !cmSystemTools::FileIsSymlink(fullPath.c_str());
+
+    if(isDirectory)
+      {
+      if(!cmSystemTools::RemoveADirectory(fullPath.c_str()))
+        {
+        return false;
+        }
+      }
+    else
+      {
+      if(!cmSystemTools::RemoveFile(fullPath.c_str()))
+        {
+        return false;
+        }
+      }
+  }
+
+  return cmSystemTools::RemoveADirectory(directoryPath.c_str());
 }
 
 //-------------------------------------------------------------------------
