@@ -110,3 +110,7 @@ Tests/CTestTestMemcheck/NoLogDummyChecker/valgrind
 Tests/CTestTestMemcheck/memcheck_fail
 Tests/CTestTestMemcheck/purify
 Tests/CTestTestMemcheck/valgrind
+Source/cmCommands.cxx
+Tests/FindPackageModeMakefileTest/cmakeExecutable.mk
+Tests/X11/HelloWorldX11
+Tests/X11/UseX11
