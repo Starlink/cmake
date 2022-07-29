@@ -1,5 +1,5 @@
 
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 2.8.12)
 
 project(target_compile_definitions)
 
@@ -25,6 +25,22 @@ target_compile_definitions(consumer
 target_compile_definitions(consumer
   PRIVATE
 )
+
+target_sources(consumer PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/consumer.c"
+)
+target_compile_definitions(consumer
+  PRIVATE
+    CONSUMER_LANG_$<COMPILE_LANGUAGE>
+    LANG_IS_CXX=$<COMPILE_LANGUAGE:CXX>
+    LANG_IS_C=$<COMPILE_LANGUAGE:C>
+    LANG_IS_C_OR_CXX=$<COMPILE_LANGUAGE:C,CXX>
+)
+if(CMAKE_GENERATOR MATCHES "Visual Studio|Xcode")
+  target_compile_definitions(consumer
+    PRIVATE TEST_LANG_DEFINES_FOR_VISUAL_STUDIO_OR_XCODE
+  )
+endif()
 
 add_definitions(-DSOME_DEF)
 add_library(imp UNKNOWN IMPORTED)

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 2.8.12)
 
 if (NOT MAJOR_TEST_MODULE OR NOT MAJOR_TEST_VERSION)
   message(FATAL_ERROR "test selection variables not set up")
@@ -20,13 +20,13 @@ endif ()
 
 string(TOUPPER "${MAJOR_TEST_MODULE}" MODULE_UPPER)
 
-if ( ( ${MAJOR_TEST_MODULE}_FOUND OR ${MODULE_UPPER}_FOUND ) AND "${VERSION_VAR}")
+if ( ( ${MAJOR_TEST_MODULE}_FOUND OR ${MODULE_UPPER}_FOUND ) AND ${VERSION_VAR})
   message(STATUS "${VERSION_VAR} is '${${VERSION_VAR}}'")
-  if ("${VERSION_VAR}" VERSION_LESS MAJOR_TEST_VERSION)
+  if (${VERSION_VAR} VERSION_LESS MAJOR_TEST_VERSION)
     message(SEND_ERROR "Found version ${${VERSION_VAR}} is less than requested major version ${MAJOR_TEST_VERSION}")
   endif ()
   math(EXPR V_PLUS_ONE "${MAJOR_TEST_VERSION} + 1")
-  if ("${VERSION_VAR}" VERSION_GREATER V_PLUS_ONE)
+  if (${VERSION_VAR} VERSION_GREATER V_PLUS_ONE)
     message(SEND_ERROR "Found version ${${VERSION_VAR}} is greater than requested major version ${MAJOR_TEST_VERSION}")
   endif ()
 endif ()

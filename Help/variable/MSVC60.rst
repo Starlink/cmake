@@ -1,6 +1,8 @@
 MSVC60
 ------
 
-True when using Microsoft Visual C 6.0
+Discouraged.  Use the :variable:`MSVC_VERSION` variable instead.
 
-Set to true when the compiler is version 6.0 of Microsoft Visual C.
+``True`` when using Microsoft Visual C++ 6.0.
+
+Set to ``true`` when the compiler is version 6.0 of Microsoft Visual C++.

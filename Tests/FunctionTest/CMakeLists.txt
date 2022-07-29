@@ -1,5 +1,5 @@
 # a simple C only test case
-cmake_minimum_required (VERSION 2.6)
+cmake_minimum_required (VERSION 2.8.12)
 project (FunctionTest)
 
 function(FAILED testname)
@@ -92,7 +92,7 @@ endfunction()
 
 STRANGE_FUNCTION(var)
 set(second_var "second_var")
-if("${var}" STREQUAL "strange_function" AND "${second_var}" STREQUAL "second_var")
+if("x${var}" STREQUAL "xstrange_function" AND "x${second_var}" STREQUAL "xsecond_var")
   PASS("Case Test" "(${var} ${second_var})")
 else()
   FAILED("Case test" "(${var} ${second_var})")

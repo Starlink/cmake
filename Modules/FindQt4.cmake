@@ -1,305 +1,305 @@
-#.rst:
-# FindQt4
-# *******
-#
-# Finding and Using Qt4
-# =====================
-#
-# This module can be used to find Qt4.  The most important issue is that
-# the Qt4 qmake is available via the system path.  This qmake is then
-# used to detect basically everything else.  This module defines a
-# number of :prop_tgt:`IMPORTED` targets, macros and variables.
-#
-# Typical usage could be something like:
-#
-# .. code-block:: cmake
-#
-#    set(CMAKE_AUTOMOC ON)
-#    set(CMAKE_INCLUDE_CURRENT_DIR ON)
-#    find_package(Qt4 4.4.3 REQUIRED QtGui QtXml)
-#    add_executable(myexe main.cpp)
-#    target_link_libraries(myexe Qt4::QtGui Qt4::QtXml)
-#
-# .. note::
-#
-#  When using :prop_tgt:`IMPORTED` targets, the qtmain.lib static library is
-#  automatically linked on Windows for :variable:`WIN32 <WIN32_EXECUTABLE>`
-#  executables. To disable that globally, set the
-#  ``QT4_NO_LINK_QTMAIN`` variable before finding Qt4. To disable that
-#  for a particular executable, set the ``QT4_NO_LINK_QTMAIN`` target
-#  property to ``TRUE`` on the executable.
-#
-# Qt Build Tools
-# ==============
-#
-# Qt relies on some bundled tools for code generation, such as ``moc`` for
-# meta-object code generation,``uic`` for widget layout and population,
-# and ``rcc`` for virtual filesystem content generation.  These tools may be
-# automatically invoked by :manual:`cmake(1)` if the appropriate conditions
-# are met.  See :manual:`cmake-qt(7)` for more.
-#
-# Qt Macros
-# =========
-#
-# In some cases it can be necessary or useful to invoke the Qt build tools in a
-# more-manual way. Several macros are available to add targets for such uses.
-#
-# ::
-#
-#   macro QT4_WRAP_CPP(outfiles inputfile ... [TARGET tgt] OPTIONS ...)
-#         create moc code from a list of files containing Qt class with
-#         the Q_OBJECT declaration.  Per-directory preprocessor definitions
-#         are also added.  If the <tgt> is specified, the
-#         INTERFACE_INCLUDE_DIRECTORIES and INTERFACE_COMPILE_DEFINITIONS from
-#         the <tgt> are passed to moc.  Options may be given to moc, such as
-#         those found when executing "moc -help".
-#
-#
-# ::
-#
-#   macro QT4_WRAP_UI(outfiles inputfile ... OPTIONS ...)
-#         create code from a list of Qt designer ui files.
-#         Options may be given to uic, such as those found
-#         when executing "uic -help"
-#
-#
-# ::
-#
-#   macro QT4_ADD_RESOURCES(outfiles inputfile ... OPTIONS ...)
-#         create code from a list of Qt resource files.
-#         Options may be given to rcc, such as those found
-#         when executing "rcc -help"
-#
-#
-# ::
-#
-#   macro QT4_GENERATE_MOC(inputfile outputfile [TARGET tgt])
-#         creates a rule to run moc on infile and create outfile.
-#         Use this if for some reason QT4_WRAP_CPP() isn't appropriate, e.g.
-#         because you need a custom filename for the moc file or something
-#         similar.  If the <tgt> is specified, the
-#         INTERFACE_INCLUDE_DIRECTORIES and INTERFACE_COMPILE_DEFINITIONS from
-#         the <tgt> are passed to moc.
-#
-#
-# ::
-#
-#   macro QT4_ADD_DBUS_INTERFACE(outfiles interface basename)
-#         Create the interface header and implementation files with the
-#         given basename from the given interface xml file and add it to
-#         the list of sources.
-#
-#         You can pass additional parameters to the qdbusxml2cpp call by setting
-#         properties on the input file:
-#
-#         INCLUDE the given file will be included in the generate interface header
-#
-#         CLASSNAME the generated class is named accordingly
-#
-#         NO_NAMESPACE the generated class is not wrapped in a namespace
-#
-#
-# ::
-#
-#   macro QT4_ADD_DBUS_INTERFACES(outfiles inputfile ... )
-#         Create the interface header and implementation files
-#         for all listed interface xml files.
-#         The basename will be automatically determined from the name of the xml file.
-#
-#         The source file properties described for QT4_ADD_DBUS_INTERFACE also apply here.
-#
-#
-# ::
-#
-#   macro QT4_ADD_DBUS_ADAPTOR(outfiles xmlfile parentheader parentclassname [basename] [classname])
-#         create a dbus adaptor (header and implementation file) from the xml file
-#         describing the interface, and add it to the list of sources. The adaptor
-#         forwards the calls to a parent class, defined in parentheader and named
-#         parentclassname. The name of the generated files will be
-#         <basename>adaptor.{cpp,h} where basename defaults to the basename of the xml file.
-#         If <classname> is provided, then it will be used as the classname of the
-#         adaptor itself.
-#
-#
-# ::
-#
-#   macro QT4_GENERATE_DBUS_INTERFACE( header [interfacename] OPTIONS ...)
-#         generate the xml interface file from the given header.
-#         If the optional argument interfacename is omitted, the name of the
-#         interface file is constructed from the basename of the header with
-#         the suffix .xml appended.
-#         Options may be given to qdbuscpp2xml, such as those found when executing "qdbuscpp2xml --help"
-#
-#
-# ::
-#
-#   macro QT4_CREATE_TRANSLATION( qm_files directories ... sources ...
-#                                 ts_files ... OPTIONS ...)
-#         out: qm_files
-#         in:  directories sources ts_files
-#         options: flags to pass to lupdate, such as -extensions to specify
-#         extensions for a directory scan.
-#         generates commands to create .ts (vie lupdate) and .qm
-#         (via lrelease) - files from directories and/or sources. The ts files are
-#         created and/or updated in the source tree (unless given with full paths).
-#         The qm files are generated in the build tree.
-#         Updating the translations can be done by adding the qm_files
-#         to the source list of your library/executable, so they are
-#         always updated, or by adding a custom target to control when
-#         they get updated/generated.
-#
-#
-# ::
-#
-#   macro QT4_ADD_TRANSLATION( qm_files ts_files ... )
-#         out: qm_files
-#         in:  ts_files
-#         generates commands to create .qm from .ts - files. The generated
-#         filenames can be found in qm_files. The ts_files
-#         must exist and are not updated in any way.
-#
-#
-# ::
-#
-#   macro QT4_AUTOMOC(sourcefile1 sourcefile2 ... [TARGET tgt])
-#         The qt4_automoc macro is obsolete.  Use the CMAKE_AUTOMOC feature instead.
-#         This macro is still experimental.
-#         It can be used to have moc automatically handled.
-#         So if you have the files foo.h and foo.cpp, and in foo.h a
-#         a class uses the Q_OBJECT macro, moc has to run on it. If you don't
-#         want to use QT4_WRAP_CPP() (which is reliable and mature), you can insert
-#         #include "foo.moc"
-#         in foo.cpp and then give foo.cpp as argument to QT4_AUTOMOC(). This will the
-#         scan all listed files at cmake-time for such included moc files and if it finds
-#         them cause a rule to be generated to run moc at build time on the
-#         accompanying header file foo.h.
-#         If a source file has the SKIP_AUTOMOC property set it will be ignored by this macro.
-#         If the <tgt> is specified, the INTERFACE_INCLUDE_DIRECTORIES and
-#         INTERFACE_COMPILE_DEFINITIONS from the <tgt> are passed to moc.
-#
-#
-# ::
-#
-#  function QT4_USE_MODULES( target [link_type] modules...)
-#         This function is obsolete. Use target_link_libraries with IMPORTED targets instead.
-#         Make <target> use the <modules> from Qt. Using a Qt module means
-#         to link to the library, add the relevant include directories for the module,
-#         and add the relevant compiler defines for using the module.
-#         Modules are roughly equivalent to components of Qt4, so usage would be
-#         something like:
-#          qt4_use_modules(myexe Core Gui Declarative)
-#         to use QtCore, QtGui and QtDeclarative. The optional <link_type> argument can
-#         be specified as either LINK_PUBLIC or LINK_PRIVATE to specify the same argument
-#         to the target_link_libraries call.
-#
-#
-# IMPORTED Targets
-# ================
-#
-# A particular Qt library may be used by using the corresponding
-# :prop_tgt:`IMPORTED` target with the :command:`target_link_libraries`
-# command:
-#
-# .. code-block:: cmake
-#
-#   target_link_libraries(myexe Qt4::QtGui Qt4::QtXml)
-#
-# Using a target in this way causes :cmake(1)` to use the appropriate include
-# directories and compile definitions for the target when compiling ``myexe``.
-#
-# Targets are aware of their dependencies, so for example it is not necessary
-# to list ``Qt4::QtCore`` if another Qt library is listed, and it is not
-# necessary to list ``Qt4::QtGui`` if ``Qt4::QtDeclarative`` is listed.
-# Targets may be tested for existence in the usual way with the
-# :command:`if(TARGET)` command.
-#
-# The Qt toolkit may contain both debug and release libraries.
-# :manual:`cmake(1)` will choose the appropriate version based on the build
-# configuration.
-#
-# ``Qt4::QtCore``
-#  The QtCore target
-# ``Qt4::QtGui``
-#  The QtGui target
-# ``Qt4::Qt3Support``
-#  The Qt3Support target
-# ``Qt4::QtAssistant``
-#  The QtAssistant target
-# ``Qt4::QtAssistantClient``
-#  The QtAssistantClient target
-# ``Qt4::QAxContainer``
-#  The QAxContainer target (Windows only)
-# ``Qt4::QAxServer``
-#  The QAxServer target (Windows only)
-# ``Qt4::QtDBus``
-#  The QtDBus target
-# ``Qt4::QtDesigner``
-#  The QtDesigner target
-# ``Qt4::QtDesignerComponents``
-#  The QtDesignerComponents target
-# ``Qt4::QtHelp``
-#  The QtHelp target
-# ``Qt4::QtMotif``
-#  The QtMotif target
-# ``Qt4::QtMultimedia``
-#  The QtMultimedia target
-# ``Qt4::QtNetwork``
-#  The QtNetwork target
-# ``Qt4::QtNsPLugin``
-#  The QtNsPLugin target
-# ``Qt4::QtOpenGL``
-#  The QtOpenGL target
-# ``Qt4::QtScript``
-#  The QtScript target
-# ``Qt4::QtScriptTools``
-#  The QtScriptTools target
-# ``Qt4::QtSql``
-#  The QtSql target
-# ``Qt4::QtSvg``
-#  The QtSvg target
-# ``Qt4::QtTest``
-#  The QtTest target
-# ``Qt4::QtUiTools``
-#  The QtUiTools target
-# ``Qt4::QtWebKit``
-#  The QtWebKit target
-# ``Qt4::QtXml``
-#  The QtXml target
-# ``Qt4::QtXmlPatterns``
-#  The QtXmlPatterns target
-# ``Qt4::phonon``
-#  The phonon target
-#
-# Result Variables
-# ================
-#
-#   Below is a detailed list of variables that FindQt4.cmake sets.
-#
-# ``Qt4_FOUND``
-#  If false, don't try to use Qt 4.
-# ``QT_FOUND``
-#  If false, don't try to use Qt. This variable is for compatibility only.
-# ``QT4_FOUND``
-#  If false, don't try to use Qt 4. This variable is for compatibility only.
-# ``QT_VERSION_MAJOR``
-#  The major version of Qt found.
-# ``QT_VERSION_MINOR``
-#  The minor version of Qt found.
-# ``QT_VERSION_PATCH``
-#  The patch version of Qt found.
+# Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+# file Copyright.txt or https://cmake.org/licensing for details.
 
-#=============================================================================
-# Copyright 2005-2009 Kitware, Inc.
-#
-# Distributed under the OSI-approved BSD License (the "License");
-# see accompanying file Copyright.txt for details.
-#
-# This software is distributed WITHOUT ANY WARRANTY; without even the
-# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the License for more information.
-#=============================================================================
-# (To distribute this file outside of CMake, substitute the full
-#  License text for the above reference.)
+#[=======================================================================[.rst:
+FindQt4
+-------
+
+Finding and Using Qt4
+^^^^^^^^^^^^^^^^^^^^^
+
+This module can be used to find Qt4.  The most important issue is that
+the Qt4 qmake is available via the system path.  This qmake is then
+used to detect basically everything else.  This module defines a
+number of :prop_tgt:`IMPORTED` targets, macros and variables.
+
+Typical usage could be something like:
+
+.. code-block:: cmake
+
+   set(CMAKE_AUTOMOC ON)
+   set(CMAKE_INCLUDE_CURRENT_DIR ON)
+   find_package(Qt4 4.4.3 REQUIRED QtGui QtXml)
+   add_executable(myexe main.cpp)
+   target_link_libraries(myexe Qt4::QtGui Qt4::QtXml)
+
+.. note::
+
+ When using :prop_tgt:`IMPORTED` targets, the qtmain.lib static library is
+ automatically linked on Windows for :prop_tgt:`WIN32 <WIN32_EXECUTABLE>`
+ executables. To disable that globally, set the
+ ``QT4_NO_LINK_QTMAIN`` variable before finding Qt4. To disable that
+ for a particular executable, set the ``QT4_NO_LINK_QTMAIN`` target
+ property to ``TRUE`` on the executable.
+
+Qt Build Tools
+^^^^^^^^^^^^^^
+
+Qt relies on some bundled tools for code generation, such as ``moc`` for
+meta-object code generation,``uic`` for widget layout and population,
+and ``rcc`` for virtual filesystem content generation.  These tools may be
+automatically invoked by :manual:`cmake(1)` if the appropriate conditions
+are met.  See :manual:`cmake-qt(7)` for more.
+
+Qt Macros
+^^^^^^^^^
+
+In some cases it can be necessary or useful to invoke the Qt build tools in a
+more-manual way. Several macros are available to add targets for such uses.
+
+::
+
+  macro QT4_WRAP_CPP(outfiles inputfile ... [TARGET tgt] OPTIONS ...)
+        create moc code from a list of files containing Qt class with
+        the Q_OBJECT declaration.  Per-directory preprocessor definitions
+        are also added.  If the <tgt> is specified, the
+        INTERFACE_INCLUDE_DIRECTORIES and INTERFACE_COMPILE_DEFINITIONS from
+        the <tgt> are passed to moc.  Options may be given to moc, such as
+        those found when executing "moc -help".
+
+
+::
+
+  macro QT4_WRAP_UI(outfiles inputfile ... OPTIONS ...)
+        create code from a list of Qt designer ui files.
+        Options may be given to uic, such as those found
+        when executing "uic -help"
+
+
+::
+
+  macro QT4_ADD_RESOURCES(outfiles inputfile ... OPTIONS ...)
+        create code from a list of Qt resource files.
+        Options may be given to rcc, such as those found
+        when executing "rcc -help"
+
+
+::
+
+  macro QT4_GENERATE_MOC(inputfile outputfile [TARGET tgt])
+        creates a rule to run moc on infile and create outfile.
+        Use this if for some reason QT4_WRAP_CPP() isn't appropriate, e.g.
+        because you need a custom filename for the moc file or something
+        similar.  If the <tgt> is specified, the
+        INTERFACE_INCLUDE_DIRECTORIES and INTERFACE_COMPILE_DEFINITIONS from
+        the <tgt> are passed to moc.
+
+
+::
+
+  macro QT4_ADD_DBUS_INTERFACE(outfiles interface basename)
+        Create the interface header and implementation files with the
+        given basename from the given interface xml file and add it to
+        the list of sources.
+
+        You can pass additional parameters to the qdbusxml2cpp call by setting
+        properties on the input file:
+
+        INCLUDE the given file will be included in the generate interface header
+
+        CLASSNAME the generated class is named accordingly
+
+        NO_NAMESPACE the generated class is not wrapped in a namespace
+
+
+::
+
+  macro QT4_ADD_DBUS_INTERFACES(outfiles inputfile ... )
+        Create the interface header and implementation files
+        for all listed interface xml files.
+        The basename will be automatically determined from the name
+        of the xml file.
+
+        The source file properties described for
+        QT4_ADD_DBUS_INTERFACE also apply here.
+
+
+::
+
+  macro QT4_ADD_DBUS_ADAPTOR(outfiles xmlfile parentheader parentclassname
+                             [basename] [classname])
+        create a dbus adaptor (header and implementation file) from the xml file
+        describing the interface, and add it to the list of sources. The adaptor
+        forwards the calls to a parent class, defined in parentheader and named
+        parentclassname. The name of the generated files will be
+        <basename>adaptor.{cpp,h} where basename defaults to the basename of the
+        xml file.
+        If <classname> is provided, then it will be used as the classname of the
+        adaptor itself.
+
+
+::
+
+  macro QT4_GENERATE_DBUS_INTERFACE( header [interfacename] OPTIONS ...)
+        generate the xml interface file from the given header.
+        If the optional argument interfacename is omitted, the name of the
+        interface file is constructed from the basename of the header with
+        the suffix .xml appended.
+        Options may be given to qdbuscpp2xml, such as those found when
+        executing "qdbuscpp2xml --help"
+
+
+::
+
+  macro QT4_CREATE_TRANSLATION( qm_files directories ... sources ...
+                                ts_files ... OPTIONS ...)
+        out: qm_files
+        in:  directories sources ts_files
+        options: flags to pass to lupdate, such as -extensions to specify
+        extensions for a directory scan.
+        generates commands to create .ts (via lupdate) and .qm
+        (via lrelease) - files from directories and/or sources. The ts files are
+        created and/or updated in the source tree (unless given with full paths).
+        The qm files are generated in the build tree.
+        Updating the translations can be done by adding the qm_files
+        to the source list of your library/executable, so they are
+        always updated, or by adding a custom target to control when
+        they get updated/generated.
+
+
+::
+
+  macro QT4_ADD_TRANSLATION( qm_files ts_files ... )
+        out: qm_files
+        in:  ts_files
+        generates commands to create .qm from .ts - files. The generated
+        filenames can be found in qm_files. The ts_files
+        must exist and are not updated in any way.
+
+
+::
+
+  macro QT4_AUTOMOC(sourcefile1 sourcefile2 ... [TARGET tgt])
+        The qt4_automoc macro is obsolete.  Use the CMAKE_AUTOMOC feature instead.
+        This macro is still experimental.
+        It can be used to have moc automatically handled.
+        So if you have the files foo.h and foo.cpp, and in foo.h a
+        a class uses the Q_OBJECT macro, moc has to run on it. If you don't
+        want to use QT4_WRAP_CPP() (which is reliable and mature), you can insert
+        #include "foo.moc"
+        in foo.cpp and then give foo.cpp as argument to QT4_AUTOMOC(). This will
+        scan all listed files at cmake-time for such included moc files and if it
+        finds them cause a rule to be generated to run moc at build time on the
+        accompanying header file foo.h.
+        If a source file has the SKIP_AUTOMOC property set it will be ignored by
+        this macro.
+        If the <tgt> is specified, the INTERFACE_INCLUDE_DIRECTORIES and
+        INTERFACE_COMPILE_DEFINITIONS from the <tgt> are passed to moc.
+
+
+::
+
+ function QT4_USE_MODULES( target [link_type] modules...)
+        This function is obsolete. Use target_link_libraries with IMPORTED targets
+        instead.
+        Make <target> use the <modules> from Qt. Using a Qt module means
+        to link to the library, add the relevant include directories for the
+        module, and add the relevant compiler defines for using the module.
+        Modules are roughly equivalent to components of Qt4, so usage would be
+        something like:
+         qt4_use_modules(myexe Core Gui Declarative)
+        to use QtCore, QtGui and QtDeclarative. The optional <link_type> argument
+        can be specified as either LINK_PUBLIC or LINK_PRIVATE to specify the
+        same argument to the target_link_libraries call.
+
+
+IMPORTED Targets
+^^^^^^^^^^^^^^^^
+
+A particular Qt library may be used by using the corresponding
+:prop_tgt:`IMPORTED` target with the :command:`target_link_libraries`
+command:
+
+.. code-block:: cmake
+
+  target_link_libraries(myexe Qt4::QtGui Qt4::QtXml)
+
+Using a target in this way causes :cmake(1)` to use the appropriate include
+directories and compile definitions for the target when compiling ``myexe``.
+
+Targets are aware of their dependencies, so for example it is not necessary
+to list ``Qt4::QtCore`` if another Qt library is listed, and it is not
+necessary to list ``Qt4::QtGui`` if ``Qt4::QtDeclarative`` is listed.
+Targets may be tested for existence in the usual way with the
+:command:`if(TARGET)` command.
+
+The Qt toolkit may contain both debug and release libraries.
+:manual:`cmake(1)` will choose the appropriate version based on the build
+configuration.
+
+``Qt4::QtCore``
+ The QtCore target
+``Qt4::QtGui``
+ The QtGui target
+``Qt4::Qt3Support``
+ The Qt3Support target
+``Qt4::QtAssistant``
+ The QtAssistant target
+``Qt4::QtAssistantClient``
+ The QtAssistantClient target
+``Qt4::QAxContainer``
+ The QAxContainer target (Windows only)
+``Qt4::QAxServer``
+ The QAxServer target (Windows only)
+``Qt4::QtDBus``
+ The QtDBus target
+``Qt4::QtDeclarative``
+ The QtDeclarative target
+``Qt4::QtDesigner``
+ The QtDesigner target
+``Qt4::QtDesignerComponents``
+ The QtDesignerComponents target
+``Qt4::QtHelp``
+ The QtHelp target
+``Qt4::QtMotif``
+ The QtMotif target
+``Qt4::QtMultimedia``
+ The QtMultimedia target
+``Qt4::QtNetwork``
+ The QtNetwork target
+``Qt4::QtNsPLugin``
+ The QtNsPLugin target
+``Qt4::QtOpenGL``
+ The QtOpenGL target
+``Qt4::QtScript``
+ The QtScript target
+``Qt4::QtScriptTools``
+ The QtScriptTools target
+``Qt4::QtSql``
+ The QtSql target
+``Qt4::QtSvg``
+ The QtSvg target
+``Qt4::QtTest``
+ The QtTest target
+``Qt4::QtUiTools``
+ The QtUiTools target
+``Qt4::QtWebKit``
+ The QtWebKit target
+``Qt4::QtXml``
+ The QtXml target
+``Qt4::QtXmlPatterns``
+ The QtXmlPatterns target
+``Qt4::phonon``
+ The phonon target
+
+Result Variables
+^^^^^^^^^^^^^^^^
+
+  Below is a detailed list of variables that FindQt4.cmake sets.
+
+``Qt4_FOUND``
+ If false, don't try to use Qt 4.
+``QT_FOUND``
+ If false, don't try to use Qt. This variable is for compatibility only.
+``QT4_FOUND``
+ If false, don't try to use Qt 4. This variable is for compatibility only.
+``QT_VERSION_MAJOR``
+ The major version of Qt found.
+``QT_VERSION_MINOR``
+ The minor version of Qt found.
+``QT_VERSION_PATCH``
+ The patch version of Qt found.
+#]=======================================================================]
 
 # Use find_package( Qt4 COMPONENTS ... ) to enable modules
 if( Qt4_FIND_COMPONENTS )
@@ -335,6 +335,7 @@ endif()
 include(${CMAKE_CURRENT_LIST_DIR}/CheckCXXSymbolExists.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/MacroAddFileDependencies.cmake)
 include(${CMAKE_CURRENT_LIST_DIR}/FindPackageHandleStandardArgs.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/CMakePushCheckState.cmake)
 
 set(QT_USE_FILE ${CMAKE_ROOT}/Modules/UseQt4.cmake)
 
@@ -355,19 +356,21 @@ macro (_QT4_ADJUST_LIB_VARS _camelCaseBasename)
 
       if (QT_${basename}_LIBRARY_RELEASE)
         set_property(TARGET Qt4::${_camelCaseBasename} APPEND PROPERTY IMPORTED_CONFIGURATIONS RELEASE)
-        if(QT_USE_FRAMEWORKS)
-          set_property(TARGET Qt4::${_camelCaseBasename}        PROPERTY IMPORTED_LOCATION_RELEASE "${QT_${basename}_LIBRARY_RELEASE}/${_camelCaseBasename}" )
+        set(_location "${QT_${basename}_LIBRARY_RELEASE}")
+        if(QT_USE_FRAMEWORKS AND EXISTS ${_location}/${_camelCaseBasename})
+          set_property(TARGET Qt4::${_camelCaseBasename}        PROPERTY IMPORTED_LOCATION_RELEASE "${_location}/${_camelCaseBasename}" )
         else()
-          set_property(TARGET Qt4::${_camelCaseBasename}        PROPERTY IMPORTED_LOCATION_RELEASE "${QT_${basename}_LIBRARY_RELEASE}" )
+          set_property(TARGET Qt4::${_camelCaseBasename}        PROPERTY IMPORTED_LOCATION_RELEASE "${_location}" )
         endif()
       endif ()
 
       if (QT_${basename}_LIBRARY_DEBUG)
         set_property(TARGET Qt4::${_camelCaseBasename} APPEND PROPERTY IMPORTED_CONFIGURATIONS DEBUG)
-        if(QT_USE_FRAMEWORKS)
-          set_property(TARGET Qt4::${_camelCaseBasename}        PROPERTY IMPORTED_LOCATION_DEBUG "${QT_${basename}_LIBRARY_DEBUG}/${_camelCaseBasename}" )
+        set(_location "${QT_${basename}_LIBRARY_DEBUG}")
+        if(QT_USE_FRAMEWORKS AND EXISTS ${_location}/${_camelCaseBasename})
+          set_property(TARGET Qt4::${_camelCaseBasename}        PROPERTY IMPORTED_LOCATION_DEBUG "${_location}/${_camelCaseBasename}" )
         else()
-          set_property(TARGET Qt4::${_camelCaseBasename}        PROPERTY IMPORTED_LOCATION_DEBUG "${QT_${basename}_LIBRARY_DEBUG}" )
+          set_property(TARGET Qt4::${_camelCaseBasename}        PROPERTY IMPORTED_LOCATION_DEBUG "${_location}" )
         endif()
       endif ()
       set_property(TARGET Qt4::${_camelCaseBasename} PROPERTY
@@ -396,13 +399,14 @@ macro (_QT4_ADJUST_LIB_VARS _camelCaseBasename)
 
       # if the release- as well as the debug-version of the library have been found:
       if (QT_${basename}_LIBRARY_DEBUG AND QT_${basename}_LIBRARY_RELEASE)
-        # if the generator supports configuration types then set
-        # optimized and debug libraries, or if the CMAKE_BUILD_TYPE has a value
-        if (CMAKE_CONFIGURATION_TYPES OR CMAKE_BUILD_TYPE)
+        # if the generator is multi-config or if CMAKE_BUILD_TYPE is set for
+        # single-config generators, set optimized and debug libraries
+        get_property(_isMultiConfig GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+        if(_isMultiConfig OR CMAKE_BUILD_TYPE)
           set(QT_${basename}_LIBRARY       optimized ${QT_${basename}_LIBRARY_RELEASE} debug ${QT_${basename}_LIBRARY_DEBUG})
         else()
-          # if there are no configuration types and CMAKE_BUILD_TYPE has no value
-          # then just use the release libraries
+          # For single-config generators where CMAKE_BUILD_TYPE has no value,
+          # just use the release libraries
           set(QT_${basename}_LIBRARY       ${QT_${basename}_LIBRARY_RELEASE} )
         endif()
         set(QT_${basename}_LIBRARIES       optimized ${QT_${basename}_LIBRARY_RELEASE} debug ${QT_${basename}_LIBRARY_DEBUG})
@@ -517,7 +521,8 @@ set(QT4_INSTALLED_VERSION_TOO_OLD FALSE)
 set(_QT4_QMAKE_NAMES qmake qmake4 qmake-qt4 qmake-mac)
 _qt4_find_qmake("${_QT4_QMAKE_NAMES}" QT_QMAKE_EXECUTABLE QTVERSION)
 
-if (QT_QMAKE_EXECUTABLE AND QTVERSION)
+if (QT_QMAKE_EXECUTABLE AND
+  QTVERSION VERSION_GREATER 3 AND QTVERSION VERSION_LESS 5)
 
   if (Qt5Core_FOUND)
     # Qt5CoreConfig sets QT_MOC_EXECUTABLE as a non-cache variable to the Qt 5
@@ -543,15 +548,11 @@ if (QT_QMAKE_EXECUTABLE AND QTVERSION)
     if(NOT WIN32)
       string(REPLACE ":" ";" qt_mkspecs_dirs "${qt_mkspecs_dirs}")
     endif()
-    set(qt_cross_paths)
-    foreach(qt_cross_path ${CMAKE_FIND_ROOT_PATH})
-      set(qt_cross_paths ${qt_cross_paths} "${qt_cross_path}/mkspecs")
-    endforeach()
-    set(QT_MKSPECS_DIR NOTFOUND)
+
     find_path(QT_MKSPECS_DIR NAMES qconfig.pri
-      HINTS ${qt_cross_paths} ${qt_mkspecs_dirs}
-      DOC "The location of the Qt mkspecs containing qconfig.pri"
-      NO_CMAKE_FIND_ROOT_PATH)
+      HINTS ${qt_mkspecs_dirs}
+      PATH_SUFFIXES mkspecs share/qt4/mkspecs
+      DOC "The location of the Qt mkspecs containing qconfig.pri")
   endif()
 
   if(EXISTS "${QT_MKSPECS_DIR}/qconfig.pri")
@@ -613,9 +614,13 @@ if (QT_QMAKE_EXECUTABLE AND QTVERSION)
     set(QT_LIBRARY_DIR ${QT_LIBRARY_DIR_TMP} CACHE INTERNAL "Qt library dir" FORCE)
     set(QT_QTCORE_FOUND 1)
   else()
-    message(WARNING "${QT_QMAKE_EXECUTABLE} reported QT_INSTALL_LIBS as \"${QT_LIBRARY_DIR_TMP}\" "
-                    "but QtCore could not be found there.  "
-                    "Qt is NOT installed correctly for the target build environment.")
+    if(NOT Qt4_FIND_QUIETLY)
+      message(WARNING
+        "${QT_QMAKE_EXECUTABLE} reported QT_INSTALL_LIBS as "
+        "\"${QT_LIBRARY_DIR_TMP}\" "
+        "but QtCore could not be found there.  "
+        "Qt is NOT installed correctly for the target build environment.")
+    endif()
     set(Qt4_FOUND FALSE)
     if(Qt4_FIND_REQUIRED)
       message( FATAL_ERROR "Could NOT find QtCore. Check ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeError.log for more details.")
@@ -665,7 +670,7 @@ if (QT_QMAKE_EXECUTABLE AND QTVERSION)
           get_filename_component(qt_headers "${QT_QTCORE_INCLUDE_DIR}/../" ABSOLUTE)
           set(QT_HEADERS_DIR "${qt_headers}" CACHE INTERNAL "" FORCE)
         endif()
-      elseif()
+      else()
         message("Warning: QT_QMAKE_EXECUTABLE reported QT_INSTALL_HEADERS as ${qt_headers}")
         message("Warning: But QtCore couldn't be found.  Qt must NOT be installed correctly.")
       endif()
@@ -701,14 +706,15 @@ if (QT_QMAKE_EXECUTABLE AND QTVERSION)
   # ask qmake for the plugins directory
   if (QT_LIBRARY_DIR AND NOT QT_PLUGINS_DIR  OR  QT_QMAKE_CHANGED)
     _qt4_query_qmake(QT_INSTALL_PLUGINS qt_plugins_dir)
-    set(QT_PLUGINS_DIR NOTFOUND)
-    foreach(qt_cross_path ${CMAKE_FIND_ROOT_PATH})
-      set(qt_cross_paths ${qt_cross_paths} "${qt_cross_path}/plugins")
-    endforeach()
-    find_path(QT_PLUGINS_DIR NAMES accessible imageformats sqldrivers codecs designer
-      HINTS ${qt_cross_paths} ${qt_plugins_dir}
-      DOC "The location of the Qt plugins"
-      NO_CMAKE_FIND_ROOT_PATH)
+    if(CMAKE_CROSSCOMPILING OR NOT qt_plugins_dir)
+      find_path(QT_PLUGINS_DIR
+        NAMES accessible bearer codecs designer graphicssystems iconengines imageformats inputmethods qmltooling script sqldrivers
+        HINTS ${qt_plugins_dir}
+        PATH_SUFFIXES plugins lib/qt4/plugins
+        DOC "The location of the Qt plugins")
+    else()
+      set(QT_PLUGINS_DIR ${qt_plugins_dir} CACHE PATH "The location of the Qt plugins")
+    endif()
   endif ()
 
   # ask qmake for the translations directory
@@ -720,18 +726,13 @@ if (QT_QMAKE_EXECUTABLE AND QTVERSION)
   # ask qmake for the imports directory
   if (QT_LIBRARY_DIR AND NOT QT_IMPORTS_DIR OR QT_QMAKE_CHANGED)
     _qt4_query_qmake(QT_INSTALL_IMPORTS qt_imports_dir)
-    if(qt_imports_dir)
-      set(QT_IMPORTS_DIR NOTFOUND)
-      foreach(qt_cross_path ${CMAKE_FIND_ROOT_PATH})
-        set(qt_cross_paths ${qt_cross_paths} "${qt_cross_path}/imports")
-      endforeach()
+    if(CMAKE_CROSSCOMPILING OR NOT qt_imports_dir)
       find_path(QT_IMPORTS_DIR NAMES Qt
-        HINTS ${qt_cross_paths} ${qt_imports_dir}
-        DOC "The location of the Qt imports"
-        NO_CMAKE_FIND_ROOT_PATH
-        NO_CMAKE_PATH NO_CMAKE_ENVIRONMENT_PATH NO_SYSTEM_ENVIRONMENT_PATH
-        NO_CMAKE_SYSTEM_PATH)
-      mark_as_advanced(QT_IMPORTS_DIR)
+        HINTS ${qt_imports_dir}
+        PATH_SUFFIXES imports lib/qt4/imports
+        DOC "The location of the Qt imports")
+    else()
+      set(QT_IMPORTS_DIR ${qt_imports_dir} CACHE PATH "The location of the Qt imports")
     endif()
   endif ()
 
@@ -747,11 +748,10 @@ if (QT_QMAKE_EXECUTABLE AND QTVERSION)
   # Find out what window system we're using
   #
   #############################################
-  # Save required variable
-  set(CMAKE_REQUIRED_INCLUDES_SAVE ${CMAKE_REQUIRED_INCLUDES})
-  set(CMAKE_REQUIRED_FLAGS_SAVE    ${CMAKE_REQUIRED_FLAGS})
+  cmake_push_check_state()
   # Add QT_INCLUDE_DIR to CMAKE_REQUIRED_INCLUDES
-  set(CMAKE_REQUIRED_INCLUDES "${CMAKE_REQUIRED_INCLUDES};${QT_INCLUDE_DIR}")
+  list(APPEND CMAKE_REQUIRED_INCLUDES "${QT_INCLUDE_DIR}")
+  set(CMAKE_REQUIRED_QUIET ${Qt4_FIND_QUIETLY})
   # Check for Window system symbols (note: only one should end up being set)
   CHECK_CXX_SYMBOL_EXISTS(Q_WS_X11 "QtCore/qglobal.h" Q_WS_X11)
   CHECK_CXX_SYMBOL_EXISTS(Q_WS_WIN "QtCore/qglobal.h" Q_WS_WIN)
@@ -771,9 +771,7 @@ if (QT_QMAKE_EXECUTABLE AND QTVERSION)
      endif ()
   endif ()
 
-  # Restore CMAKE_REQUIRED_INCLUDES and CMAKE_REQUIRED_FLAGS variables
-  set(CMAKE_REQUIRED_INCLUDES ${CMAKE_REQUIRED_INCLUDES_SAVE})
-  set(CMAKE_REQUIRED_FLAGS    ${CMAKE_REQUIRED_FLAGS_SAVE})
+  cmake_pop_check_state()
   #
   #############################################
 
@@ -1135,17 +1133,17 @@ if (QT_QMAKE_EXECUTABLE AND QTVERSION)
     endif()
   endmacro()
 
-  _find_qt4_program(QT_MOC_EXECUTABLE Qt4::moc moc-qt4 moc moc4)
-  _find_qt4_program(QT_UIC_EXECUTABLE Qt4::uic uic-qt4 uic uic4)
+  _find_qt4_program(QT_MOC_EXECUTABLE Qt4::moc moc-qt4 moc4 moc)
+  _find_qt4_program(QT_UIC_EXECUTABLE Qt4::uic uic-qt4 uic4 uic)
   _find_qt4_program(QT_UIC3_EXECUTABLE Qt4::uic3 uic3)
   _find_qt4_program(QT_RCC_EXECUTABLE Qt4::rcc rcc)
   _find_qt4_program(QT_DBUSCPP2XML_EXECUTABLE Qt4::qdbuscpp2xml qdbuscpp2xml)
   _find_qt4_program(QT_DBUSXML2CPP_EXECUTABLE Qt4::qdbusxml2cpp qdbusxml2cpp)
-  _find_qt4_program(QT_LUPDATE_EXECUTABLE Qt4::lupdate lupdate-qt4 lupdate lupdate4)
-  _find_qt4_program(QT_LRELEASE_EXECUTABLE Qt4::lrelease lrelease-qt4 lrelease lrelease4)
+  _find_qt4_program(QT_LUPDATE_EXECUTABLE Qt4::lupdate lupdate-qt4 lupdate4 lupdate)
+  _find_qt4_program(QT_LRELEASE_EXECUTABLE Qt4::lrelease lrelease-qt4 lrelease4 lrelease)
   _find_qt4_program(QT_QCOLLECTIONGENERATOR_EXECUTABLE Qt4::qcollectiongenerator qcollectiongenerator-qt4 qcollectiongenerator)
-  _find_qt4_program(QT_DESIGNER_EXECUTABLE Qt4::designer designer-qt4 designer designer4)
-  _find_qt4_program(QT_LINGUIST_EXECUTABLE Qt4::linguist linguist-qt4 linguist linguist4)
+  _find_qt4_program(QT_DESIGNER_EXECUTABLE Qt4::designer designer-qt4 designer4 designer)
+  _find_qt4_program(QT_LINGUIST_EXECUTABLE Qt4::linguist linguist-qt4 linguist4 linguist)
 
   if (NOT TARGET Qt4::qmake)
     add_executable(Qt4::qmake IMPORTED)
@@ -1311,7 +1309,7 @@ endif()
 
 if (NOT QT_VERSION_MAJOR EQUAL 4)
     set(VERSION_MSG "Found unsuitable Qt version \"${QTVERSION}\" from ${QT_QMAKE_EXECUTABLE}")
-    set(QT4_FOUND FALSE)
+    set(Qt4_FOUND FALSE)
     if(Qt4_FIND_REQUIRED)
        message( FATAL_ERROR "${VERSION_MSG}, this code requires Qt 4.x")
     else()
@@ -1320,10 +1318,18 @@ if (NOT QT_VERSION_MAJOR EQUAL 4)
       endif()
     endif()
 else()
+  if (CMAKE_FIND_PACKAGE_NAME STREQUAL "Qt")
+    # FindQt include()'s this module. It's an old pattern, but rather than
+    # trying to suppress this from outside the module (which is then sensitive
+    # to the contents, detect the case in this module and suppress it
+    # explicitly.
+    set(FPHSA_NAME_MISMATCHED 1)
+  endif ()
   FIND_PACKAGE_HANDLE_STANDARD_ARGS(Qt4 FOUND_VAR Qt4_FOUND
     REQUIRED_VARS ${_QT4_FOUND_REQUIRED_VARS}
     VERSION_VAR QTVERSION
     )
+  unset(FPHSA_NAME_MISMATCHED)
 endif()
 
 #######################################

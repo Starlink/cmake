@@ -1,112 +1,156 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
-
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
-
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmCTestTestCommand.h"
 
-#include "cmCTest.h"
-#include "cmCTestGenericHandler.h"
+#include <chrono>
+#include <cstdlib>
+#include <sstream>
 
-cmCTestTestCommand::cmCTestTestCommand()
+#include <cmext/string_view>
+
+#include "cmCTest.h"
+#include "cmCTestTestHandler.h"
+#include "cmDuration.h"
+#include "cmMakefile.h"
+#include "cmStringAlgorithms.h"
+#include "cmValue.h"
+
+void cmCTestTestCommand::BindArguments()
 {
-  this->Arguments[ctt_START] = "START";
-  this->Arguments[ctt_END] = "END";
-  this->Arguments[ctt_STRIDE] = "STRIDE";
-  this->Arguments[ctt_EXCLUDE] = "EXCLUDE";
-  this->Arguments[ctt_INCLUDE] = "INCLUDE";
-  this->Arguments[ctt_EXCLUDE_LABEL] = "EXCLUDE_LABEL";
-  this->Arguments[ctt_INCLUDE_LABEL] = "INCLUDE_LABEL";
-  this->Arguments[ctt_PARALLEL_LEVEL] = "PARALLEL_LEVEL";
-  this->Arguments[ctt_SCHEDULE_RANDOM] = "SCHEDULE_RANDOM";
-  this->Arguments[ctt_STOP_TIME] = "STOP_TIME";
-  this->Arguments[ctt_LAST] = 0;
-  this->Last = ctt_LAST;
+  this->cmCTestHandlerCommand::BindArguments();
+  this->Bind("START"_s, this->Start);
+  this->Bind("END"_s, this->End);
+  this->Bind("STRIDE"_s, this->Stride);
+  this->Bind("EXCLUDE"_s, this->Exclude);
+  this->Bind("INCLUDE"_s, this->Include);
+  this->Bind("EXCLUDE_LABEL"_s, this->ExcludeLabel);
+  this->Bind("INCLUDE_LABEL"_s, this->IncludeLabel);
+  this->Bind("EXCLUDE_FIXTURE"_s, this->ExcludeFixture);
+  this->Bind("EXCLUDE_FIXTURE_SETUP"_s, this->ExcludeFixtureSetup);
+  this->Bind("EXCLUDE_FIXTURE_CLEANUP"_s, this->ExcludeFixtureCleanup);
+  this->Bind("PARALLEL_LEVEL"_s, this->ParallelLevel);
+  this->Bind("REPEAT"_s, this->Repeat);
+  this->Bind("SCHEDULE_RANDOM"_s, this->ScheduleRandom);
+  this->Bind("STOP_TIME"_s, this->StopTime);
+  this->Bind("TEST_LOAD"_s, this->TestLoad);
+  this->Bind("RESOURCE_SPEC_FILE"_s, this->ResourceSpecFile);
+  this->Bind("STOP_ON_FAILURE"_s, this->StopOnFailure);
+  this->Bind("OUTPUT_JUNIT"_s, this->OutputJUnit);
 }
 
 cmCTestGenericHandler* cmCTestTestCommand::InitializeHandler()
 {
-  const char* ctestTimeout =
-    this->Makefile->GetDefinition("CTEST_TEST_TIMEOUT");
+  cmValue ctestTimeout = this->Makefile->GetDefinition("CTEST_TEST_TIMEOUT");
 
-  double timeout = this->CTest->GetTimeOut();
-  if ( ctestTimeout )
-    {
-    timeout = atof(ctestTimeout);
-    }
-  else
-    {
-    if ( timeout <= 0 )
-      {
+  cmDuration timeout;
+  if (ctestTimeout) {
+    timeout = cmDuration(atof(ctestTimeout->c_str()));
+  } else {
+    timeout = this->CTest->GetTimeOut();
+    if (timeout <= cmDuration::zero()) {
       // By default use timeout of 10 minutes
-      timeout = 600;
-      }
+      timeout = std::chrono::minutes(10);
     }
+  }
   this->CTest->SetTimeOut(timeout);
-  cmCTestGenericHandler* handler = this->InitializeActualHandler();
-  if ( this->Values[ctt_START] || this->Values[ctt_END] ||
-    this->Values[ctt_STRIDE] )
-    {
-    cmOStringStream testsToRunString;
-    if ( this->Values[ctt_START] )
-      {
-      testsToRunString << this->Values[ctt_START];
-      }
-    testsToRunString << ",";
-    if ( this->Values[ctt_END] )
-      {
-      testsToRunString << this->Values[ctt_END];
-      }
-    testsToRunString << ",";
-    if ( this->Values[ctt_STRIDE] )
-      {
-      testsToRunString << this->Values[ctt_STRIDE];
-      }
-    handler->SetOption("TestsToRunInformation",
-      testsToRunString.str().c_str());
+
+  cmValue resourceSpecFile =
+    this->Makefile->GetDefinition("CTEST_RESOURCE_SPEC_FILE");
+  if (this->ResourceSpecFile.empty() && resourceSpecFile) {
+    this->ResourceSpecFile = *resourceSpecFile;
+  }
+
+  cmCTestTestHandler* handler = this->InitializeActualHandler();
+  if (!this->Start.empty() || !this->End.empty() || !this->Stride.empty()) {
+    handler->SetOption(
+      "TestsToRunInformation",
+      cmStrCat(this->Start, ',', this->End, ',', this->Stride));
+  }
+  if (!this->Exclude.empty()) {
+    handler->SetOption("ExcludeRegularExpression", this->Exclude);
+  }
+  if (!this->Include.empty()) {
+    handler->SetOption("IncludeRegularExpression", this->Include);
+  }
+  if (!this->ExcludeLabel.empty()) {
+    handler->AddMultiOption("ExcludeLabelRegularExpression",
+                            this->ExcludeLabel);
+  }
+  if (!this->IncludeLabel.empty()) {
+    handler->AddMultiOption("LabelRegularExpression", this->IncludeLabel);
+  }
+  if (!this->ExcludeFixture.empty()) {
+    handler->SetOption("ExcludeFixtureRegularExpression",
+                       this->ExcludeFixture);
+  }
+  if (!this->ExcludeFixtureSetup.empty()) {
+    handler->SetOption("ExcludeFixtureSetupRegularExpression",
+                       this->ExcludeFixtureSetup);
+  }
+  if (!this->ExcludeFixtureCleanup.empty()) {
+    handler->SetOption("ExcludeFixtureCleanupRegularExpression",
+                       this->ExcludeFixtureCleanup);
+  }
+  if (this->StopOnFailure) {
+    handler->SetOption("StopOnFailure", "ON");
+  }
+  if (!this->ParallelLevel.empty()) {
+    handler->SetOption("ParallelLevel", this->ParallelLevel);
+  }
+  if (!this->Repeat.empty()) {
+    handler->SetOption("Repeat", this->Repeat);
+  }
+  if (!this->ScheduleRandom.empty()) {
+    handler->SetOption("ScheduleRandom", this->ScheduleRandom);
+  }
+  if (!this->ResourceSpecFile.empty()) {
+    handler->SetOption("ResourceSpecFile", this->ResourceSpecFile);
+  }
+  if (!this->StopTime.empty()) {
+    this->CTest->SetStopTime(this->StopTime);
+  }
+
+  // Test load is determined by: TEST_LOAD argument,
+  // or CTEST_TEST_LOAD script variable, or ctest --test-load
+  // command line argument... in that order.
+  unsigned long testLoad;
+  cmValue ctestTestLoad = this->Makefile->GetDefinition("CTEST_TEST_LOAD");
+  if (!this->TestLoad.empty()) {
+    if (!cmStrToULong(this->TestLoad, &testLoad)) {
+      testLoad = 0;
+      cmCTestLog(this->CTest, WARNING,
+                 "Invalid value for 'TEST_LOAD' : " << this->TestLoad
+                                                    << std::endl);
     }
-  if(this->Values[ctt_EXCLUDE])
-    {
-    handler->SetOption("ExcludeRegularExpression", this->Values[ctt_EXCLUDE]);
+  } else if (cmNonempty(ctestTestLoad)) {
+    if (!cmStrToULong(*ctestTestLoad, &testLoad)) {
+      testLoad = 0;
+      cmCTestLog(this->CTest, WARNING,
+                 "Invalid value for 'CTEST_TEST_LOAD' : " << *ctestTestLoad
+                                                          << std::endl);
     }
-  if(this->Values[ctt_INCLUDE])
-    {
-    handler->SetOption("IncludeRegularExpression", this->Values[ctt_INCLUDE]);
-    }
-  if(this->Values[ctt_EXCLUDE_LABEL])
-    {
-    handler->SetOption("ExcludeLabelRegularExpression",
-                       this->Values[ctt_EXCLUDE_LABEL]);
-    }
-  if(this->Values[ctt_INCLUDE_LABEL])
-    {
-    handler->SetOption("LabelRegularExpression",
-                       this->Values[ctt_INCLUDE_LABEL]);
-    }
-  if(this->Values[ctt_PARALLEL_LEVEL])
-    {
-    handler->SetOption("ParallelLevel",
-                       this->Values[ctt_PARALLEL_LEVEL]);
-    }
-  if(this->Values[ctt_SCHEDULE_RANDOM])
-    {
-    handler->SetOption("ScheduleRandom",
-                       this->Values[ctt_SCHEDULE_RANDOM]);
-    }
-  if(this->Values[ctt_STOP_TIME])
-    {
-    this->CTest->SetStopTime(this->Values[ctt_STOP_TIME]);
-    }
+  } else {
+    testLoad = this->CTest->GetTestLoad();
+  }
+  handler->SetTestLoad(testLoad);
+
+  if (cmValue labelsForSubprojects =
+        this->Makefile->GetDefinition("CTEST_LABELS_FOR_SUBPROJECTS")) {
+    this->CTest->SetCTestConfiguration("LabelsForSubprojects",
+                                       *labelsForSubprojects, this->Quiet);
+  }
+
+  if (!this->OutputJUnit.empty()) {
+    handler->SetJUnitXMLFileName(this->OutputJUnit);
+  }
+
+  handler->SetQuiet(this->Quiet);
   return handler;
 }
 
-cmCTestGenericHandler* cmCTestTestCommand::InitializeActualHandler()
+cmCTestTestHandler* cmCTestTestCommand::InitializeActualHandler()
 {
-  return this->CTest->GetInitializedHandler("test");
+  cmCTestTestHandler* handler = this->CTest->GetTestHandler();
+  handler->Initialize();
+  return handler;
 }

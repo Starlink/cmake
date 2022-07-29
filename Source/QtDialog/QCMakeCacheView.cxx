@@ -1,72 +1,63 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
-
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
-
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "QCMakeCacheView.h"
 
+#include "QCMakeWidgets.h"
+#include <QApplication>
+#include <QEvent>
 #include <QHBoxLayout>
 #include <QHeaderView>
-#include <QEvent>
-#include <QStyle>
 #include <QKeyEvent>
-#include <QSortFilterProxyModel>
 #include <QMetaProperty>
-#include <QApplication>
-
-#include "QCMakeWidgets.h"
+#include <QSortFilterProxyModel>
+#include <QStyle>
 
 // filter for searches
 class QCMakeSearchFilter : public QSortFilterProxyModel
 {
 public:
-  QCMakeSearchFilter(QObject* o) : QSortFilterProxyModel(o) {}
+  QCMakeSearchFilter(QObject* o)
+    : QSortFilterProxyModel(o)
+  {
+  }
+
 protected:
-  bool filterAcceptsRow(int row, const QModelIndex& p) const
-    {
+  bool filterAcceptsRow(int row, const QModelIndex& p) const override
+  {
     QStringList strs;
     const QAbstractItemModel* m = this->sourceModel();
     QModelIndex idx = m->index(row, 0, p);
 
     // if there are no children, get strings for column 0 and 1
-    if(!m->hasChildren(idx))
-      {
+    if (!m->hasChildren(idx)) {
       strs.append(m->data(idx).toString());
       idx = m->index(row, 1, p);
       strs.append(m->data(idx).toString());
-      }
-    else
-      {
+    } else {
       // get strings for children entries to compare with
       // instead of comparing with the parent
       int num = m->rowCount(idx);
-      for(int i=0; i<num; i++)
-        {
+      for (int i = 0; i < num; i++) {
         QModelIndex tmpidx = m->index(i, 0, idx);
         strs.append(m->data(tmpidx).toString());
         tmpidx = m->index(i, 1, idx);
         strs.append(m->data(tmpidx).toString());
-        }
       }
+    }
 
     // check all strings for a match
-    foreach(QString str, strs)
-      {
-      if(str.contains(this->filterRegExp()))
-        {
+    foreach (QString const& str, strs) {
+#if (QT_VERSION >= QT_VERSION_CHECK(5, 15, 0))
+      if (str.contains(this->filterRegularExpression())) {
+#else
+      if (str.contains(this->filterRegExp())) {
+#endif
         return true;
-        }
       }
+    }
 
     return false;
-    }
+  }
 };
 
 // filter for searches
@@ -74,7 +65,10 @@ class QCMakeAdvancedFilter : public QSortFilterProxyModel
 {
 public:
   QCMakeAdvancedFilter(QObject* o)
-    : QSortFilterProxyModel(o), ShowAdvanced(false) {}
+    : QSortFilterProxyModel(o)
+    , ShowAdvanced(false)
+  {
+  }
 
   void setShowAdvanced(bool f)
   {
@@ -84,37 +78,29 @@ public:
   bool showAdvanced() const { return this->ShowAdvanced; }
 
 protected:
-
   bool ShowAdvanced;
 
-  bool filterAcceptsRow(int row, const QModelIndex& p) const
-    {
+  bool filterAcceptsRow(int row, const QModelIndex& p) const override
+  {
     const QAbstractItemModel* m = this->sourceModel();
     QModelIndex idx = m->index(row, 0, p);
 
     // if there are no children
-    if(!m->hasChildren(idx))
-      {
+    if (!m->hasChildren(idx)) {
       bool adv = m->data(idx, QCMakeCacheModel::AdvancedRole).toBool();
-      if(!adv || (adv && this->ShowAdvanced))
-        {
-        return true;
-        }
-      return false;
-      }
+      return !adv || this->ShowAdvanced;
+    }
 
     // check children
     int num = m->rowCount(idx);
-    for(int i=0; i<num; i++)
-      {
+    for (int i = 0; i < num; i++) {
       bool accept = this->filterAcceptsRow(i, idx);
-      if(accept)
-        {
+      if (accept) {
         return true;
-        }
       }
-    return false;
     }
+    return false;
+  }
 };
 
 QCMakeCacheView::QCMakeCacheView(QWidget* p)
@@ -147,10 +133,9 @@ QCMakeCacheView::QCMakeCacheView(QWidget* p)
 
 bool QCMakeCacheView::event(QEvent* e)
 {
-  if(e->type() == QEvent::Show)
-    {
-    this->header()->setDefaultSectionSize(this->viewport()->width()/2);
-    }
+  if (e->type() == QEvent::Show) {
+    this->header()->setDefaultSectionSize(this->viewport()->width() / 2);
+  }
   return QTreeView::event(e);
 }
 
@@ -160,27 +145,21 @@ QCMakeCacheModel* QCMakeCacheView::cacheModel() const
 }
 
 QModelIndex QCMakeCacheView::moveCursor(CursorAction act,
-  Qt::KeyboardModifiers mod)
+                                        Qt::KeyboardModifiers mod)
 {
   // want home/end to go to begin/end of rows, not columns
-  if(act == MoveHome)
-    {
+  if (act == MoveHome) {
     return this->model()->index(0, 1);
-    }
-  else if(act == MoveEnd)
-    {
-    return this->model()->index(this->model()->rowCount()-1, 1);
-    }
+  }
+  if (act == MoveEnd) {
+    return this->model()->index(this->model()->rowCount() - 1, 1);
+  }
   return QTreeView::moveCursor(act, mod);
 }
 
 void QCMakeCacheView::setShowAdvanced(bool s)
 {
-#if QT_VERSION >= 040300
-  // new 4.3 API that needs to be called.  what about an older Qt?
   this->SearchFilter->invalidate();
-#endif
-
   this->AdvancedFilter->setShowAdvanced(s);
 }
 
@@ -191,14 +170,18 @@ bool QCMakeCacheView::showAdvanced() const
 
 void QCMakeCacheView::setSearchFilter(const QString& s)
 {
+#if (QT_VERSION >= QT_VERSION_CHECK(5, 15, 0))
+  this->SearchFilter->setFilterRegularExpression(s);
+#else
   this->SearchFilter->setFilterFixedString(s);
+#endif
 }
 
 QCMakeCacheModel::QCMakeCacheModel(QObject* p)
-  : QStandardItemModel(p),
-    EditEnabled(true),
-    NewPropertyCount(0),
-    View(FlatView)
+  : QStandardItemModel(p)
+  , EditEnabled(true)
+  , NewPropertyCount(0)
+  , View(FlatView)
 {
   this->ShowNewProperties = true;
   QStringList labels;
@@ -206,9 +189,7 @@ QCMakeCacheModel::QCMakeCacheModel(QObject* p)
   this->setHorizontalHeaderLabels(labels);
 }
 
-QCMakeCacheModel::~QCMakeCacheModel()
-{
-}
+QCMakeCacheModel::~QCMakeCacheModel() = default;
 
 static uint qHash(const QCMakeProperty& p)
 {
@@ -232,86 +213,111 @@ void QCMakeCacheModel::clear()
 
 void QCMakeCacheModel::setProperties(const QCMakePropertyList& props)
 {
-  QSet<QCMakeProperty> newProps, newProps2;
+  this->beginResetModel();
 
-  if(this->ShowNewProperties)
-    {
+  QSet<QCMakeProperty> newProps;
+  QSet<QCMakeProperty> newProps2;
+
+  if (this->ShowNewProperties) {
+#if QT_VERSION < QT_VERSION_CHECK(5, 14, 0)
     newProps = props.toSet();
+#else
+    newProps = QSet<QCMakeProperty>(props.begin(), props.end());
+#endif
     newProps2 = newProps;
+#if QT_VERSION < QT_VERSION_CHECK(5, 14, 0)
     QSet<QCMakeProperty> oldProps = this->properties().toSet();
+#else
+    QCMakePropertyList const& oldPropsList = this->properties();
+    QSet<QCMakeProperty> oldProps =
+      QSet<QCMakeProperty>(oldPropsList.begin(), oldPropsList.end());
+#endif
     oldProps.intersect(newProps);
     newProps.subtract(oldProps);
     newProps2.subtract(newProps);
-    }
-  else
-    {
+  } else {
+#if QT_VERSION < QT_VERSION_CHECK(5, 14, 0)
     newProps2 = props.toSet();
-    }
+#else
+    newProps2 = QSet<QCMakeProperty>(props.begin(), props.end());
+#endif
+  }
 
   bool b = this->blockSignals(true);
 
   this->clear();
   this->NewPropertyCount = newProps.size();
 
-  if(View == FlatView)
-  {
-    QCMakePropertyList newP = newProps.toList();
-    QCMakePropertyList newP2 = newProps2.toList();
+  if (View == FlatView) {
+    QCMakePropertyList newP = newProps.values();
+    QCMakePropertyList newP2 = newProps2.values();
+#if QT_VERSION >= QT_VERSION_CHECK(5, 9, 0)
+    std::sort(newP.begin(), newP.end());
+    std::sort(newP2.begin(), newP2.end());
+#else
     qSort(newP);
     qSort(newP2);
+#endif
     int row_count = 0;
-    foreach(QCMakeProperty p, newP)
-    {
+    foreach (QCMakeProperty const& p, newP) {
       this->insertRow(row_count);
       this->setPropertyData(this->index(row_count, 0), p, true);
       row_count++;
     }
-    foreach(QCMakeProperty p, newP2)
-    {
+    foreach (QCMakeProperty const& p, newP2) {
       this->insertRow(row_count);
       this->setPropertyData(this->index(row_count, 0), p, false);
       row_count++;
     }
-  }
-  else if(this->View == GroupView)
-  {
+  } else if (this->View == GroupView) {
     QMap<QString, QCMakePropertyList> newPropsTree;
-    this->breakProperties(newProps, newPropsTree);
+    QCMakeCacheModel::breakProperties(newProps, newPropsTree);
     QMap<QString, QCMakePropertyList> newPropsTree2;
-    this->breakProperties(newProps2, newPropsTree2);
+    QCMakeCacheModel::breakProperties(newProps2, newPropsTree2);
 
     QStandardItem* root = this->invisibleRootItem();
 
-    foreach(QString key, newPropsTree.keys())
-      {
-      QCMakePropertyList props2 = newPropsTree[key];
+    for (QMap<QString, QCMakePropertyList>::const_iterator iter =
+           newPropsTree.begin();
+         iter != newPropsTree.end(); ++iter) {
+      QString const& key = iter.key();
+      QCMakePropertyList const& props2 = iter.value();
 
       QList<QStandardItem*> parentItems;
       parentItems.append(
-        new QStandardItem(key.isEmpty() ? tr("Ungrouped Entries") : key)
-        );
+        new QStandardItem(key.isEmpty() ? tr("Ungrouped Entries") : key));
       parentItems.append(new QStandardItem());
-      parentItems[0]->setData(QBrush(QColor(255,100,100)), Qt::BackgroundColorRole);
-      parentItems[1]->setData(QBrush(QColor(255,100,100)), Qt::BackgroundColorRole);
+#if QT_VERSION >= QT_VERSION_CHECK(5, 9, 0)
+      parentItems[0]->setData(QBrush(QColor(255, 100, 100)),
+                              Qt::BackgroundRole);
+      parentItems[1]->setData(QBrush(QColor(255, 100, 100)),
+                              Qt::BackgroundRole);
+#else
+      parentItems[0]->setData(QBrush(QColor(255, 100, 100)),
+                              Qt::BackgroundColorRole);
+      parentItems[1]->setData(QBrush(QColor(255, 100, 100)),
+                              Qt::BackgroundColorRole);
+#endif
       parentItems[0]->setData(1, GroupRole);
       parentItems[1]->setData(1, GroupRole);
       root->appendRow(parentItems);
 
       int num = props2.size();
-      for(int i=0; i<num; i++)
-        {
+      for (int i = 0; i < num; i++) {
         QCMakeProperty prop = props2[i];
         QList<QStandardItem*> items;
         items.append(new QStandardItem());
         items.append(new QStandardItem());
         parentItems[0]->appendRow(items);
         this->setPropertyData(this->indexFromItem(items[0]), prop, true);
-        }
       }
+    }
 
-    foreach(QString key, newPropsTree2.keys())
-      {
-      QCMakePropertyList props2 = newPropsTree2[key];
+    for (QMap<QString, QCMakePropertyList>::const_iterator iter =
+           newPropsTree2.begin();
+         iter != newPropsTree2.end(); ++iter) {
+      QString const& key = iter.key();
+      QCMakePropertyList const& props2 = iter.value();
 
       QStandardItem* parentItem =
         new QStandardItem(key.isEmpty() ? tr("Ungrouped Entries") : key);
@@ -319,20 +325,19 @@ void QCMakeCacheModel::setProperties(const QCMakePropertyList& props)
       parentItem->setData(1, GroupRole);
 
       int num = props2.size();
-      for(int i=0; i<num; i++)
-        {
+      for (int i = 0; i < num; i++) {
         QCMakeProperty prop = props2[i];
         QList<QStandardItem*> items;
         items.append(new QStandardItem());
         items.append(new QStandardItem());
         parentItem->appendRow(items);
         this->setPropertyData(this->indexFromItem(items[0]), prop, false);
-        }
       }
+    }
   }
 
   this->blockSignals(b);
-  this->reset();
+  this->endResetModel();
 }
 
 QCMakeCacheModel::ViewType QCMakeCacheModel::viewType() const
@@ -342,14 +347,15 @@ QCMakeCacheModel::ViewType QCMakeCacheModel::viewType() const
 
 void QCMakeCacheModel::setViewType(QCMakeCacheModel::ViewType t)
 {
+  this->beginResetModel();
+
   this->View = t;
 
   QCMakePropertyList props = this->properties();
   QCMakePropertyList oldProps;
   int numNew = this->NewPropertyCount;
   int numTotal = props.count();
-  for(int i=numNew; i<numTotal; i++)
-  {
+  for (int i = numNew; i < numTotal; i++) {
     oldProps.append(props[i]);
   }
 
@@ -358,11 +364,11 @@ void QCMakeCacheModel::setViewType(QCMakeCacheModel::ViewType t)
   this->setProperties(oldProps);
   this->setProperties(props);
   this->blockSignals(b);
-  this->reset();
+  this->endResetModel();
 }
 
 void QCMakeCacheModel::setPropertyData(const QModelIndex& idx1,
-    const QCMakeProperty& prop, bool isNew)
+                                       const QCMakeProperty& prop, bool isNew)
 {
   QModelIndex idx2 = idx1.sibling(idx1.row(), 1);
 
@@ -371,46 +377,47 @@ void QCMakeCacheModel::setPropertyData(const QModelIndex& idx1,
   this->setData(idx1, prop.Type, QCMakeCacheModel::TypeRole);
   this->setData(idx1, prop.Advanced, QCMakeCacheModel::AdvancedRole);
 
-  if(prop.Type == QCMakeProperty::BOOL)
-  {
+  if (prop.Type == QCMakeProperty::BOOL) {
     int check = prop.Value.toBool() ? Qt::Checked : Qt::Unchecked;
     this->setData(idx2, check, Qt::CheckStateRole);
-  }
-  else
-  {
+  } else {
     this->setData(idx2, prop.Value, Qt::DisplayRole);
   }
   this->setData(idx2, prop.Help, QCMakeCacheModel::HelpRole);
 
-  if (!prop.Strings.isEmpty())
-  {
+  if (!prop.Strings.isEmpty()) {
     this->setData(idx1, prop.Strings, QCMakeCacheModel::StringsRole);
   }
 
-  if(isNew)
-  {
-    this->setData(idx1, QBrush(QColor(255,100,100)), Qt::BackgroundColorRole);
-    this->setData(idx2, QBrush(QColor(255,100,100)), Qt::BackgroundColorRole);
+  if (isNew) {
+#if QT_VERSION >= QT_VERSION_CHECK(5, 9, 0)
+    this->setData(idx1, QBrush(QColor(255, 100, 100)), Qt::BackgroundRole);
+    this->setData(idx2, QBrush(QColor(255, 100, 100)), Qt::BackgroundRole);
+#else
+    this->setData(idx1, QBrush(QColor(255, 100, 100)),
+                  Qt::BackgroundColorRole);
+    this->setData(idx2, QBrush(QColor(255, 100, 100)),
+                  Qt::BackgroundColorRole);
+#endif
   }
 }
 
 void QCMakeCacheModel::getPropertyData(const QModelIndex& idx1,
-    QCMakeProperty& prop) const
+                                       QCMakeProperty& prop) const
 {
   QModelIndex idx2 = idx1.sibling(idx1.row(), 1);
 
   prop.Key = this->data(idx1, Qt::DisplayRole).toString();
   prop.Help = this->data(idx1, HelpRole).toString();
-  prop.Type = static_cast<QCMakeProperty::PropertyType>(this->data(idx1, TypeRole).toInt());
+  prop.Type = static_cast<QCMakeProperty::PropertyType>(
+    this->data(idx1, TypeRole).toInt());
   prop.Advanced = this->data(idx1, AdvancedRole).toBool();
-  prop.Strings = this->data(idx1, QCMakeCacheModel::StringsRole).toStringList();
-  if(prop.Type == QCMakeProperty::BOOL)
-  {
+  prop.Strings =
+    this->data(idx1, QCMakeCacheModel::StringsRole).toStringList();
+  if (prop.Type == QCMakeProperty::BOOL) {
     int check = this->data(idx2, Qt::CheckStateRole).toInt();
     prop.Value = check == Qt::Checked;
-  }
-  else
-  {
+  } else {
     prop.Value = this->data(idx2, Qt::DisplayRole).toString();
   }
 }
@@ -418,43 +425,40 @@ void QCMakeCacheModel::getPropertyData(const QModelIndex& idx1,
 QString QCMakeCacheModel::prefix(const QString& s)
 {
   QString prefix = s.section('_', 0, 0);
-  if(prefix == s)
-    {
+  if (prefix == s) {
     prefix = QString();
-    }
+  }
   return prefix;
 }
 
-void QCMakeCacheModel::breakProperties(const QSet<QCMakeProperty>& props,
-                     QMap<QString, QCMakePropertyList>& result)
+void QCMakeCacheModel::breakProperties(
+  const QSet<QCMakeProperty>& props, QMap<QString, QCMakePropertyList>& result)
 {
   QMap<QString, QCMakePropertyList> tmp;
   // return a map of properties grouped by prefixes, and sorted
-  foreach(QCMakeProperty p, props)
-    {
+  foreach (QCMakeProperty const& p, props) {
     QString prefix = QCMakeCacheModel::prefix(p.Key);
     tmp[prefix].append(p);
-    }
+  }
   // sort it and re-org any properties with only one sub item
   QCMakePropertyList reorgProps;
   QMap<QString, QCMakePropertyList>::iterator iter;
-  for(iter = tmp.begin(); iter != tmp.end();)
-    {
-    if(iter->count() == 1)
-      {
+  for (iter = tmp.begin(); iter != tmp.end();) {
+    if (iter->count() == 1) {
       reorgProps.append((*iter)[0]);
       iter = tmp.erase(iter);
-      }
-    else
-      {
+    } else {
+#if QT_VERSION >= QT_VERSION_CHECK(5, 9, 0)
+      std::sort(iter->begin(), iter->end());
+#else
       qSort(*iter);
+#endif
       ++iter;
-      }
     }
-  if(reorgProps.count())
-    {
+  }
+  if (reorgProps.count()) {
     tmp[QString()] += reorgProps;
-    }
+  }
   result = tmp;
 }
 
@@ -462,27 +466,21 @@ QCMakePropertyList QCMakeCacheModel::properties() const
 {
   QCMakePropertyList props;
 
-  if(!this->rowCount())
-    {
+  if (!this->rowCount()) {
     return props;
-    }
+  }
 
-  QList<QModelIndex> idxs;
-  idxs.append(this->index(0,0));
+  QVector<QModelIndex> idxs;
+  idxs.append(this->index(0, 0));
 
   // walk the entire model for property entries
   // this works regardless of a flat view or a tree view
-  while(!idxs.isEmpty())
-  {
+  while (!idxs.isEmpty()) {
     QModelIndex idx = idxs.last();
-    if(this->hasChildren(idx) && this->rowCount(idx))
-    {
-      idxs.append(this->index(0,0, idx));
-    }
-    else
-    {
-      if(!data(idx, GroupRole).toInt())
-      {
+    if (this->hasChildren(idx) && this->rowCount(idx)) {
+      idxs.append(this->index(0, 0, idx));
+    } else {
+      if (!data(idx, GroupRole).toInt()) {
         // get data
         QCMakeProperty prop;
         this->getPropertyData(idx, prop);
@@ -490,17 +488,16 @@ QCMakePropertyList QCMakeCacheModel::properties() const
       }
 
       // go to the next in the tree
-      while(!idxs.isEmpty() && (
-#if QT_VERSION >= QT_VERSION_CHECK(5, 0, 0) && QT_VERSION < QT_VERSION_CHECK(5, 1, 0)
-        (idxs.last().row()+1) >= rowCount(idxs.last().parent()) ||
+      while (!idxs.isEmpty() &&
+             (
+#if QT_VERSION < QT_VERSION_CHECK(5, 1, 0)
+               (idxs.last().row() + 1) >= rowCount(idxs.last().parent()) ||
 #endif
-        !idxs.last().sibling(idxs.last().row()+1, 0).isValid()))
-      {
-        idxs.removeLast();
+               !idxs.last().sibling(idxs.last().row() + 1, 0).isValid())) {
+        idxs.remove(idxs.size() - 1);
       }
-      if(!idxs.isEmpty())
-      {
-        idxs.last() = idxs.last().sibling(idxs.last().row()+1, 0);
+      if (!idxs.isEmpty()) {
+        idxs.last() = idxs.last().sibling(idxs.last().row() + 1, 0);
       }
     }
   }
@@ -509,8 +506,9 @@ QCMakePropertyList QCMakeCacheModel::properties() const
 }
 
 bool QCMakeCacheModel::insertProperty(QCMakeProperty::PropertyType t,
-                      const QString& name, const QString& description,
-                      const QVariant& value, bool advanced)
+                                      const QString& name,
+                                      const QString& description,
+                                      const QVariant& value, bool advanced)
 {
   QCMakeProperty prop;
   prop.Key = name;
@@ -519,9 +517,9 @@ bool QCMakeCacheModel::insertProperty(QCMakeProperty::PropertyType t,
   prop.Type = t;
   prop.Advanced = advanced;
 
-  //insert at beginning
+  // insert at beginning
   this->insertRow(0);
-  this->setPropertyData(this->index(0,0), prop, true);
+  this->setPropertyData(this->index(0, 0), prop, true);
   this->NewPropertyCount++;
   return true;
 }
@@ -541,33 +539,31 @@ int QCMakeCacheModel::newPropertyCount() const
   return this->NewPropertyCount;
 }
 
-Qt::ItemFlags QCMakeCacheModel::flags (const QModelIndex& idx) const
+Qt::ItemFlags QCMakeCacheModel::flags(const QModelIndex& idx) const
 {
   Qt::ItemFlags f = QStandardItemModel::flags(idx);
-  if(!this->EditEnabled)
-    {
+  if (!this->EditEnabled) {
     f &= ~Qt::ItemIsEditable;
     return f;
-    }
-  if(QCMakeProperty::BOOL == this->data(idx, TypeRole).toInt())
-    {
+  }
+  if (QCMakeProperty::BOOL == this->data(idx, TypeRole).toInt()) {
     f |= Qt::ItemIsUserCheckable;
-    }
+  }
   return f;
 }
 
 QModelIndex QCMakeCacheModel::buddy(const QModelIndex& idx) const
 {
-  if(!this->hasChildren(idx) &&
-     this->data(idx, TypeRole).toInt() != QCMakeProperty::BOOL)
-  {
+  if (!this->hasChildren(idx) &&
+      this->data(idx, TypeRole).toInt() != QCMakeProperty::BOOL) {
     return this->index(idx.row(), 1, idx.parent());
   }
   return idx;
 }
 
 QCMakeCacheModelDelegate::QCMakeCacheModelDelegate(QObject* p)
-  : QItemDelegate(p), FileDialogFlag(false)
+  : QItemDelegate(p)
+  , FileDialogFlag(false)
 {
 }
 
@@ -576,126 +572,123 @@ void QCMakeCacheModelDelegate::setFileDialogFlag(bool f)
   this->FileDialogFlag = f;
 }
 
-QWidget* QCMakeCacheModelDelegate::createEditor(QWidget* p,
-    const QStyleOptionViewItem&, const QModelIndex& idx) const
+QWidget* QCMakeCacheModelDelegate::createEditor(
+  QWidget* p, const QStyleOptionViewItem& /*option*/,
+  const QModelIndex& idx) const
 {
   QModelIndex var = idx.sibling(idx.row(), 0);
   int type = var.data(QCMakeCacheModel::TypeRole).toInt();
-  if(type == QCMakeProperty::BOOL)
-    {
-    return NULL;
-    }
-  else if(type == QCMakeProperty::PATH)
-    {
+  if (type == QCMakeProperty::BOOL) {
+    return nullptr;
+  }
+  if (type == QCMakeProperty::PATH) {
     QCMakePathEditor* editor =
-      new QCMakePathEditor(p,
-      var.data(Qt::DisplayRole).toString());
-    QObject::connect(editor, SIGNAL(fileDialogExists(bool)), this,
-        SLOT(setFileDialogFlag(bool)));
+      new QCMakePathEditor(p, var.data(Qt::DisplayRole).toString());
+    QObject::connect(editor, &QCMakePathEditor::fileDialogExists, this,
+                     &QCMakeCacheModelDelegate::setFileDialogFlag);
     return editor;
-    }
-  else if(type == QCMakeProperty::FILEPATH)
-    {
+  }
+  if (type == QCMakeProperty::FILEPATH) {
     QCMakeFilePathEditor* editor =
-      new QCMakeFilePathEditor(p,
-      var.data(Qt::DisplayRole).toString());
-    QObject::connect(editor, SIGNAL(fileDialogExists(bool)), this,
-        SLOT(setFileDialogFlag(bool)));
+      new QCMakeFilePathEditor(p, var.data(Qt::DisplayRole).toString());
+    QObject::connect(editor, &QCMakePathEditor::fileDialogExists, this,
+                     &QCMakeCacheModelDelegate::setFileDialogFlag);
     return editor;
-    }
-  else if(type == QCMakeProperty::STRING &&
-          var.data(QCMakeCacheModel::StringsRole).isValid())
-    {
-    QCMakeComboBox* editor =
-      new QCMakeComboBox(p, var.data(QCMakeCacheModel::StringsRole).toStringList());
+  }
+  if (type == QCMakeProperty::STRING &&
+      var.data(QCMakeCacheModel::StringsRole).isValid()) {
+    QCMakeComboBox* editor = new QCMakeComboBox(
+      p, var.data(QCMakeCacheModel::StringsRole).toStringList());
     editor->setFrame(false);
     return editor;
-    }
+  }
 
   QLineEdit* editor = new QLineEdit(p);
   editor->setFrame(false);
   return editor;
 }
 
-bool QCMakeCacheModelDelegate::editorEvent(QEvent* e, QAbstractItemModel* model,
-       const QStyleOptionViewItem& option, const QModelIndex& index)
+bool QCMakeCacheModelDelegate::editorEvent(QEvent* e,
+                                           QAbstractItemModel* model,
+                                           const QStyleOptionViewItem& option,
+                                           const QModelIndex& index)
 {
   Qt::ItemFlags flags = model->flags(index);
-  if (!(flags & Qt::ItemIsUserCheckable) || !(option.state & QStyle::State_Enabled)
-      || !(flags & Qt::ItemIsEnabled))
-    {
+  if (!(flags & Qt::ItemIsUserCheckable) ||
+      !(option.state & QStyle::State_Enabled) ||
+      !(flags & Qt::ItemIsEnabled)) {
     return false;
-    }
+  }
 
   QVariant value = index.data(Qt::CheckStateRole);
-  if (!value.isValid())
-    {
+  if (!value.isValid()) {
     return false;
-    }
+  }
 
-  if ((e->type() == QEvent::MouseButtonRelease)
-      || (e->type() == QEvent::MouseButtonDblClick))
-    {
+  if ((e->type() == QEvent::MouseButtonRelease) ||
+      (e->type() == QEvent::MouseButtonDblClick)) {
     // eat the double click events inside the check rect
-    if (e->type() == QEvent::MouseButtonDblClick)
-      {
+    if (e->type() == QEvent::MouseButtonDblClick) {
       return true;
-      }
     }
-  else if (e->type() == QEvent::KeyPress)
-    {
-    if(static_cast<QKeyEvent*>(e)->key() != Qt::Key_Space &&
-       static_cast<QKeyEvent*>(e)->key() != Qt::Key_Select)
-      {
+  } else if (e->type() == QEvent::KeyPress) {
+    if (static_cast<QKeyEvent*>(e)->key() != Qt::Key_Space &&
+        static_cast<QKeyEvent*>(e)->key() != Qt::Key_Select) {
       return false;
-      }
     }
-  else
-    {
+  } else {
     return false;
-    }
+  }
 
-  Qt::CheckState state = (static_cast<Qt::CheckState>(value.toInt()) == Qt::Checked
-                          ? Qt::Unchecked : Qt::Checked);
+  Qt::CheckState state =
+    (static_cast<Qt::CheckState>(value.toInt()) == Qt::Checked ? Qt::Unchecked
+                                                               : Qt::Checked);
   bool success = model->setData(index, state, Qt::CheckStateRole);
-  if(success)
-    {
+  if (success) {
     this->recordChange(model, index);
-    }
+  }
   return success;
 }
 
-// Issue 205903 fixed in Qt 4.5.0.
-// Can remove this function and FileDialogFlag when minimum Qt version is 4.5
 bool QCMakeCacheModelDelegate::eventFilter(QObject* object, QEvent* evt)
 {
-  // workaround for what looks like a bug in Qt on Mac OS X
-  // where it doesn't create a QWidget wrapper for the native file dialog
-  // so the Qt library ends up assuming the focus was lost to something else
-
-  if(evt->type() == QEvent::FocusOut && this->FileDialogFlag)
-    {
+  // FIXME: This filter avoids a crash when opening a file dialog
+  // with the '...' button on a cache entry line in the GUI.
+  // Previously this filter was commented as a workaround for Qt issue 205903,
+  // but that was fixed in Qt 4.5.0 and the crash still occurs as of Qt 5.14
+  // without this filter.  This needs further investigation.
+  if (evt->type() == QEvent::FocusOut && this->FileDialogFlag) {
     return false;
-    }
+  }
   return QItemDelegate::eventFilter(object, evt);
 }
 
 void QCMakeCacheModelDelegate::setModelData(QWidget* editor,
-  QAbstractItemModel* model, const QModelIndex& index ) const
+                                            QAbstractItemModel* model,
+                                            const QModelIndex& index) const
 {
   QItemDelegate::setModelData(editor, model, index);
   const_cast<QCMakeCacheModelDelegate*>(this)->recordChange(model, index);
 }
 
-QSize QCMakeCacheModelDelegate::sizeHint(const QStyleOptionViewItem& option, const QModelIndex& index) const
+QSize QCMakeCacheModelDelegate::sizeHint(const QStyleOptionViewItem& option,
+                                         const QModelIndex& index) const
 {
   QSize sz = QItemDelegate::sizeHint(option, index);
-  QStyle *style = QApplication::style();
+  QStyle* style = QApplication::style();
 
   // increase to checkbox size
   QStyleOptionButton opt;
   opt.QStyleOption::operator=(option);
-  sz = sz.expandedTo(style->subElementRect(QStyle::SE_ViewItemCheckIndicator, &opt, NULL).size());
+#if QT_VERSION >= QT_VERSION_CHECK(5, 13, 0)
+  sz = sz.expandedTo(
+    style->subElementRect(QStyle::SE_ItemViewItemCheckIndicator, &opt, nullptr)
+      .size());
+#else
+  sz = sz.expandedTo(
+    style->subElementRect(QStyle::SE_ViewItemCheckIndicator, &opt, nullptr)
+      .size());
+#endif
 
   return sz;
 }
@@ -710,30 +703,27 @@ void QCMakeCacheModelDelegate::clearChanges()
   mChanges.clear();
 }
 
-void QCMakeCacheModelDelegate::recordChange(QAbstractItemModel* model, const QModelIndex& index)
+void QCMakeCacheModelDelegate::recordChange(QAbstractItemModel* model,
+                                            const QModelIndex& index)
 {
   QModelIndex idx = index;
   QAbstractItemModel* mymodel = model;
-  while(qobject_cast<QAbstractProxyModel*>(mymodel))
-    {
+  while (qobject_cast<QAbstractProxyModel*>(mymodel)) {
     idx = static_cast<QAbstractProxyModel*>(mymodel)->mapToSource(idx);
     mymodel = static_cast<QAbstractProxyModel*>(mymodel)->sourceModel();
-    }
+  }
   QCMakeCacheModel* cache_model = qobject_cast<QCMakeCacheModel*>(mymodel);
-  if(cache_model && idx.isValid())
-    {
+  if (cache_model && idx.isValid()) {
     QCMakeProperty prop;
     idx = idx.sibling(idx.row(), 0);
     cache_model->getPropertyData(idx, prop);
 
     // clean out an old one
     QSet<QCMakeProperty>::iterator iter = mChanges.find(prop);
-    if(iter != mChanges.end())
-      {
+    if (iter != mChanges.end()) {
       mChanges.erase(iter);
-      }
+    }
     // now add the new item
     mChanges.insert(prop);
-    }
+  }
 }
-

@@ -1,44 +1,30 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
-
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
-
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmCPackComponentGroup.h"
-#include "cmSystemTools.h"
-#include <vector>
+
 #include <string>
 
-//----------------------------------------------------------------------
-unsigned long cmCPackComponent::GetInstalledSize(const char* installDir) const
-{
-  if (this->TotalSize != 0)
-    {
-    return this->TotalSize;
-    }
+#include "cmStringAlgorithms.h"
+#include "cmSystemTools.h"
 
-  std::vector<std::string>::const_iterator fileIt;
-  for (fileIt = this->Files.begin(); fileIt != this->Files.end(); ++fileIt)
-    {
-    std::string path = installDir;
-    path += '/';
-    path += *fileIt;
-    this->TotalSize += cmSystemTools::FileLength(path.c_str());
-    }
+unsigned long cmCPackComponent::GetInstalledSize(
+  const std::string& installDir) const
+{
+  if (this->TotalSize != 0) {
+    return this->TotalSize;
+  }
+
+  for (std::string const& file : this->Files) {
+    std::string path = cmStrCat(installDir, '/', file);
+    this->TotalSize += cmSystemTools::FileLength(path);
+  }
 
   return this->TotalSize;
 }
 
-//----------------------------------------------------------------------
-unsigned long
-cmCPackComponent::GetInstalledSizeInKbytes(const char* installDir) const
+unsigned long cmCPackComponent::GetInstalledSizeInKbytes(
+  const std::string& installDir) const
 {
-  unsigned long result = (GetInstalledSize(installDir) + 512) / 1024;
-  return result? result : 1;
+  unsigned long result = (this->GetInstalledSize(installDir) + 512) / 1024;
+  return result ? result : 1;
 }

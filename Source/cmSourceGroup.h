@@ -1,22 +1,17 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmSourceGroup_h
-#define cmSourceGroup_h
+#include <memory>
+#include <set>
+#include <string>
+#include <vector>
 
-#include "cmStandardIncludes.h"
-#include <cmsys/RegularExpression.hxx>
+#include "cmsys/RegularExpression.hxx"
 
 class cmSourceFile;
-
 class cmSourceGroupInternals;
 
 /** \class cmSourceGroup
@@ -32,8 +27,8 @@ class cmSourceGroupInternals;
 class cmSourceGroup
 {
 public:
-  cmSourceGroup(const char* name, const char* regex,
-                const char* parentName=0);
+  cmSourceGroup(std::string name, const char* regex,
+                const char* parentName = nullptr);
   cmSourceGroup(cmSourceGroup const& r);
   ~cmSourceGroup();
   cmSourceGroup& operator=(cmSourceGroup const&);
@@ -46,48 +41,48 @@ public:
   /**
    * Add a file name to the explicit list of files for this group.
    */
-  void AddGroupFile(const char* name);
+  void AddGroupFile(const std::string& name);
 
   /**
    * Add child to this sourcegroup
    */
-  void AddChild(cmSourceGroup child);
+  void AddChild(cmSourceGroup const& child);
 
   /**
    * Looks up child and returns it
    */
-  cmSourceGroup *LookupChild(const char *name) const;
+  cmSourceGroup* LookupChild(const std::string& name);
 
   /**
    * Get the name of this group.
    */
-  const char* GetName() const;
+  std::string const& GetName() const;
 
   /**
    * Get the full path name for group.
    */
-  const char* GetFullName() const;
+  std::string const& GetFullName() const;
 
   /**
    * Check if the given name matches this group's regex.
    */
-  bool MatchesRegex(const char* name);
+  bool MatchesRegex(const std::string& name);
 
   /**
    * Check if the given name matches this group's explicit file list.
    */
-  bool MatchesFiles(const char* name);
+  bool MatchesFiles(const std::string& name) const;
 
   /**
    * Check if the given name matches this group's explicit file list
    * in children.
    */
-  cmSourceGroup *MatchChildrenFiles(const char *name);
+  cmSourceGroup* MatchChildrenFiles(const std::string& name);
 
   /**
    * Check if the given name matches this group's regex in children.
    */
-  cmSourceGroup *MatchChildrenRegex(const char *name);
+  cmSourceGroup* MatchChildrenRegex(const std::string& name);
 
   /**
    * Assign the given source file to this group.  Used only by
@@ -102,6 +97,7 @@ public:
   const std::vector<const cmSourceFile*>& GetSourceFiles() const;
 
   std::vector<cmSourceGroup> const& GetGroupChildren() const;
+
 private:
   /**
    * The name of the source group.
@@ -118,7 +114,7 @@ private:
   /**
    * Set of file names explicitly added to this group.
    */
-  std::set<cmStdString> GroupFiles;
+  std::set<std::string> GroupFiles;
 
   /**
    * Vector of all source files that have been assigned to
@@ -126,7 +122,5 @@ private:
    */
   std::vector<const cmSourceFile*> SourceFiles;
 
-  cmSourceGroupInternals* Internal;
+  std::unique_ptr<cmSourceGroupInternals> Internal;
 };
-
-#endif

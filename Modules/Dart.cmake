@@ -1,24 +1,28 @@
-#.rst:
-# Dart
-# ----
-#
-# Configure a project for testing with CTest or old Dart Tcl Client
-#
-# This file is the backwards-compatibility version of the CTest module.
-# It supports using the old Dart 1 Tcl client for driving dashboard
-# submissions as well as testing with CTest.  This module should be
-# included in the CMakeLists.txt file at the top of a project.  Typical
-# usage:
-#
-# ::
-#
-#   include(Dart)
-#   if(BUILD_TESTING)
-#     # ... testing related CMake code ...
-#   endif()
-#
-# The BUILD_TESTING option is created by the Dart module to determine
-# whether testing support should be enabled.  The default is ON.
+# Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+# file Copyright.txt or https://cmake.org/licensing for details.
+
+#[=======================================================================[.rst:
+Dart
+----
+
+Configure a project for testing with CTest or old Dart Tcl Client
+
+This file is the backwards-compatibility version of the CTest module.
+It supports using the old Dart 1 Tcl client for driving dashboard
+submissions as well as testing with CTest.  This module should be
+included in the CMakeLists.txt file at the top of a project.  Typical
+usage:
+
+::
+
+  include(Dart)
+  if(BUILD_TESTING)
+    # ... testing related CMake code ...
+  endif()
+
+The BUILD_TESTING option is created by the Dart module to determine
+whether testing support should be enabled.  The default is ON.
+#]=======================================================================]
 
 # This file configures a project to use the Dart testing/dashboard process.
 # It is broken into 3 sections.
@@ -28,19 +32,6 @@
 #  Section #3: Custom targets for performing dashboard builds.
 #
 #
-
-#=============================================================================
-# Copyright 2001-2009 Kitware, Inc.
-#
-# Distributed under the OSI-approved BSD License (the "License");
-# see accompanying file Copyright.txt for details.
-#
-# This software is distributed WITHOUT ANY WARRANTY; without even the
-# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the License for more information.
-#=============================================================================
-# (To distribute this file outside of CMake, substitute the full
-#  License text for the above reference.)
 
 option(BUILD_TESTING "Build the testing tree." ON)
 
@@ -119,7 +110,7 @@ if(BUILD_TESTING)
     # add testing targets
     set(DART_EXPERIMENTAL_NAME Experimental)
     if(DART_EXPERIMENTAL_USE_PROJECT_NAME)
-      set(DART_EXPERIMENTAL_NAME "${DART_EXPERIMENTAL_NAME}${PROJECT_NAME}")
+      string(APPEND DART_EXPERIMENTAL_NAME "${PROJECT_NAME}")
     endif()
   endif ()
 

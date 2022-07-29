@@ -1,19 +1,13 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc.
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-
-#ifndef cmCPackBundleGenerator_h
-#define cmCPackBundleGenerator_h
+#include <string>
 
 #include "cmCPackDragNDropGenerator.h"
+#include "cmCPackGenerator.h"
 
 /** \class cmCPackBundleGenerator
  * \brief A generator for OSX bundles
@@ -26,15 +20,15 @@ public:
   cmCPackTypeMacro(cmCPackBundleGenerator, cmCPackDragNDropGenerator);
 
   cmCPackBundleGenerator();
-  virtual ~cmCPackBundleGenerator();
+  ~cmCPackBundleGenerator() override;
 
 protected:
-  virtual int InitializeInternal();
-  virtual const char* GetPackagingInstallPrefix();
-  int PackageFiles();
-  bool SupportsComponentInstallation() const;
+  int InitializeInternal() override;
+  const char* GetPackagingInstallPrefix() override;
+  int ConstructBundle();
+  int SignBundle(const std::string& src_dir);
+  int PackageFiles() override;
+  bool SupportsComponentInstallation() const override;
 
   std::string InstallPrefix;
 };
-
-#endif

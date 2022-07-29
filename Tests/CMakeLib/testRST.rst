@@ -12,7 +12,7 @@ Command :cmake:command:`some_cmd` explicit cmake domain.
 Command :command:`some_cmd` without target.
 Command :command:`some_cmd <some_cmd>` with target.
 Command :command:`some_cmd_<cmd>` placeholder without target.
-Command :command:`some_cmd_<cmd> <some_cmd>` placholder with target.
+Command :command:`some_cmd_<cmd> <some_cmd>` placeholder with target.
 Command :command:`some_cmd()` with parens.
 Command :command:`some_cmd(SUB)` with subcommand.
 Command :command:`some_cmd(SUB) <some_cmd>` with subcommand and target.
@@ -23,7 +23,20 @@ Variable :variable:`<PLACEHOLDER>_VARIABLE` with leading placeholder.
 Variable :variable:`VARIABLE_<PLACEHOLDER>` with trailing placeholder.
 Variable :variable:`<PLACEHOLDER>_VARIABLE <target>` with leading placeholder and target.
 Variable :variable:`VARIABLE_<PLACEHOLDER> <target>` with trailing placeholder and target.
+Environment variable :envvar:`SOME_ENV_VAR`.
+Environment variable :envvar:`some env var <SOME_ENV_VAR>` with space and target.
 Generator :generator:`Some Generator` with space.
+Generator :cpack_gen:`Some Generator` with space.
+Generator expression :genex:`SOME_GENEX`.
+Generator expression :genex:`$<SOME_GENEX>` with brackets.
+Generator expression :genex:`$<SOME_GENEX:...>` with brackets and parameter.
+Generator expression :genex:`some genex <SOME_GENEX>` with space and target.
+Generator expression :genex:`$<SOME_GENEX> <SOME_GENEX>` with brackets, space, and target.
+Generator expression :genex:`$<SOME_GENEX:...> <SOME_GENEX>` with brackets, parameter, space, and target.
+Inline literal ``~!@#$%^&*( )_+-=\\[]{}'":;,<>.?/``.
+Inline link `Link Text <ExternalDest>`_.
+Inline link `Link Text \<With \\-escaped Brackets\> <ExternalDest>`_.
+Inline literal ``__`` followed by inline link `Link Text <InternalDest_>`_.
 
 .. |not replaced| replace:: not replaced through toctree
 .. |not replaced in literal| replace:: replaced in parsed literal
@@ -43,6 +56,22 @@ Generator :generator:`Some Generator` with space.
 .. command:: other_cmd
 
    Command other_cmd description.
+
+.. cmake:envvar:: some_var
+
+   Environment variable some_var description.
+
+.. envvar:: other_var
+
+   Environment variable other_var description.
+
+.. cmake:genex:: SOME_GENEX
+
+   Generator expression SOME_GENEX description.
+
+.. genex:: $<OTHER_GENEX>
+
+   Generator expression $<OTHER_GENEX> description.
 
 .. cmake:variable:: some_var
 
@@ -83,12 +112,22 @@ or after a paragraph ending in two colons::
 but not after a line ending in two colons::
 in the middle of a paragraph.
 
+A literal block can be empty::
+
+
+
 .. productionlist::
  grammar: `production`
  production: "content rendered"
 
 .. note::
  Notes are called out.
+
+.. versionadded:: 1.2
+ Version blocks are preserved.
+
+.. versionchanged:: 2.3
+ Version blocks are preserved.
 
 .. |substitution| replace::
    |nested substitution|

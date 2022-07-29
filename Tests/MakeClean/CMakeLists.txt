@@ -1,4 +1,4 @@
-cmake_minimum_required (VERSION 2.6)
+cmake_minimum_required (VERSION 2.8.12)
 project(MakeClean)
 
 # Build the to-clean project.
@@ -34,7 +34,7 @@ endforeach()
 # Configure an executable to check that all the files are missing.
 set(CHECK_FILES)
 foreach(f ${TOCLEAN_FILES})
-  set(CHECK_FILES "${CHECK_FILES}      \"${f}\",\n")
+  string(APPEND CHECK_FILES "      \"${f}\",\n")
 endforeach()
 configure_file(${MakeClean_SOURCE_DIR}/check_clean.c.in
                ${MakeClean_BINARY_DIR}/check_clean.c @ONLY)

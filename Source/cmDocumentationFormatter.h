@@ -1,18 +1,10 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef _cmDocumentationFormatter_h
-#define _cmDocumentationFormatter_h
-
-#include "cmStandardIncludes.h"
+#include <iosfwd>
 
 /** This is just a helper class to make it build with MSVC 6.0.
 Actually the enums and internal classes could directly go into
@@ -26,9 +18,24 @@ public:
   /** Types of help provided.  */
   enum Type
   {
-    None, Version, Usage, Full, ListManuals,
-    ListCommands, ListModules, ListProperties, ListVariables, ListPolicies,
-    OneManual, OneCommand, OneModule, OneProperty, OneVariable, OnePolicy,
+    None,
+    Version,
+    Usage,
+    Help,
+    Full,
+    ListManuals,
+    ListCommands,
+    ListModules,
+    ListProperties,
+    ListVariables,
+    ListPolicies,
+    ListGenerators,
+    OneManual,
+    OneCommand,
+    OneModule,
+    OneProperty,
+    OneVariable,
+    OnePolicy,
     OldCustomModules
   };
 };
@@ -49,9 +56,8 @@ public:
   virtual void PrintParagraph(std::ostream& os, const char* text);
   void PrintColumn(std::ostream& os, const char* text);
   void SetIndent(const char* indent);
-private:
-  int TextWidth;
-  const char* TextIndent;
-};
 
-#endif
+private:
+  int TextWidth = 77;
+  const char* TextIndent = "";
+};

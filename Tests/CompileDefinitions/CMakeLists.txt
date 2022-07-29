@@ -1,12 +1,5 @@
-
-cmake_minimum_required(VERSION 2.8)
-
+cmake_minimum_required(VERSION 2.8.12)
 project(CompileDefinitions)
-
-if ("${CMAKE_GENERATOR}" STREQUAL "Visual Studio 6")
-    add_definitions(-DNO_SPACES_IN_DEFINE_VALUES)
-    set(NO_SPACES_IN_DEFINE_VALUES 1)
-endif()
 
 # Use compile flags to tell executables which config is built
 # without depending on the compile definitions functionality.
@@ -19,8 +12,8 @@ set_property(DIRECTORY APPEND PROPERTY COMPILE_DEFINITIONS
   "BUILD_CONFIG_NAME=\"$<CONFIGURATION>\""
   )
 
-add_subdirectory(add_definitions_command)
+add_subdirectory(add_def_cmd)
 add_subdirectory(target_prop)
-add_subdirectory(add_definitions_command_with_target_prop)
+add_subdirectory(add_def_cmd_tprop)
 
 add_executable(CompileDefinitions runtest.c)

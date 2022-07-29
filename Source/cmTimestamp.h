@@ -1,40 +1,37 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2012 Kitware, Inc., Insight Software Consortium
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmTimestamp_h
-#define cmTimestamp_h
-
+#include <cstdint>
+#include <ctime>
 #include <string>
-#include <time.h>
 
 /** \class cmTimestamp
- * \brief Utility class to generate sting representation of a timestamp
+ * \brief Utility class to generate string representation of a timestamp
  *
  */
 class cmTimestamp
 {
 public:
-  cmTimestamp() {}
-
-  std::string CurrentTime(const std::string& formatString, bool utcFlag);
+  std::string CurrentTime(const std::string& formatString, bool utcFlag) const;
 
   std::string FileModificationTime(const char* path,
-    const std::string& formatString, bool utcFlag);
+                                   const std::string& formatString,
+                                   bool utcFlag) const;
+
+  std::string CreateTimestampFromTimeT(time_t timeT, std::string formatString,
+                                       bool utcFlag) const;
+
+  std::string CreateTimestampFromTimeT(time_t timeT, uint32_t microseconds,
+                                       std::string formatString,
+                                       bool utcFlag) const;
 
 private:
-  std::string CreateTimestampFromTimeT(time_t timeT,
-      std::string formatString, bool utcFlag);
+  time_t CreateUtcTimeTFromTm(struct tm& timeStruct) const;
 
-  std::string AddTimestampComponent(char flag, struct tm& timeStruct);
+  std::string AddTimestampComponent(char flag, struct tm& timeStruct,
+                                    time_t timeT,
+                                    uint32_t microseconds = 0) const;
 };
-
-
-#endif

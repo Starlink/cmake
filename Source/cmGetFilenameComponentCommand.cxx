@@ -1,139 +1,140 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
-
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
-
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmGetFilenameComponentCommand.h"
+
+#include "cmExecutionStatus.h"
+#include "cmMakefile.h"
+#include "cmStateTypes.h"
+#include "cmStringAlgorithms.h"
 #include "cmSystemTools.h"
+#include "cmValue.h"
 
 // cmGetFilenameComponentCommand
-bool cmGetFilenameComponentCommand
-::InitialPass(std::vector<std::string> const& args, cmExecutionStatus &)
+bool cmGetFilenameComponentCommand(std::vector<std::string> const& args,
+                                   cmExecutionStatus& status)
 {
-  if(args.size() < 3)
-    {
-    this->SetError("called with incorrect number of arguments");
+  if (args.size() < 3) {
+    status.SetError("called with incorrect number of arguments");
+    cmSystemTools::SetFatalErrorOccured();
     return false;
-    }
+  }
 
   // Check and see if the value has been stored in the cache
   // already, if so use that value
-  if(args.size() == 4 && args[3] == "CACHE")
-    {
-    const char* cacheValue = this->Makefile->GetDefinition(args[0].c_str());
-    if(cacheValue && !cmSystemTools::IsNOTFOUND(cacheValue))
-      {
+  if (args.size() >= 4 && args.back() == "CACHE") {
+    cmValue cacheValue = status.GetMakefile().GetDefinition(args.front());
+    if (cacheValue && !cmIsNOTFOUND(*cacheValue)) {
       return true;
-      }
     }
+  }
 
   std::string result;
   std::string filename = args[1];
-  if(filename.find("[HKEY") != filename.npos)
-    {
+  if (filename.find("[HKEY") != std::string::npos) {
     // Check the registry as the target application would view it.
     cmSystemTools::KeyWOW64 view = cmSystemTools::KeyWOW64_32;
     cmSystemTools::KeyWOW64 other_view = cmSystemTools::KeyWOW64_64;
-    if(this->Makefile->PlatformIs64Bit())
-      {
+    if (status.GetMakefile().PlatformIs64Bit()) {
       view = cmSystemTools::KeyWOW64_64;
       other_view = cmSystemTools::KeyWOW64_32;
-      }
+    }
     cmSystemTools::ExpandRegistryValues(filename, view);
-    if(filename.find("/registry") != filename.npos)
-      {
+    if (filename.find("/registry") != std::string::npos) {
       std::string other = args[1];
       cmSystemTools::ExpandRegistryValues(other, other_view);
-      if(other.find("/registry") == other.npos)
-        {
+      if (other.find("/registry") == std::string::npos) {
         filename = other;
-        }
       }
     }
+  }
   std::string storeArgs;
   std::string programArgs;
-  if (args[2] == "DIRECTORY" || args[2] == "PATH")
-    {
+  if (args[2] == "DIRECTORY" || args[2] == "PATH") {
     result = cmSystemTools::GetFilenamePath(filename);
-    }
-  else if (args[2] == "NAME")
-    {
+  } else if (args[2] == "NAME") {
     result = cmSystemTools::GetFilenameName(filename);
-    }
-  else if (args[2] == "PROGRAM")
-    {
-    for(unsigned int i=2; i < args.size(); ++i)
-      {
-      if(args[i] == "PROGRAM_ARGS")
-        {
+  } else if (args[2] == "PROGRAM") {
+    for (unsigned int i = 2; i < args.size(); ++i) {
+      if (args[i] == "PROGRAM_ARGS") {
         i++;
-        if(i < args.size())
-          {
+        if (i < args.size()) {
           storeArgs = args[i];
-          }
         }
       }
-    cmSystemTools::SplitProgramFromArgs(filename.c_str(),
-                                        result, programArgs);
-    }
-  else if (args[2] == "EXT")
-    {
-    result = cmSystemTools::GetFilenameExtension(filename);
-    }
-  else if (args[2] == "NAME_WE")
-    {
-    result = cmSystemTools::GetFilenameWithoutExtension(filename);
-    }
-  else if (args[2] == "ABSOLUTE" ||
-           args[2] == "REALPATH")
-    {
-    // Collapse the path to its simplest form.
-    // If the path given is relative evaluate it relative to the
-    // current source directory.
-    result = cmSystemTools::CollapseFullPath(
-      filename.c_str(), this->Makefile->GetCurrentDirectory());
-    if(args[2] == "REALPATH")
-      {
-      // Resolve symlinks if possible
-      result = cmSystemTools::GetRealPath(result.c_str());
-      }
-    }
-  else
-    {
-    std::string err = "unknown component " + args[2];
-    this->SetError(err.c_str());
-    return false;
     }
 
-  if(args.size() == 4 && args[3] == "CACHE")
-    {
-    if(programArgs.size() && storeArgs.size())
-      {
-      this->Makefile->AddCacheDefinition
-        (storeArgs.c_str(), programArgs.c_str(),
-         "", args[2] == "PATH" ? cmCacheManager::FILEPATH
-         : cmCacheManager::STRING);
-      }
-    this->Makefile->AddCacheDefinition
-      (args[0].c_str(), result.c_str(), "",
-       args[2] == "PATH" ? cmCacheManager::FILEPATH
-       : cmCacheManager::STRING);
+    // First assume the path to the program was specified with no
+    // arguments and with no quoting or escaping for spaces.
+    // Only bother doing this if there is non-whitespace.
+    if (!cmTrimWhitespace(filename).empty()) {
+      result = cmSystemTools::FindProgram(filename);
     }
-  else
-    {
-    if(programArgs.size() && storeArgs.size())
-      {
-      this->Makefile->AddDefinition(storeArgs.c_str(), programArgs.c_str());
+
+    // If that failed then assume a command-line string was given
+    // and split the program part from the rest of the arguments.
+    if (result.empty()) {
+      std::string program;
+      if (cmSystemTools::SplitProgramFromArgs(filename, program,
+                                              programArgs)) {
+        if (cmSystemTools::FileExists(program)) {
+          result = program;
+        } else {
+          result = cmSystemTools::FindProgram(program);
+        }
       }
-    this->Makefile->AddDefinition(args[0].c_str(), result.c_str());
+      if (result.empty()) {
+        programArgs.clear();
+      }
     }
+  } else if (args[2] == "EXT") {
+    result = cmSystemTools::GetFilenameExtension(filename);
+  } else if (args[2] == "NAME_WE") {
+    result = cmSystemTools::GetFilenameWithoutExtension(filename);
+  } else if (args[2] == "LAST_EXT") {
+    result = cmSystemTools::GetFilenameLastExtension(filename);
+  } else if (args[2] == "NAME_WLE") {
+    result = cmSystemTools::GetFilenameWithoutLastExtension(filename);
+  } else if (args[2] == "ABSOLUTE" || args[2] == "REALPATH") {
+    // If the path given is relative, evaluate it relative to the
+    // current source directory unless the user passes a different
+    // base directory.
+    std::string baseDir = status.GetMakefile().GetCurrentSourceDirectory();
+    for (unsigned int i = 3; i < args.size(); ++i) {
+      if (args[i] == "BASE_DIR") {
+        ++i;
+        if (i < args.size()) {
+          baseDir = args[i];
+        }
+      }
+    }
+    // Collapse the path to its simplest form.
+    result = cmSystemTools::CollapseFullPath(filename, baseDir);
+    if (args[2] == "REALPATH") {
+      // Resolve symlinks if possible
+      result = cmSystemTools::GetRealPath(result);
+    }
+  } else {
+    std::string err = "unknown component " + args[2];
+    status.SetError(err);
+    cmSystemTools::SetFatalErrorOccured();
+    return false;
+  }
+
+  if (args.size() >= 4 && args.back() == "CACHE") {
+    if (!programArgs.empty() && !storeArgs.empty()) {
+      status.GetMakefile().AddCacheDefinition(
+        storeArgs, programArgs, "",
+        args[2] == "PATH" ? cmStateEnums::FILEPATH : cmStateEnums::STRING);
+    }
+    status.GetMakefile().AddCacheDefinition(
+      args.front(), result, "",
+      args[2] == "PATH" ? cmStateEnums::FILEPATH : cmStateEnums::STRING);
+  } else {
+    if (!programArgs.empty() && !storeArgs.empty()) {
+      status.GetMakefile().AddDefinition(storeArgs, programArgs);
+    }
+    status.GetMakefile().AddDefinition(args.front(), result);
+  }
 
   return true;
 }
-

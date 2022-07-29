@@ -3,7 +3,14 @@
 _cmake()
 {
     local cur prev words cword split=false
-    _init_completion -n := || return
+    if type -t _init_completion >/dev/null; then
+        _init_completion -n = || return
+    else
+        # manual initialization for older bash completion versions
+        COMPREPLY=()
+        cur="${COMP_WORDS[COMP_CWORD]}"
+        prev="${COMP_WORDS[COMP_CWORD-1]}"
+    fi
 
     # Workaround for options like -DCMAKE_BUILD_TYPE=Release
     local prefix=
@@ -69,8 +76,8 @@ _cmake()
                 compopt -o nospace
             else
             # complete variable names
-                COMPREPLY=( $( compgen -W '$( cmake -LA -N | tail -n +2 |
-                    cut -f1 -d: )' -P "$prefix" -- "$cur" ) )
+                COMPREPLY=( $( compgen -W '$( cmake -LA -N 2>/dev/null |
+                    tail -n +2 | cut -f1 -d: )' -P "$prefix" -- "$cur" ) )
                 compopt -o nospace
             fi
             return
@@ -89,13 +96,13 @@ _cmake()
             _filedir
             return
             ;;
-        --build)
+        --build|--install|--open)
             _filedir -d
             return
             ;;
         -E)
             COMPREPLY=( $( compgen -W "$( cmake -E help |& sed -n \
-                '/^  /{s|^  \([^ ]\{1,\}\) .*$|\1|;p}' 2>/dev/null )" \
+                '/^  [^ ]/{s|^  \([^ ]\{1,\}\) .*$|\1|;p}' 2>/dev/null )" \
                 -- "$cur" ) )
             return
             ;;
@@ -109,9 +116,17 @@ _cmake()
                 2>/dev/null )' -- "$quoted" ) )
             return
             ;;
+        --loglevel)
+            COMPREPLY=( $(compgen -W 'error warning notice status verbose debug trace' -- $cur ) )
+            ;;
         --help-command)
             COMPREPLY=( $( compgen -W '$( cmake --help-command-list 2>/dev/null|
                 grep -v "^cmake version " )' -- "$cur" ) )
+            return
+            ;;
+        --help-manual)
+            COMPREPLY=( $( compgen -W '$( cmake --help-manual-list 2>/dev/null|
+                grep -v "^cmake version " | sed -e "s/([0-9])$//" )' -- "$cur" ) )
             return
             ;;
         --help-module)
@@ -120,8 +135,8 @@ _cmake()
             return
             ;;
          --help-policy)
-            COMPREPLY=( $( compgen -W '$( cmake --help-policies 2>/dev/null |
-                grep "^  CMP" 2>/dev/null )' -- "$cur" ) )
+            COMPREPLY=( $( compgen -W '$( cmake --help-policy-list 2>/dev/null |
+                grep -v "^cmake version " )' -- "$cur" ) )
             return
             ;;
          --help-property)

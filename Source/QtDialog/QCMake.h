@@ -1,37 +1,42 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
+#include "cmCMakePresetsGraph.h"
+#include "cmake.h"
 
-#ifndef __QCMake_h
-#define __QCMake_h
 #ifdef _MSC_VER
-#pragma warning ( disable : 4127 )
-#pragma warning ( disable : 4512 )
+#  pragma warning(disable : 4127)
+#  pragma warning(disable : 4512)
 #endif
 
-#include <QObject>
-#include <QString>
-#include <QVariant>
-#include <QList>
-#include <QStringList>
-#include <QMetaType>
-#include <QAtomicInt>
+#include <memory>
+#include <vector>
 
-class cmake;
+#include "QCMakePreset.h"
+#include <QAtomicInt>
+#include <QList>
+#include <QMetaType>
+#include <QObject>
+#include <QProcessEnvironment>
+#include <QString>
+#include <QStringList>
+#include <QTimer>
+#include <QVariant>
 
 /// struct to represent cmake properties in Qt
 /// Value is of type String or Bool
 struct QCMakeProperty
 {
-  enum PropertyType { BOOL, PATH, FILEPATH, STRING };
+  enum PropertyType
+  {
+    BOOL,
+    PATH,
+    FILEPATH,
+    STRING
+  };
   QString Key;
   QVariant Value;
   QStringList Strings;
@@ -39,21 +44,23 @@ struct QCMakeProperty
   PropertyType Type;
   bool Advanced;
   bool operator==(const QCMakeProperty& other) const
-    {
+  {
     return this->Key == other.Key;
-    }
+  }
   bool operator<(const QCMakeProperty& other) const
-    {
+  {
     return this->Key < other.Key;
-    }
+  }
 };
 
 // list of properties
-typedef QList<QCMakeProperty> QCMakePropertyList;
+using QCMakePropertyList = QList<QCMakeProperty>;
 
 // allow QVariant to be a property or list of properties
 Q_DECLARE_METATYPE(QCMakeProperty)
 Q_DECLARE_METATYPE(QCMakePropertyList)
+Q_DECLARE_METATYPE(QProcessEnvironment)
+Q_DECLARE_METATYPE(cmCMakePresetsGraph::ReadFileResult)
 
 /// Qt API for CMake library.
 /// Wrapper like class allows for easier integration with
@@ -62,7 +69,7 @@ class QCMake : public QObject
 {
   Q_OBJECT
 public:
-  QCMake(QObject* p=0);
+  QCMake(QObject* p = nullptr);
   ~QCMake();
 public slots:
   /// load the cache file in a directory
@@ -71,15 +78,26 @@ public slots:
   void setSourceDirectory(const QString& dir);
   /// set the binary directory to build in
   void setBinaryDirectory(const QString& dir);
+  /// set the preset name to use
+  void setPreset(const QString& name, bool setBinary = true);
   /// set the desired generator to use
   void setGenerator(const QString& generator);
+  /// set the desired generator to use
+  void setPlatform(const QString& platform);
+  /// set the desired generator to use
+  void setToolset(const QString& toolset);
+  /// set the configure and generate environment
+  void setEnvironment(const QProcessEnvironment& environment);
   /// do the configure step
   void configure();
   /// generate the files
   void generate();
+  /// open the project
+  void open();
   /// set the property values
   void setProperties(const QCMakePropertyList&);
-  /// interrupt the configure or generate process (if connecting, make a direct connection)
+  /// interrupt the configure or generate process (if connecting, make a direct
+  /// connection)
   void interrupt();
   /// delete the cache in binary directory
   void deleteCache();
@@ -87,12 +105,26 @@ public slots:
   void reloadCache();
   /// set whether to do debug output
   void setDebugOutput(bool);
+  /// get whether to do suppress dev warnings
+  bool getSuppressDevWarnings();
   /// set whether to do suppress dev warnings
   void setSuppressDevWarnings(bool value);
+  /// get whether to do suppress deprecated warnings
+  bool getSuppressDeprecatedWarnings();
+  /// set whether to do suppress deprecated warnings
+  void setSuppressDeprecatedWarnings(bool value);
+  /// get whether to treat developer (author) warnings as errors
+  bool getDevWarningsAsErrors();
+  /// set whether to treat developer (author) warnings as errors
+  void setDevWarningsAsErrors(bool value);
+  /// get whether to treat deprecated warnings as errors
+  bool getDeprecatedWarningsAsErrors();
+  /// set whether to treat deprecated warnings as errors
+  void setDeprecatedWarningsAsErrors(bool value);
   /// set whether to run cmake with warnings about uninitialized variables
   void setWarnUninitializedMode(bool value);
-  /// set whether to run cmake with warnings about unused variables
-  void setWarnUnusedMode(bool value);
+  /// check if project IDE open is possible and emit openPossible signal
+  void checkOpenPossible();
 
 public:
   /// get the list of cache properties
@@ -103,13 +135,16 @@ public:
   QString sourceDirectory() const;
   /// get the current generator
   QString generator() const;
+  /// get the configure and generate environment
+  QProcessEnvironment environment() const;
   /// get the available generators
-  QStringList availableGenerators() const;
+  std::vector<cmake::GeneratorInfo> const& availableGenerators() const;
   /// get whether to do debug output
   bool getDebugOutput() const;
 
 signals:
-  /// signal when properties change (during read from disk or configure process)
+  /// signal when properties change (during read from disk or configure
+  /// process)
   void propertiesChanged(const QCMakePropertyList& vars);
   /// signal when the generator changes
   void generatorChanged(const QString& gen);
@@ -118,6 +153,15 @@ signals:
   void sourceDirChanged(const QString& dir);
   /// signal when the binary directory changes
   void binaryDirChanged(const QString& dir);
+  /// signal when the preset list changes
+  void presetsChanged(const QVector<QCMakePreset>& presets);
+  /// signal when the selected preset changes
+  void presetChanged(const QString& name);
+  /// signal when there's an error reading the presets files
+  void presetLoadError(const QString& dir,
+                       cmCMakePresetsGraph::ReadFileResult error);
+  /// signal when uninitialized warning changes
+  void warnUninitializedModeChanged(bool value);
   /// signal for progress events
   void progressChanged(const QString& msg, float percent);
   /// signal when configure is done
@@ -130,25 +174,41 @@ signals:
   void errorMessage(const QString& msg);
   /// signal when debug output changes
   void debugOutputChanged(bool);
+  /// signal when the toolset changes
+  void toolsetChanged(const QString& toolset);
+  /// signal when the platform changes
+  void platformChanged(const QString& platform);
+  /// signal when open is done
+  void openDone(bool successful);
+  /// signal when open is done
+  void openPossible(bool possible);
 
 protected:
-  cmake* CMakeInstance;
+  std::unique_ptr<cmake> CMakeInstance;
 
-  static bool interruptCallback(void*);
-  static void progressCallback(const char* msg, float percent, void* cd);
-  static void errorCallback(const char* msg, const char* title,
-                            bool&, void* cd);
-  bool SuppressDevWarnings;
+  bool interruptCallback();
+  void progressCallback(std::string const& msg, float percent);
+  void messageCallback(std::string const& msg, const char* title);
+  void stdoutCallback(std::string const& msg);
+  void stderrCallback(std::string const& msg);
+  void setUpEnvironment() const;
+
+  void loadPresets();
+
   bool WarnUninitializedMode;
-  bool WarnUnusedMode;
-  bool WarnUnusedAllMode;
   QString SourceDirectory;
   QString BinaryDirectory;
   QString Generator;
-  QStringList AvailableGenerators;
+  QString Platform;
+  QString Toolset;
+  std::vector<cmake::GeneratorInfo> AvailableGenerators;
+  cmCMakePresetsGraph CMakePresetsGraph;
+  cmCMakePresetsGraph::ReadFileResult LastLoadPresetsResult =
+    cmCMakePresetsGraph::ReadFileResult::READ_OK;
+  QString PresetName;
   QString CMakeExecutable;
   QAtomicInt InterruptFlag;
+  QProcessEnvironment StartEnvironment;
+  QProcessEnvironment Environment;
+  QTimer LoadPresetsTimer;
 };
-
-#endif // __QCMake_h
-

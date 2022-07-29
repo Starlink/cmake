@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 2.8.12)
 
 project(CheckStructHasMember)
 
@@ -6,7 +6,7 @@ set(CMAKE_REQUIRED_INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}")
 
 include(CheckStructHasMember)
 
-foreach(_config_type Release RelWithDebInfo MinSizeRel Debug)
+foreach(_config_type Release RelWithDebInfo Debug)
     set(CMAKE_TRY_COMPILE_CONFIGURATION ${_config_type})
     unset(CSHM_RESULT_S1_${_config_type} CACHE)
     unset(CSHM_RESULT_S2_${_config_type} CACHE)
@@ -26,7 +26,7 @@ foreach(_config_type Release RelWithDebInfo MinSizeRel Debug)
     endif()
 endforeach()
 
-foreach(_config_type Release RelWithDebInfo MinSizeRel Debug)
+foreach(_config_type Release RelWithDebInfo Debug)
     set(CMAKE_TRY_COMPILE_CONFIGURATION ${_config_type})
     unset(CSHM_RESULT_S1_${_config_type}_C CACHE)
     unset(CSHM_RESULT_S2_${_config_type}_C CACHE)
@@ -46,7 +46,7 @@ foreach(_config_type Release RelWithDebInfo MinSizeRel Debug)
     endif()
 endforeach()
 
-foreach(_config_type Release RelWithDebInfo MinSizeRel Debug)
+foreach(_config_type Release RelWithDebInfo Debug)
     set(CMAKE_TRY_COMPILE_CONFIGURATION ${_config_type})
     unset(CSHM_RESULT_S1_${_config_type}_CXX CACHE)
     unset(CSHM_RESULT_S2_${_config_type}_CXX CACHE)
@@ -77,7 +77,7 @@ endforeach()
 set(CMAKE_TRY_COMPILE_CONFIGURATION ${CMAKE_BUILD_TYPE})
 
 if (CMAKE_COMPILER_IS_GNUCC)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -O3")
+    string(APPEND CMAKE_C_FLAGS " -O3")
     unset(CSHM_RESULT_O3 CACHE)
     unset(CSHM_RESULT_O3_C CACHE)
     unset(CSHM_RESULT_O3_CXX CACHE)

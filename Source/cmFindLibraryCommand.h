@@ -1,19 +1,15 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmFindLibraryCommand_h
-#define cmFindLibraryCommand_h
+#include <string>
+#include <vector>
 
 #include "cmFindBase.h"
 
+class cmExecutionStatus;
 
 /** \class cmFindLibraryCommand
  * \brief Define a command to search for a library.
@@ -25,41 +21,17 @@
 class cmFindLibraryCommand : public cmFindBase
 {
 public:
-  cmFindLibraryCommand();
-  /**
-   * This is a virtual constructor for the command.
-   */
-  virtual cmCommand* Clone()
-    {
-    return new cmFindLibraryCommand;
-    }
+  cmFindLibraryCommand(cmExecutionStatus& status);
 
-  /**
-   * This is called when the command is first encountered in
-   * the CMakeLists.txt file.
-   */
-  virtual bool InitialPass(std::vector<std::string> const& args,
-                           cmExecutionStatus &status);
-
-  /**
-   * This determines if the command is invoked when in script mode.
-   */
-  virtual bool IsScriptable() const { return true; }
-
-  /**
-   * The name of the command as specified in CMakeList.txt.
-   */
-  virtual const char* GetName() const {return "find_library";}
-
-  cmTypeMacro(cmFindLibraryCommand, cmFindBase);
+  bool InitialPass(std::vector<std::string> const& args);
 
 protected:
   void AddArchitecturePaths(const char* suffix);
   void AddArchitecturePath(std::string const& dir,
                            std::string::size_type start_pos,
-                           const char* suffix,
-                           bool fresh = true);
+                           const char* suffix, bool fresh = true);
   std::string FindLibrary();
+
 private:
   std::string FindNormalLibrary();
   std::string FindNormalLibraryNamesPerDir();
@@ -69,6 +41,5 @@ private:
   std::string FindFrameworkLibraryDirsPerName();
 };
 
-
-
-#endif
+bool cmFindLibrary(std::vector<std::string> const& args,
+                   cmExecutionStatus& status);

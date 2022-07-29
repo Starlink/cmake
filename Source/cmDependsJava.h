@@ -1,23 +1,19 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmDependsJava_h
-#define cmDependsJava_h
+#include <iosfwd>
+#include <set>
+#include <string>
 
 #include "cmDepends.h"
 
 /** \class cmDependsJava
  * \brief Dependency scanner for Java class files.
  */
-class cmDependsJava: public cmDepends
+class cmDependsJava : public cmDepends
 {
 public:
   /** Checking instances need to know the build directory name and the
@@ -25,20 +21,17 @@ public:
   cmDependsJava();
 
   /** Virtual destructor to cleanup subclasses properly.  */
-  virtual ~cmDependsJava();
+  ~cmDependsJava() override;
+
+  cmDependsJava(cmDependsJava const&) = delete;
+  cmDependsJava& operator=(cmDependsJava const&) = delete;
 
 protected:
   // Implement writing/checking methods required by superclass.
-  virtual bool WriteDependencies(
-    const std::set<std::string>& sources, const std::string& file,
-    std::ostream& makeDepends, std::ostream& internalDepends);
-  virtual bool CheckDependencies(std::istream& internalDepends,
-                                 const char* internalDependsFileName,
-                           std::map<std::string, DependencyVector>& validDeps);
-
-private:
-  cmDependsJava(cmDependsJava const&); // Purposely not implemented.
-  void operator=(cmDependsJava const&); // Purposely not implemented.
+  bool WriteDependencies(const std::set<std::string>& sources,
+                         const std::string& file, std::ostream& makeDepends,
+                         std::ostream& internalDepends) override;
+  bool CheckDependencies(std::istream& internalDepends,
+                         const std::string& internalDependsFileName,
+                         DependencyMap& validDeps) override;
 };
-
-#endif

@@ -4,11 +4,17 @@ CodeBlocks
 Generates CodeBlocks project files.
 
 Project files for CodeBlocks will be created in the top directory and
-in every subdirectory which features a CMakeLists.txt file containing
-a PROJECT() call.  Additionally a hierarchy of makefiles is generated
-into the build tree.  The appropriate make program can build the
-project through the default make target.  A "make install" target is
+in every subdirectory which features a ``CMakeLists.txt`` file containing
+a :command:`project` call.  Additionally a hierarchy of makefiles is generated
+into the build tree.
+The appropriate make program can build the
+project through the default ``all`` target.  An ``install`` target is
 also provided.
+
+.. versionadded:: 3.10
+ The :variable:`CMAKE_CODEBLOCKS_EXCLUDE_EXTERNAL_FILES` variable may
+ be set to ``ON`` to exclude any files which are located outside of
+ the project root directory.
 
 This "extra" generator may be specified as:
 
@@ -17,6 +23,10 @@ This "extra" generator may be specified as:
 
 ``CodeBlocks - NMake Makefiles``
  Generate with :generator:`NMake Makefiles`.
+
+``CodeBlocks - NMake Makefiles JOM``
+ .. versionadded:: 3.8
+  Generate with :generator:`NMake Makefiles JOM`.
 
 ``CodeBlocks - Ninja``
  Generate with :generator:`Ninja`.

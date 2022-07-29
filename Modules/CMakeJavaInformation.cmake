@@ -1,16 +1,6 @@
+# Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+# file Copyright.txt or https://cmake.org/licensing for details.
 
-#=============================================================================
-# Copyright 2004-2011 Kitware, Inc.
-#
-# Distributed under the OSI-approved BSD License (the "License");
-# see accompanying file Copyright.txt for details.
-#
-# This software is distributed WITHOUT ANY WARRANTY; without even the
-# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the License for more information.
-#=============================================================================
-# (To distribute this file outside of CMake, substitute the full
-#  License text for the above reference.)
 
 # This should be included before the _INIT variables are
 # used to initialize the cache.  Since the rule variables
@@ -26,8 +16,8 @@ endif()
 
 if(CMAKE_USER_MAKE_RULES_OVERRIDE_Java)
   # Save the full path of the file so try_compile can use it.
-   include(${CMAKE_USER_MAKE_RULES_OVERRIDE_Java} RESULT_VARIABLE _override)
-   set(CMAKE_USER_MAKE_RULES_OVERRIDE_Java "${_override}")
+  include(${CMAKE_USER_MAKE_RULES_OVERRIDE_Java} RESULT_VARIABLE _override)
+  set(CMAKE_USER_MAKE_RULES_OVERRIDE_Java "${_override}")
 endif()
 
 # this is a place holder if java needed flags for javac they would go here.
@@ -40,7 +30,7 @@ if(NOT CMAKE_Java_CREATE_STATIC_LIBRARY)
 
   set(CMAKE_Java_CREATE_STATIC_LIBRARY
       "<CMAKE_Java_ARCHIVE> -cf <TARGET> -C <OBJECT_DIR> ${class_files_mask}")
-    # "${class_files_mask}" should really be "<OBJECTS>" but compling a *.java
+    # "${class_files_mask}" should really be "<OBJECTS>" but compiling a *.java
     # file can create more than one *.class file...
 endif()
 

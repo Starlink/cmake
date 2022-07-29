@@ -1,4 +1,4 @@
-cmake_minimum_required (VERSION 2.6)
+cmake_minimum_required (VERSION 2.8.12)
 project(LoadCommand)
 
 # set a definition
@@ -7,10 +7,6 @@ set (TEST_COMMAND_TEST1 1)
 include (${CMAKE_ROOT}/Modules/CheckTypeSize.cmake)
 CHECK_TYPE_SIZE(char  SIZEOF_CHAR)
 CHECK_TYPE_SIZE(short  SIZEOF_SHORT)
-
-include (CheckFunctionExists)
-CHECK_FUNCTION_EXISTS(printf        HAVE_PRINTF)
-CHECK_FUNCTION_EXISTS(vsblabla      HAVE_VSBLABLA)
 
 include (${CMAKE_ROOT}/Modules/CheckIncludeFile.cmake)
 CHECK_INCLUDE_FILE("sys/prctl.h"    HAVE_SYS_PRCTL_H)
@@ -27,13 +23,6 @@ include_directories(${LoadCommand_BINARY_DIR})
 # make sure it is not already loaded
 if(COMMAND CMAKE_TEST_COMMAND)
 else()
-  try_compile(COMPILE_OK
-    ${LoadCommand_BINARY_DIR}/CMakeCommands
-    ${LoadCommand_SOURCE_DIR}/CMakeCommands
-    CMAKE_LOADED_COMMANDS CMAKE_FLAGS -DMUDSLIDE_TYPE:STRING=MUCHO
-    OUTPUT_VARIABLE OUTPUT )
-# do another TRY_COMPILE to get around make
-# problem on hp
   try_compile(COMPILE_OK
     ${LoadCommand_BINARY_DIR}/CMakeCommands
     ${LoadCommand_SOURCE_DIR}/CMakeCommands

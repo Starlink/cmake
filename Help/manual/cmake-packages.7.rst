@@ -3,7 +3,7 @@
 cmake-packages(7)
 *****************
 
-.. only:: html or latex
+.. only:: html
 
    .. contents::
 
@@ -12,7 +12,7 @@ Introduction
 
 Packages provide dependency information to CMake based buildsystems.  Packages
 are found with the :command:`find_package` command.  The result of
-using ``find_package`` is either a set of :prop_tgt:`IMPORTED` targets, or
+using :command:`find_package` is either a set of :prop_tgt:`IMPORTED` targets, or
 a set of variables corresponding to build-relevant information.
 
 Using Packages
@@ -73,8 +73,12 @@ Handling of ``COMPONENTS`` and ``OPTIONAL_COMPONENTS`` is defined by the
 package.
 
 By setting the :variable:`CMAKE_DISABLE_FIND_PACKAGE_<PackageName>` variable to
-``TRUE``, the ``PackageName`` package will not be searched, and will always
-be ``NOTFOUND``.
+``TRUE``, the ``<PackageName>`` package will not be searched, and will always
+be ``NOTFOUND``. Likewise, setting the
+:variable:`CMAKE_REQUIRE_FIND_PACKAGE_<PackageName>` to ``TRUE`` will make the
+package REQUIRED.
+
+.. _`Config File Packages`:
 
 Config-file Packages
 --------------------
@@ -87,12 +91,12 @@ a package is to set the ``CMAKE_PREFIX_PATH`` cache variable.
 
 Config-file packages are provided by upstream vendors as part of development
 packages, that is, they belong with the header files and any other files
-provided to assist downsteams in using the package.
+provided to assist downstreams in using the package.
 
 A set of variables which provide package status information are also set
-automatically when using a config-file package.  The ``<Package>_FOUND``
+automatically when using a config-file package.  The ``<PackageName>_FOUND``
 variable is set to true or false, depending on whether the package was
-found.  The ``<Package>_DIR`` cache variable is set to the location of the
+found.  The ``<PackageName>_DIR`` cache variable is set to the location of the
 package configuration file.
 
 Find-module Packages
@@ -106,10 +110,10 @@ file, it is not shipped with upstream, but is used by downstream to find the
 files by guessing locations of files with platform-specific hints.
 
 Unlike the case of an upstream-provided package configuration file, no single point
-of reference identifies the package as being found, so the ``<Package>_FOUND``
+of reference identifies the package as being found, so the ``<PackageName>_FOUND``
 variable is not automatically set by the :command:`find_package` command.  It
 can still be expected to be set by convention however and should be set by
-the author of the Find-module.  Similarly there is no ``<Package>_DIR`` variable,
+the author of the Find-module.  Similarly there is no ``<PackageName>_DIR`` variable,
 but each of the artifacts such as library locations and header file locations
 provide a separate cache variable.
 
@@ -195,7 +199,7 @@ When the :command:`find_package` command loads a version file it first sets the
 following variables:
 
 ``PACKAGE_FIND_NAME``
- The <package> name
+ The ``<PackageName>``
 
 ``PACKAGE_FIND_VERSION``
  Full requested version string
@@ -238,27 +242,29 @@ variables. When the version file claims to be an acceptable match for the
 requested version the find_package command sets the following variables for
 use by the project:
 
-``<package>_VERSION``
+``<PackageName>_VERSION``
  Full provided version string
 
-``<package>_VERSION_MAJOR``
+``<PackageName>_VERSION_MAJOR``
  Major version if provided, else 0
 
-``<package>_VERSION_MINOR``
+``<PackageName>_VERSION_MINOR``
  Minor version if provided, else 0
 
-``<package>_VERSION_PATCH``
+``<PackageName>_VERSION_PATCH``
  Patch version if provided, else 0
 
-``<package>_VERSION_TWEAK``
+``<PackageName>_VERSION_TWEAK``
  Tweak version if provided, else 0
 
-``<package>_VERSION_COUNT``
+``<PackageName>_VERSION_COUNT``
  Number of version components, 0 to 4
 
 The variables report the version of the package that was actually found.
-The ``<package>`` part of their name matches the argument given to the
+The ``<PackageName>`` part of their name matches the argument given to the
 :command:`find_package` command.
+
+.. _`Creating Packages`:
 
 Creating Packages
 =================
@@ -282,7 +288,8 @@ shared library:
   generate_export_header(ClimbingStats)
   set_property(TARGET ClimbingStats PROPERTY VERSION ${Upstream_VERSION})
   set_property(TARGET ClimbingStats PROPERTY SOVERSION 3)
-  set_property(TARGET ClimbingStats PROPERTY INTERFACE_ClimbingStats_MAJOR_VERSION 3)
+  set_property(TARGET ClimbingStats PROPERTY
+    INTERFACE_ClimbingStats_MAJOR_VERSION 3)
   set_property(TARGET ClimbingStats APPEND PROPERTY
     COMPATIBLE_INTERFACE_STRING ClimbingStats_MAJOR_VERSION
   )
@@ -316,7 +323,7 @@ shared library:
   )
   configure_file(cmake/ClimbingStatsConfig.cmake
     "${CMAKE_CURRENT_BINARY_DIR}/ClimbingStats/ClimbingStatsConfig.cmake"
-    COPY_ONLY
+    COPYONLY
   )
 
   set(ConfigPackageLocation lib/cmake/ClimbingStats)
@@ -342,18 +349,18 @@ The :module:`CMakePackageConfigHelpers` module provides a macro for creating
 a simple ``ConfigVersion.cmake`` file.  This file sets the version of the
 package.  It is read by CMake when :command:`find_package` is called to
 determine the compatibility with the requested version, and to set some
-version-specific variables ``<Package>_VERSION``, ``<Package>_VERSION_MAJOR``,
-``<Package>_VERSION_MINOR`` etc.  The :command:`install(EXPORT)` command is
+version-specific variables ``<PackageName>_VERSION``, ``<PackageName>_VERSION_MAJOR``,
+``<PackageName>_VERSION_MINOR`` etc.  The :command:`install(EXPORT)` command is
 used to export the targets in the ``ClimbingStatsTargets`` export-set, defined
 previously by the :command:`install(TARGETS)` command. This command generates
 the ``ClimbingStatsTargets.cmake`` file to contain :prop_tgt:`IMPORTED`
-targets, suitable for use by downsteams and arranges to install it to
+targets, suitable for use by downstreams and arranges to install it to
 ``lib/cmake/ClimbingStats``.  The generated ``ClimbingStatsConfigVersion.cmake``
 and a ``cmake/ClimbingStatsConfig.cmake`` are installed to the same location,
 completing the package.
 
 The generated :prop_tgt:`IMPORTED` targets have appropriate properties set
-to define their usage requirements, such as
+to define their :ref:`usage requirements <Target Usage Requirements>`, such as
 :prop_tgt:`INTERFACE_INCLUDE_DIRECTORIES`,
 :prop_tgt:`INTERFACE_COMPILE_DEFINITIONS` and other relevant built-in
 ``INTERFACE_`` properties.  The ``INTERFACE`` variant of user-defined
@@ -378,8 +385,11 @@ In this case, when using :command:`install(TARGETS)` the ``INCLUDES DESTINATION`
 was specified.  This causes the ``IMPORTED`` targets to have their
 :prop_tgt:`INTERFACE_INCLUDE_DIRECTORIES` populated with the ``include``
 directory in the :variable:`CMAKE_INSTALL_PREFIX`.  When the ``IMPORTED``
-target is used by downsteam, it automatically consumes the entries from
+target is used by downstream, it automatically consumes the entries from
 that property.
+
+Creating a Package Configuration File
+-------------------------------------
 
 In this case, the ``ClimbingStatsConfig.cmake`` file could be as simple as:
 
@@ -391,6 +401,85 @@ As this allows downstreams to use the ``IMPORTED`` targets.  If any macros
 should be provided by the ``ClimbingStats`` package, they should
 be in a separate file which is installed to the same location as the
 ``ClimbingStatsConfig.cmake`` file, and included from there.
+
+This can also be extended to cover dependencies:
+
+.. code-block:: cmake
+
+  # ...
+  add_library(ClimbingStats SHARED climbingstats.cpp)
+  generate_export_header(ClimbingStats)
+
+  find_package(Stats 2.6.4 REQUIRED)
+  target_link_libraries(ClimbingStats PUBLIC Stats::Types)
+
+As the ``Stats::Types`` target is a ``PUBLIC`` dependency of ``ClimbingStats``,
+downstreams must also find the ``Stats`` package and link to the ``Stats::Types``
+library.  The ``Stats`` package should be found in the ``ClimbingStatsConfig.cmake``
+file to ensure this.  The ``find_dependency`` macro from the
+:module:`CMakeFindDependencyMacro` helps with this by propagating
+whether the package is ``REQUIRED``, or ``QUIET`` etc.  All ``REQUIRED``
+dependencies of a package should be found in the ``Config.cmake`` file:
+
+.. code-block:: cmake
+
+  include(CMakeFindDependencyMacro)
+  find_dependency(Stats 2.6.4)
+
+  include("${CMAKE_CURRENT_LIST_DIR}/ClimbingStatsTargets.cmake")
+  include("${CMAKE_CURRENT_LIST_DIR}/ClimbingStatsMacros.cmake")
+
+The ``find_dependency`` macro also sets ``ClimbingStats_FOUND`` to ``False`` if
+the dependency is not found, along with a diagnostic that the ``ClimbingStats``
+package can not be used without the ``Stats`` package.
+
+If ``COMPONENTS`` are specified when the downstream uses :command:`find_package`,
+they are listed in the ``<PackageName>_FIND_COMPONENTS`` variable. If a particular
+component is non-optional, then the ``<PackageName>_FIND_REQUIRED_<comp>`` will
+be true. This can be tested with logic in the package configuration file:
+
+.. code-block:: cmake
+
+  include(CMakeFindDependencyMacro)
+  find_dependency(Stats 2.6.4)
+
+  include("${CMAKE_CURRENT_LIST_DIR}/ClimbingStatsTargets.cmake")
+  include("${CMAKE_CURRENT_LIST_DIR}/ClimbingStatsMacros.cmake")
+
+  set(_ClimbingStats_supported_components Plot Table)
+
+  foreach(_comp ${ClimbingStats_FIND_COMPONENTS})
+    if (NOT ";${_ClimbingStats_supported_components};" MATCHES ";${_comp};")
+      set(ClimbingStats_FOUND False)
+      set(ClimbingStats_NOT_FOUND_MESSAGE "Unsupported component: ${_comp}")
+    endif()
+    include("${CMAKE_CURRENT_LIST_DIR}/ClimbingStats${_comp}Targets.cmake")
+  endforeach()
+
+Here, the ``ClimbingStats_NOT_FOUND_MESSAGE`` is set to a diagnosis that the package
+could not be found because an invalid component was specified.  This message
+variable can be set for any case where the ``_FOUND`` variable is set to ``False``,
+and will be displayed to the user.
+
+Creating a Package Configuration File for the Build Tree
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The :command:`export(EXPORT)` command creates an :prop_tgt:`IMPORTED` targets
+definition file which is specific to the build-tree, and is not relocatable.
+This can similarly be used with a suitable package configuration file and
+package version file to define a package for the build tree which may be used
+without installation.  Consumers of the build tree can simply ensure that the
+:variable:`CMAKE_PREFIX_PATH` contains the build directory, or set the
+``ClimbingStats_DIR`` to ``<build_dir>/ClimbingStats`` in the cache.
+
+.. _`Creating Relocatable Packages`:
+
+Creating Relocatable Packages
+-----------------------------
+
+A relocatable package must not reference absolute paths of files on
+the machine where the package is built that will not exist on the
+machines where the package may be installed.
 
 Packages created by :command:`install(EXPORT)` are designed to be relocatable,
 using paths relative to the location of the package itself.  When defining
@@ -422,72 +511,60 @@ package.  This is necessary if complex generator expressions are used:
     $<INSTALL_INTERFACE:$<$<CONFIG:Debug>:$<INSTALL_PREFIX>/include/TgtName>>
   )
 
-The :command:`export(EXPORT)` command creates an :prop_tgt:`IMPORTED` targets
-definition file which is specific to the build-tree, and is not relocatable.
-This can similiarly be used with a suitable package configuration file and
-package version file to define a package for the build tree which may be used
-without installation.  Consumers of the build tree can simply ensure that the
-:variable:`CMAKE_PREFIX_PATH` contains the build directory, or set the
-``ClimbingStats_DIR`` to ``<build_dir>/ClimbingStats`` in the cache.
-
-This can also be extended to cover dependencies:
+This also applies to paths referencing external dependencies.
+It is not advisable to populate any properties which may contain
+paths, such as :prop_tgt:`INTERFACE_INCLUDE_DIRECTORIES` and
+:prop_tgt:`INTERFACE_LINK_LIBRARIES`, with paths relevant to dependencies.
+For example, this code may not work well for a relocatable package:
 
 .. code-block:: cmake
 
-  # ...
-  add_library(ClimbingStats SHARED climbingstats.cpp)
-  generate_export_header(ClimbingStats)
+  target_link_libraries(ClimbingStats INTERFACE
+    ${Foo_LIBRARIES} ${Bar_LIBRARIES}
+    )
+  target_include_directories(ClimbingStats INTERFACE
+    "$<INSTALL_INTERFACE:${Foo_INCLUDE_DIRS};${Bar_INCLUDE_DIRS}>"
+    )
 
-  find_package(Stats 2.6.4 REQUIRED)
-  target_link_libraries(ClimbingStats PUBLIC Stats::Types)
+The referenced variables may contain the absolute paths to libraries
+and include directories **as found on the machine the package was made on**.
+This would create a package with hard-coded paths to dependencies and not
+suitable for relocation.
 
-As the ``Stats::Types`` target is a ``PUBLIC`` dependency of ``ClimbingStats``,
-downsteams must also find the ``Stats`` package and link to the ``Stats::Types``
-library.  The ``Stats`` package should be found in the ``ClimbingStatsConfig.cmake``
-file to ensure this.  The ``find_dependency`` macro from the
-:module:`CMakeFindDependencyMacro` helps with this by propagating
-whether the package is ``REQUIRED``, or ``QUIET`` etc.  All ``REQUIRED``
-dependencies of a package should be found in the ``Config.cmake`` file:
-
-.. code-block:: cmake
-
-  include(CMakeFindDependencyMacro)
-  find_dependency(Stats 2.6.4)
-
-  include("${CMAKE_CURRENT_LIST_DIR}/ClimbingStatsTargets.cmake")
-  include("${CMAKE_CURRENT_LIST_DIR}/ClimbingStatsMacros.cmake")
-
-The ``find_dependency`` macro also sets ``ClimbingStats_FOUND`` to ``False`` if
-the dependency is not found, along with a diagnostic that the ``ClimbingStats``
-package can not be used without the ``Stats`` package.
-
-If ``COMPONENTS`` are specified when the downstream uses :command:`find_package`,
-they are listed in the ``<Package>_FIND_COMPONENTS`` variable. If a particular
-component is non-optional, then the ``<Package>_FIND_REQUIRED_<comp>`` will
-be true. This can be tested with logic in the package configuration file:
+Ideally such dependencies should be used through their own
+:ref:`IMPORTED targets <Imported Targets>` that have their own
+:prop_tgt:`IMPORTED_LOCATION` and usage requirement properties
+such as :prop_tgt:`INTERFACE_INCLUDE_DIRECTORIES` populated
+appropriately.  Those imported targets may then be used with
+the :command:`target_link_libraries` command for ``ClimbingStats``:
 
 .. code-block:: cmake
 
-  include(CMakeFindDependencyMacro)
-  find_dependency(Stats 2.6.4)
+  target_link_libraries(ClimbingStats INTERFACE Foo::Foo Bar::Bar)
 
-  include("${CMAKE_CURRENT_LIST_DIR}/ClimbingStatsTargets.cmake")
-  include("${CMAKE_CURRENT_LIST_DIR}/ClimbingStatsMacros.cmake")
+With this approach the package references its external dependencies
+only through the names of :ref:`IMPORTED targets <Imported Targets>`.
+When a consumer uses the installed package, the consumer will run the
+appropriate :command:`find_package` commands (via the ``find_dependency``
+macro described above) to find the dependencies and populate the
+imported targets with appropriate paths on their own machine.
 
-  set(_supported_components Plot Table)
+Unfortunately many :manual:`modules <cmake-modules(7)>` shipped with
+CMake do not yet provide :ref:`IMPORTED targets <Imported Targets>`
+because their development pre-dated this approach.  This may improve
+incrementally over time.  Workarounds to create relocatable packages
+using such modules include:
 
-  foreach(_comp ${ClimbingStats_FIND_COMPONENTS})
-    if (NOT ";${_supported_components};" MATCHES _comp)
-      set(ClimbingStats_FOUND False)
-      set(ClimbingStats_NOTFOUND_MESSAGE "Specified unsupported component: ${_comp}")
-    endif()
-    include("${CMAKE_CURRENT_LIST_DIR}/ClimbingStats${_comp}Targets.cmake")
-  endforeach()
+* When building the package, specify each ``Foo_LIBRARY`` cache
+  entry as just a library name, e.g. ``-DFoo_LIBRARY=foo``.  This
+  tells the corresponding find module to populate the ``Foo_LIBRARIES``
+  with just ``foo`` to ask the linker to search for the library
+  instead of hard-coding a path.
 
-Here, the ``ClimbingStats_NOTFOUND_MESSAGE`` is set to a diagnosis that the package
-could not be found because an invalid component was specified.  This message
-variable can be set for any case where the ``_FOUND`` variable is set to ``False``,
-and will be displayed to the user.
+* Or, after installing the package content but before creating the
+  package installation binary for redistribution, manually replace
+  the absolute paths with placeholders for substitution by the
+  installation tool when the package is installed.
 
 .. _`Package Registry`:
 
@@ -505,8 +582,8 @@ non-standard install locations or directly in their own build trees.
 A project may populate either the user or system registry (using its own
 means, see below) to refer to its location.
 In either case the package should store at the registered location a
-`Package Configuration File`_ (``<package>Config.cmake``) and optionally a
-`Package Version File`_ (``<package>ConfigVersion.cmake``).
+`Package Configuration File`_ (``<PackageName>Config.cmake``) and optionally a
+`Package Version File`_ (``<PackageName>ConfigVersion.cmake``).
 
 The :command:`find_package` command searches the two package registries
 as two of the search steps specified in its documentation.  If it has
@@ -528,18 +605,18 @@ must be manually taught to register their packages if desired.
 On Windows the user package registry is stored in the Windows registry
 under a key in ``HKEY_CURRENT_USER``.
 
-A ``<package>`` may appear under registry key::
+A ``<PackageName>`` may appear under registry key::
 
-  HKEY_CURRENT_USER\Software\Kitware\CMake\Packages\<package>
+  HKEY_CURRENT_USER\Software\Kitware\CMake\Packages\<PackageName>
 
 as a ``REG_SZ`` value, with arbitrary name, that specifies the directory
 containing the package configuration file.
 
 On UNIX platforms the user package registry is stored in the user home
-directory under ``~/.cmake/packages``.  A ``<package>`` may appear under
+directory under ``~/.cmake/packages``.  A ``<PackageName>`` may appear under
 the directory::
 
-  ~/.cmake/packages/<package>
+  ~/.cmake/packages/<PackageName>
 
 as a file, with arbitrary name, whose content specifies the directory
 containing the package configuration file.
@@ -554,15 +631,40 @@ CMake currently provides no interface to add to the system package registry.
 Installers must be manually taught to register their packages if desired.
 
 On Windows the system package registry is stored in the Windows registry
-under a key in ``HKEY_LOCAL_MACHINE``.  A ``<package>`` may appear under
+under a key in ``HKEY_LOCAL_MACHINE``.  A ``<PackageName>`` may appear under
 registry key::
 
-  HKEY_LOCAL_MACHINE\Software\Kitware\CMake\Packages\<package>
+  HKEY_LOCAL_MACHINE\Software\Kitware\CMake\Packages\<PackageName>
 
 as a ``REG_SZ`` value, with arbitrary name, that specifies the directory
 containing the package configuration file.
 
 There is no system package registry on non-Windows platforms.
+
+.. _`Disabling the Package Registry`:
+
+Disabling the Package Registry
+------------------------------
+
+In some cases using the Package Registries is not desirable. CMake
+allows one to disable them using the following variables:
+
+* The :command:`export(PACKAGE)` command does not populate the user
+  package registry when :policy:`CMP0090` is set to ``NEW`` unless the
+  :variable:`CMAKE_EXPORT_PACKAGE_REGISTRY` variable explicitly enables it.
+  When :policy:`CMP0090` is *not* set to ``NEW`` then
+  :command:`export(PACKAGE)` populates the user package registry unless
+  the :variable:`CMAKE_EXPORT_NO_PACKAGE_REGISTRY` variable explicitly
+  disables it.
+* :variable:`CMAKE_FIND_USE_PACKAGE_REGISTRY` disables the
+  User Package Registry in all the :command:`find_package` calls when
+  set to ``FALSE``.
+* Deprecated :variable:`CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY` disables the
+  User Package Registry in all the :command:`find_package` calls when set
+  to ``TRUE``. This variable is ignored when
+  :variable:`CMAKE_FIND_USE_PACKAGE_REGISTRY` has been set.
+* :variable:`CMAKE_FIND_PACKAGE_NO_SYSTEM_PACKAGE_REGISTRY` disables
+  the System Package Registry in all the :command:`find_package` calls.
 
 Package Registry Example
 ------------------------

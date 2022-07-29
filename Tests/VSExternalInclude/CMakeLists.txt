@@ -1,13 +1,10 @@
-cmake_minimum_required (VERSION 2.6)
+cmake_minimum_required (VERSION 2.8.12)
 project(VSExternalInclude)
 
-if(${CMAKE_GENERATOR} MATCHES "Visual Studio 6")
-  set(PROJECT_EXT dsp)
+if(${CMAKE_GENERATOR} MATCHES "Visual Studio 1[0124567]")
+  set(PROJECT_EXT vcxproj)
 else()
   set(PROJECT_EXT vcproj)
-endif()
-if(${CMAKE_GENERATOR} MATCHES "Visual Studio 1[012]")
-  set(PROJECT_EXT vcxproj)
 endif()
 
 # make sure directories exists
@@ -19,7 +16,9 @@ make_directory("${LIB2_BINARY_DIR}")
 
 # generate lib1
 execute_process(
-  COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" -T "${CMAKE_GENERATOR_TOOLSET}" "${VSExternalInclude_SOURCE_DIR}/Lib1"
+  COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}"
+    -A "${CMAKE_GENERATOR_PLATFORM}"
+    -T "${CMAKE_GENERATOR_TOOLSET}" "${VSExternalInclude_SOURCE_DIR}/Lib1"
   WORKING_DIRECTORY ${LIB1_BINARY_DIR}
   OUTPUT_VARIABLE OUT
   ERROR_VARIABLE OUT
@@ -28,7 +27,9 @@ message("CMAKE Ran with the following output:\n\"${OUT}\"")
 
 # generate lib2
 execute_process(
-  COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" -T "${CMAKE_GENERATOR_TOOLSET}" "${VSExternalInclude_SOURCE_DIR}/Lib2"
+  COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}"
+    -A "${CMAKE_GENERATOR_PLATFORM}"
+    -T "${CMAKE_GENERATOR_TOOLSET}" "${VSExternalInclude_SOURCE_DIR}/Lib2"
   WORKING_DIRECTORY ${LIB2_BINARY_DIR}
   OUTPUT_VARIABLE OUT
   ERROR_VARIABLE OUT
@@ -54,7 +55,7 @@ add_dependencies(VSExternalInclude lib2)
 # and the sln file can no longer be the only source
 # of that depend.  So, for VS 10 make the executable
 # depend on lib1 and lib2
-if(${CMAKE_GENERATOR} MATCHES "Visual Studio 1[012]")
+if(${CMAKE_GENERATOR} MATCHES "Visual Studio 1[0124567]")
   add_dependencies(VSExternalInclude lib1)
 endif()
 

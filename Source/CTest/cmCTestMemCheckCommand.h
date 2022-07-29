@@ -1,20 +1,19 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmCTestMemCheckCommand_h
-#define cmCTestMemCheckCommand_h
+#include <string>
+#include <utility>
+
+#include <cm/memory>
 
 #include "cmCTestTestCommand.h"
+#include "cmCommand.h"
 
 class cmCTestGenericHandler;
+class cmCTestTestHandler;
 
 /** \class cmCTestMemCheck
  * \brief Run a ctest script
@@ -24,31 +23,23 @@ class cmCTestGenericHandler;
 class cmCTestMemCheckCommand : public cmCTestTestCommand
 {
 public:
-
-  cmCTestMemCheckCommand() {}
-
   /**
    * This is a virtual constructor for the command.
    */
-  virtual cmCommand* Clone()
-    {
-    cmCTestMemCheckCommand* ni = new cmCTestMemCheckCommand;
+  std::unique_ptr<cmCommand> Clone() override
+  {
+    auto ni = cm::make_unique<cmCTestMemCheckCommand>();
     ni->CTest = this->CTest;
     ni->CTestScriptHandler = this->CTestScriptHandler;
-    return ni;
-    }
-
-  /**
-   * The name of the command as specified in CMakeList.txt.
-   */
-  virtual const char* GetName() const { return "ctest_memcheck";}
-
-  cmTypeMacro(cmCTestMemCheckCommand, cmCTestTestCommand);
+    return std::unique_ptr<cmCommand>(std::move(ni));
+  }
 
 protected:
-  cmCTestGenericHandler* InitializeActualHandler();
+  void BindArguments() override;
+
+  cmCTestTestHandler* InitializeActualHandler() override;
+
+  void ProcessAdditionalValues(cmCTestGenericHandler* handler) override;
+
+  std::string DefectCount;
 };
-
-
-#endif
-

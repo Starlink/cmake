@@ -1,63 +1,73 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmInstallExportGenerator_h
-#define cmInstallExportGenerator_h
+#include <cstddef>
+#include <iosfwd>
+#include <memory>
+#include <string>
+#include <vector>
 
 #include "cmInstallGenerator.h"
+#include "cmListFileCache.h"
+#include "cmScriptGenerator.h"
 
 class cmExportInstallFileGenerator;
-class cmInstallFilesGenerator;
-class cmInstallTargetGenerator;
 class cmExportSet;
-class cmMakefile;
+class cmLocalGenerator;
 
 /** \class cmInstallExportGenerator
  * \brief Generate rules for creating an export files.
  */
-class cmInstallExportGenerator: public cmInstallGenerator
+class cmInstallExportGenerator : public cmInstallGenerator
 {
 public:
-  cmInstallExportGenerator(cmExportSet* exportSet,
-                           const char* dest, const char* file_permissions,
+  cmInstallExportGenerator(cmExportSet* exportSet, std::string const& dest,
+                           std::string file_permissions,
                            const std::vector<std::string>& configurations,
-                           const char* component,
-                           const char* filename, const char* name_space,
-                           bool exportOld, cmMakefile* mf);
-  ~cmInstallExportGenerator();
+                           std::string const& component, MessageLevel message,
+                           bool exclude_from_all, std::string filename,
+                           std::string name_space, bool exportOld,
+                           bool android, cmListFileBacktrace backtrace);
+  cmInstallExportGenerator(const cmInstallExportGenerator&) = delete;
+  ~cmInstallExportGenerator() override;
 
-  cmExportSet* GetExportSet() {return this->ExportSet;}
+  cmInstallExportGenerator& operator=(const cmInstallExportGenerator&) =
+    delete;
 
-  cmMakefile* GetMakefile() const { return this->Makefile; }
+  cmExportSet* GetExportSet() { return this->ExportSet; }
+
+  bool Compute(cmLocalGenerator* lg) override;
+
+  cmLocalGenerator* GetLocalGenerator() const { return this->LocalGenerator; }
 
   const std::string& GetNamespace() const { return this->Namespace; }
 
+  std::string const& GetMainImportFile() const { return this->MainImportFile; }
+
+  std::string const& GetDestination() const { return this->Destination; }
+  std::string GetDestinationFile() const;
+  std::string GetFileName() const { return this->FileName; }
+
 protected:
-  virtual void GenerateScript(std::ostream& os);
-  virtual void GenerateScriptConfigs(std::ostream& os, Indent const& indent);
-  virtual void GenerateScriptActions(std::ostream& os, Indent const& indent);
+  void GenerateScript(std::ostream& os) override;
+  void GenerateScriptConfigs(std::ostream& os, Indent indent) override;
+  void GenerateScriptActions(std::ostream& os, Indent indent) override;
   void GenerateImportFile(cmExportSet const* exportSet);
   void GenerateImportFile(const char* config, cmExportSet const* exportSet);
   void ComputeTempDir();
+  size_t GetMaxConfigLength() const;
 
-  cmExportSet* ExportSet;
-  std::string FilePermissions;
-  std::string FileName;
-  std::string Namespace;
-  bool ExportOld;
-  cmMakefile* Makefile;
+  cmExportSet* const ExportSet;
+  std::string const FilePermissions;
+  std::string const FileName;
+  std::string const Namespace;
+  bool const ExportOld;
+  cmLocalGenerator* LocalGenerator;
 
   std::string TempDir;
   std::string MainImportFile;
-  cmExportInstallFileGenerator* EFGen;
+  std::unique_ptr<cmExportInstallFileGenerator> EFGen;
 };
-
-#endif

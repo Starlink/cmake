@@ -1,62 +1,50 @@
-#.rst:
-# CMakeAddFortranSubdirectory
-# ---------------------------
-#
-# Use MinGW gfortran from VS if a fortran compiler is not found.
-#
-# The 'add_fortran_subdirectory' function adds a subdirectory to a
-# project that contains a fortran only sub-project.  The module will
-# check the current compiler and see if it can support fortran.  If no
-# fortran compiler is found and the compiler is MSVC, then this module
-# will find the MinGW gfortran.  It will then use an external project to
-# build with the MinGW tools.  It will also create imported targets for
-# the libraries created.  This will only work if the fortran code is
-# built into a dll, so BUILD_SHARED_LIBS is turned on in the project.
-# In addition the CMAKE_GNUtoMS option is set to on, so that the MS .lib
-# files are created.  Usage is as follows:
-#
-# ::
-#
-#   cmake_add_fortran_subdirectory(
-#    <subdir>                # name of subdirectory
-#    PROJECT <project_name>  # project name in subdir top CMakeLists.txt
-#    ARCHIVE_DIR <dir>       # dir where project places .lib files
-#    RUNTIME_DIR <dir>       # dir where project places .dll files
-#    LIBRARIES <lib>...      # names of library targets to import
-#    LINK_LIBRARIES          # link interface libraries for LIBRARIES
-#     [LINK_LIBS <lib> <dep>...]...
-#    CMAKE_COMMAND_LINE ...  # extra command line flags to pass to cmake
-#    NO_EXTERNAL_INSTALL     # skip installation of external project
-#    )
-#
-# Relative paths in ARCHIVE_DIR and RUNTIME_DIR are interpreted with
-# respect to the build directory corresponding to the source directory
-# in which the function is invoked.
-#
-# Limitations:
-#
-# NO_EXTERNAL_INSTALL is required for forward compatibility with a
-# future version that supports installation of the external project
-# binaries during "make install".
+# Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+# file Copyright.txt or https://cmake.org/licensing for details.
 
-#=============================================================================
-# Copyright 2011-2012 Kitware, Inc.
-#
-# Distributed under the OSI-approved BSD License (the "License");
-# see accompanying file Copyright.txt for details.
-#
-# This software is distributed WITHOUT ANY WARRANTY; without even the
-# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the License for more information.
-#=============================================================================
-# (To distribute this file outside of CMake, substitute the full
-#  License text for the above reference.)
+#[=======================================================================[.rst:
+CMakeAddFortranSubdirectory
+---------------------------
 
+Add a fortran-only subdirectory, find a fortran compiler, and build.
 
-set(_MS_MINGW_SOURCE_DIR ${CMAKE_CURRENT_LIST_DIR})
+The ``cmake_add_fortran_subdirectory`` function adds a subdirectory
+to a project that contains a fortran-only subproject.  The module will
+check the current compiler and see if it can support fortran.  If no
+fortran compiler is found and the compiler is MSVC, then this module
+will find the MinGW gfortran.  It will then use an external project to
+build with the MinGW tools.  It will also create imported targets for
+the libraries created.  This will only work if the fortran code is
+built into a dll, so :variable:`BUILD_SHARED_LIBS` is turned on in
+the project.  In addition the :variable:`CMAKE_GNUtoMS` option is set
+to on, so that Microsoft ``.lib`` files are created.  Usage is as follows:
+
+::
+
+  cmake_add_fortran_subdirectory(
+   <subdir>                # name of subdirectory
+   PROJECT <project_name>  # project name in subdir top CMakeLists.txt
+   ARCHIVE_DIR <dir>       # dir where project places .lib files
+   RUNTIME_DIR <dir>       # dir where project places .dll files
+   LIBRARIES <lib>...      # names of library targets to import
+   LINK_LIBRARIES          # link interface libraries for LIBRARIES
+    [LINK_LIBS <lib> <dep>...]...
+   CMAKE_COMMAND_LINE ...  # extra command line flags to pass to cmake
+   NO_EXTERNAL_INSTALL     # skip installation of external project
+   )
+
+Relative paths in ``ARCHIVE_DIR`` and ``RUNTIME_DIR`` are interpreted with
+respect to the build directory corresponding to the source directory
+in which the function is invoked.
+
+Limitations:
+
+``NO_EXTERNAL_INSTALL`` is required for forward compatibility with a
+future version that supports installation of the external project
+binaries during ``make install``.
+#]=======================================================================]
+
 include(CheckLanguage)
 include(ExternalProject)
-include(CMakeParseArguments)
 
 function(_setup_mingw_config_and_build source_dir build_dir)
   # Look for a MinGW gfortran.
@@ -98,11 +86,11 @@ function(_setup_mingw_config_and_build source_dir build_dir)
   file(TO_NATIVE_PATH "${MINGW_PATH}" MINGW_PATH)
   string(REPLACE "\\" "\\\\" MINGW_PATH "${MINGW_PATH}")
   configure_file(
-    ${_MS_MINGW_SOURCE_DIR}/CMakeAddFortranSubdirectory/config_mingw.cmake.in
+    ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/CMakeAddFortranSubdirectory/config_mingw.cmake.in
     ${build_dir}/config_mingw.cmake
     @ONLY)
   configure_file(
-    ${_MS_MINGW_SOURCE_DIR}/CMakeAddFortranSubdirectory/build_mingw.cmake.in
+    ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/CMakeAddFortranSubdirectory/build_mingw.cmake.in
     ${build_dir}/build_mingw.cmake
     @ONLY)
 endfunction()
@@ -161,16 +149,8 @@ function(cmake_add_fortran_subdirectory subdir)
     -P ${build_dir}/config_mingw.cmake
     BUILD_COMMAND ${CMAKE_COMMAND}
     -P ${build_dir}/build_mingw.cmake
+    BUILD_ALWAYS 1
     INSTALL_COMMAND ""
-    )
-  # make the external project always run make with each build
-  externalproject_add_step(${project_name}_build forcebuild
-    COMMAND ${CMAKE_COMMAND}
-    -E remove
-    ${CMAKE_CURRENT_BUILD_DIR}/${project_name}-prefix/src/${project_name}-stamp/${project_name}-build
-    DEPENDEES configure
-    DEPENDERS build
-    ALWAYS 1
     )
   # create imported targets for all libraries
   foreach(lib ${libraries})

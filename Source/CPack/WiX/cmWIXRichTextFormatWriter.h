@@ -1,19 +1,12 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2012 Kitware, Inc.
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
+#include <string>
 
-#ifndef cmWIXRichTextFormatWriter_h
-#define cmWIXRichTextFormatWriter_h
-
-#include <cmsys/FStream.hxx>
+#include "cmsys/FStream.hxx"
 
 /** \class cmWIXRichtTextFormatWriter
  * \brief Helper class to generate Rich Text Format (RTF) documents
@@ -22,10 +15,10 @@
 class cmWIXRichTextFormatWriter
 {
 public:
-  cmWIXRichTextFormatWriter(const std::string& filename);
+  cmWIXRichTextFormatWriter(std::string const& filename);
   ~cmWIXRichTextFormatWriter();
 
-  void AddText(const std::string& text);
+  void AddText(std::string const& text);
 
 private:
   void WriteHeader();
@@ -35,8 +28,8 @@ private:
 
   void WriteDocumentPrefix();
 
-  void ControlWord(const std::string& keyword);
-  void NewControlWord(const std::string& keyword);
+  void ControlWord(std::string const& keyword);
+  void NewControlWord(std::string const& keyword);
 
   void StartGroup();
   void EndGroup();
@@ -48,5 +41,3 @@ private:
 
   cmsys::ofstream File;
 };
-
-#endif

@@ -1,21 +1,22 @@
 
 
-#ifndef COMPILERS_HPP
-#define COMPILERS_HPP
+#pragma once
 
-#include <QWidget>
+#include "cmConfigure.h" // IWYU pragma: keep
+
 #include <ui_Compilers.h>
 
-class Compilers : public QWidget, public Ui::Compilers
+#include <QWidget>
+
+class Compilers
+  : public QWidget
+  , public Ui::Compilers
 {
   Q_OBJECT
 public:
-  Compilers(QWidget* p=NULL) :
-    QWidget(p)
+  Compilers(QWidget* p = nullptr)
+    : QWidget(p)
   {
     this->setupUi(this);
   }
 };
-
-#endif
-

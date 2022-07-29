@@ -39,7 +39,7 @@ struct write_memory_data {
 	unsigned char * buff;
 };
 
-static int	memory_write_close(struct archive *, void *);
+static int	memory_write_free(struct archive *, void *);
 static int	memory_write_open(struct archive *, void *);
 static ssize_t	memory_write(struct archive *, void *, const void *buff, size_t);
 
@@ -53,17 +53,16 @@ archive_write_open_memory(struct archive *a, void *buff, size_t buffSize, size_t
 {
 	struct write_memory_data *mine;
 
-	mine = (struct write_memory_data *)malloc(sizeof(*mine));
+	mine = (struct write_memory_data *)calloc(1, sizeof(*mine));
 	if (mine == NULL) {
 		archive_set_error(a, ENOMEM, "No memory");
 		return (ARCHIVE_FATAL);
 	}
-	memset(mine, 0, sizeof(*mine));
 	mine->buff = buff;
 	mine->size = buffSize;
 	mine->client_size = used;
-	return (archive_write_open(a, mine,
-		    memory_write_open, memory_write, memory_write_close));
+	return (archive_write_open2(a, mine,
+		    memory_write_open, memory_write, NULL, memory_write_free));
 }
 
 static int
@@ -104,11 +103,13 @@ memory_write(struct archive *a, void *client_data, const void *buff, size_t leng
 }
 
 static int
-memory_write_close(struct archive *a, void *client_data)
+memory_write_free(struct archive *a, void *client_data)
 {
 	struct write_memory_data *mine;
 	(void)a; /* UNUSED */
 	mine = client_data;
+	if (mine == NULL)
+		return (ARCHIVE_OK);
 	free(mine);
 	return (ARCHIVE_OK);
 }

@@ -1,34 +1,25 @@
-#.rst:
-# UsePkgConfig
-# ------------
-#
-# Obsolete pkg-config module for CMake, use FindPkgConfig instead.
-#
-#
-#
-# This module defines the following macro:
-#
-# PKGCONFIG(package includedir libdir linkflags cflags)
-#
-# Calling PKGCONFIG will fill the desired information into the 4 given
-# arguments, e.g.  PKGCONFIG(libart-2.0 LIBART_INCLUDE_DIR
-# LIBART_LINK_DIR LIBART_LINK_FLAGS LIBART_CFLAGS) if pkg-config was NOT
-# found or the specified software package doesn't exist, the variable
-# will be empty when the function returns, otherwise they will contain
-# the respective information
+# Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+# file Copyright.txt or https://cmake.org/licensing for details.
 
-#=============================================================================
-# Copyright 2006-2009 Kitware, Inc.
-#
-# Distributed under the OSI-approved BSD License (the "License");
-# see accompanying file Copyright.txt for details.
-#
-# This software is distributed WITHOUT ANY WARRANTY; without even the
-# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the License for more information.
-#=============================================================================
-# (To distribute this file outside of CMake, substitute the full
-#  License text for the above reference.)
+#[=======================================================================[.rst:
+UsePkgConfig
+------------
+
+Obsolete pkg-config module for CMake, use FindPkgConfig instead.
+
+
+
+This module defines the following macro:
+
+PKGCONFIG(package includedir libdir linkflags cflags)
+
+Calling PKGCONFIG will fill the desired information into the 4 given
+arguments, e.g.  PKGCONFIG(libart-2.0 LIBART_INCLUDE_DIR
+LIBART_LINK_DIR LIBART_LINK_FLAGS LIBART_CFLAGS) if pkg-config was NOT
+found or the specified software package doesn't exist, the variable
+will be empty when the function returns, otherwise they will contain
+the respective information
+#]=======================================================================]
 
 find_program(PKGCONFIG_EXECUTABLE NAMES pkg-config )
 

@@ -1,69 +1,55 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmSetsPropertiesCommand_h
-#define cmSetsPropertiesCommand_h
+#include <string>
+#include <vector>
 
-#include "cmCommand.h"
+class cmMakefile;
+class cmExecutionStatus;
+class cmSourceFile;
 
-class cmSetPropertyCommand : public cmCommand
+bool cmSetPropertyCommand(std::vector<std::string> const& args,
+                          cmExecutionStatus& status);
+
+namespace SetPropertyCommand {
+bool HandleSourceFileDirectoryScopes(
+  cmExecutionStatus& status, std::vector<std::string>& source_file_directories,
+  std::vector<std::string>& source_file_target_directories,
+  std::vector<cmMakefile*>& directory_makefiles);
+
+bool HandleSourceFileDirectoryScopeValidation(
+  cmExecutionStatus& status, bool source_file_directory_option_enabled,
+  bool source_file_target_option_enabled,
+  std::vector<std::string>& source_file_directories,
+  std::vector<std::string>& source_file_target_directories);
+
+bool HandleAndValidateSourceFileDirectoryScopes(
+  cmExecutionStatus& status, bool source_directories_option_encountered,
+  bool source_target_directories_option_encountered,
+  std::vector<std::string>& source_directories,
+  std::vector<std::string>& source_target_directories,
+  std::vector<cmMakefile*>& source_file_directory_makefiles);
+
+std::string MakeSourceFilePathAbsoluteIfNeeded(
+  cmExecutionStatus& status, const std::string& source_file_path, bool needed);
+void MakeSourceFilePathsAbsoluteIfNeeded(
+  cmExecutionStatus& status,
+  std::vector<std::string>& source_files_absolute_paths,
+  std::vector<std::string>::const_iterator files_it_begin,
+  std::vector<std::string>::const_iterator files_it_end, bool needed);
+
+enum class PropertyOp
 {
-public:
-  cmSetPropertyCommand();
-
-  virtual cmCommand* Clone()
-    {
-      return new cmSetPropertyCommand;
-    }
-
-  /**
-   * This is called when the command is first encountered in
-   * the input file.
-   */
-  virtual bool InitialPass(std::vector<std::string> const& args,
-                           cmExecutionStatus &status);
-
-  /**
-   * The name of the command as specified in CMakeList.txt.
-   */
-  virtual const char* GetName() const { return "set_property";}
-
-  /**
-   * This determines if the command is invoked when in script mode.
-   */
-  virtual bool IsScriptable() const { return true; }
-
-  cmTypeMacro(cmSetPropertyCommand, cmCommand);
-
-private:
-  std::set<cmStdString> Names;
-  std::string PropertyName;
-  std::string PropertyValue;
-  bool Remove;
-  bool AppendMode;
-  bool AppendAsString;
-
-  // Implementation of each property type.
-  bool HandleGlobalMode();
-  bool HandleDirectoryMode();
-  bool HandleTargetMode();
-  bool HandleTarget(cmTarget* target);
-  bool HandleSourceMode();
-  bool HandleSource(cmSourceFile* sf);
-  bool HandleTestMode();
-  bool HandleTest(cmTest* test);
-  bool HandleCacheMode();
-  bool HandleCacheEntry(cmCacheManager::CacheIterator&);
+  Remove,
+  Set,
+  Append,
+  AppendAsString
 };
 
-
-
-#endif
+bool HandleAndValidateSourceFilePropertyGENERATED(
+  cmSourceFile* sf, std::string const& propertyValue,
+  PropertyOp op = PropertyOp::Set);
+}

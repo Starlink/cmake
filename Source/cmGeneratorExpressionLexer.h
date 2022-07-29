@@ -1,29 +1,23 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2012 Stephen Kelly <steveire@gmail.com>
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmGeneratorExpressionLexer_h
-#define cmGeneratorExpressionLexer_h
-
-#include "cmStandardIncludes.h"
-
+#include <cstddef>
+#include <string>
 #include <vector>
 
-//----------------------------------------------------------------------------
 struct cmGeneratorExpressionToken
 {
-  cmGeneratorExpressionToken(unsigned type, const char *c, size_t l)
-    : TokenType(type), Content(c), Length(l)
+  cmGeneratorExpressionToken(unsigned type, const char* c, size_t l)
+    : TokenType(type)
+    , Content(c)
+    , Length(l)
   {
   }
-  enum {
+  enum
+  {
     Text,
     BeginExpression,
     EndExpression,
@@ -31,7 +25,7 @@ struct cmGeneratorExpressionToken
     CommaSeparator
   };
   unsigned TokenType;
-  const char *Content;
+  const char* Content;
   size_t Length;
 };
 
@@ -43,7 +37,7 @@ class cmGeneratorExpressionLexer
 public:
   cmGeneratorExpressionLexer();
 
-  std::vector<cmGeneratorExpressionToken> Tokenize(const char *input);
+  std::vector<cmGeneratorExpressionToken> Tokenize(const std::string& input);
 
   bool GetSawGeneratorExpression() const
   {
@@ -51,8 +45,6 @@ public:
   }
 
 private:
-  bool SawBeginExpression;
-  bool SawGeneratorExpression;
+  bool SawBeginExpression = false;
+  bool SawGeneratorExpression = false;
 };
-
-#endif

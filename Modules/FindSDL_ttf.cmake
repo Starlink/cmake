@@ -1,50 +1,40 @@
-#.rst:
-# FindSDL_ttf
-# -----------
-#
-# Locate SDL_ttf library
-#
-# This module defines:
-#
-# ::
-#
-#   SDL_TTF_LIBRARIES, the name of the library to link against
-#   SDL_TTF_INCLUDE_DIRS, where to find the headers
-#   SDL_TTF_FOUND, if false, do not try to link against
-#   SDL_TTF_VERSION_STRING - human-readable string containing the version of SDL_ttf
-#
-#
-#
-# For backward compatiblity the following variables are also set:
-#
-# ::
-#
-#   SDLTTF_LIBRARY (same value as SDL_TTF_LIBRARIES)
-#   SDLTTF_INCLUDE_DIR (same value as SDL_TTF_INCLUDE_DIRS)
-#   SDLTTF_FOUND (same value as SDL_TTF_FOUND)
-#
-#
-#
-# $SDLDIR is an environment variable that would correspond to the
-# ./configure --prefix=$SDLDIR used in building SDL.
-#
-# Created by Eric Wing.  This was influenced by the FindSDL.cmake
-# module, but with modifications to recognize OS X frameworks and
-# additional Unix paths (FreeBSD, etc).
+# Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+# file Copyright.txt or https://cmake.org/licensing for details.
 
-#=============================================================================
-# Copyright 2005-2009 Kitware, Inc.
-# Copyright 2012 Benjamin Eikel
-#
-# Distributed under the OSI-approved BSD License (the "License");
-# see accompanying file Copyright.txt for details.
-#
-# This software is distributed WITHOUT ANY WARRANTY; without even the
-# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the License for more information.
-#=============================================================================
-# (To distribute this file outside of CMake, substitute the full
-#  License text for the above reference.)
+#[=======================================================================[.rst:
+FindSDL_ttf
+-----------
+
+Locate SDL_ttf library
+
+This module defines:
+
+::
+
+  SDL_TTF_LIBRARIES, the name of the library to link against
+  SDL_TTF_INCLUDE_DIRS, where to find the headers
+  SDL_TTF_FOUND, if false, do not try to link against
+  SDL_TTF_VERSION_STRING - human-readable string containing the version of SDL_ttf
+
+
+
+For backward compatibility the following variables are also set:
+
+::
+
+  SDLTTF_LIBRARY (same value as SDL_TTF_LIBRARIES)
+  SDLTTF_INCLUDE_DIR (same value as SDL_TTF_INCLUDE_DIRS)
+  SDLTTF_FOUND (same value as SDL_TTF_FOUND)
+
+
+
+$SDLDIR is an environment variable that would correspond to the
+./configure --prefix=$SDLDIR used in building SDL.
+
+Created by Eric Wing.  This was influenced by the FindSDL.cmake
+module, but with modifications to recognize OS X frameworks and
+additional Unix paths (FreeBSD, etc).
+#]=======================================================================]
 
 if(NOT SDL_TTF_INCLUDE_DIR AND SDLTTF_INCLUDE_DIR)
   set(SDL_TTF_INCLUDE_DIR ${SDLTTF_INCLUDE_DIR} CACHE PATH "directory cache
@@ -54,7 +44,9 @@ find_path(SDL_TTF_INCLUDE_DIR SDL_ttf.h
   HINTS
     ENV SDLTTFDIR
     ENV SDLDIR
-  PATH_SUFFIXES include/SDL include/SDL12 include/SDL11 include
+  PATH_SUFFIXES SDL
+                # path suffixes to search inside ENV{SDLDIR}
+                include/SDL include/SDL12 include/SDL11 include
 )
 
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
@@ -100,7 +92,7 @@ FIND_PACKAGE_HANDLE_STANDARD_ARGS(SDL_ttf
                                   REQUIRED_VARS SDL_TTF_LIBRARIES SDL_TTF_INCLUDE_DIRS
                                   VERSION_VAR SDL_TTF_VERSION_STRING)
 
-# for backward compatiblity
+# for backward compatibility
 set(SDLTTF_LIBRARY ${SDL_TTF_LIBRARIES})
 set(SDLTTF_INCLUDE_DIR ${SDL_TTF_INCLUDE_DIRS})
 set(SDLTTF_FOUND ${SDL_TTF_FOUND})

@@ -1,30 +1,24 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2011 Peter Collingbourne <peter@pcc.me.uk>
-  Copyright 2011 Nicolas Despres <nicolas.despres@gmail.com>
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmNinjaUtilityTargetGenerator_h
-#  define cmNinjaUtilityTargetGenerator_h
+#include <string>
 
-#  include "cmNinjaTargetGenerator.h"
-#  include "cmNinjaTypes.h"
+#include "cmNinjaTargetGenerator.h"
 
-class cmSourceFile;
+class cmGeneratorTarget;
 
 class cmNinjaUtilityTargetGenerator : public cmNinjaTargetGenerator
 {
 public:
   cmNinjaUtilityTargetGenerator(cmGeneratorTarget* target);
-  ~cmNinjaUtilityTargetGenerator();
+  ~cmNinjaUtilityTargetGenerator() override;
 
-  void Generate();
+  void Generate(const std::string& config) override;
+
+private:
+  void WriteUtilBuildStatements(std::string const& config,
+                                std::string const& fileConfig);
 };
-
-#endif // ! cmNinjaUtilityTargetGenerator_h

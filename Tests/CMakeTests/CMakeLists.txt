@@ -7,6 +7,7 @@ macro(AddCMakeTest TestName PreArgs)
   add_test(NAME CMake.${TestName}
     COMMAND ${CMAKE_EXECUTABLE} ${PreArgs}
     -P "${CMAKE_CURRENT_BINARY_DIR}/${TestName}Test.cmake" ${ARGN})
+  set_tests_properties("CMake.${TestName}" PROPERTIES LABELS "CMake;command")
 endmacro()
 
 
@@ -19,8 +20,6 @@ AddCMakeTest(GetFilenameComponentRealpath "")
 AddCMakeTest(Version "")
 AddCMakeTest(Message "")
 AddCMakeTest(File "")
-AddCMakeTest(ConfigureFile "")
-AddCMakeTest(SeparateArguments "")
 AddCMakeTest(ImplicitLinkInfo "")
 AddCMakeTest(ModuleNotices "")
 AddCMakeTest(GetProperty "")
@@ -32,11 +31,11 @@ AddCMakeTest(CompilerIdVendor "")
 AddCMakeTest(ProcessorCount "-DKWSYS_TEST_EXE=$<TARGET_FILE:cmsysTestsCxx>")
 AddCMakeTest(PushCheckState "")
 AddCMakeTest(While "")
-AddCMakeTest(CMakeHostSystemInformation "")
 
 AddCMakeTest(FileDownload "")
-set_property(TEST CMake.FileDownload PROPERTY
+set_tests_properties(CMake.FileDownload PROPERTIES
   PASS_REGULAR_EXPRESSION "file already exists with expected MD5 sum"
+  FAIL_REGULAR_EXPRESSION "Unexpected status|incorrectly interpreted"
   )
 AddCMakeTest(FileDownloadBadHash "")
 set_property(TEST CMake.FileDownloadBadHash PROPERTY
@@ -45,19 +44,12 @@ set_property(TEST CMake.FileDownloadBadHash PROPERTY
 
 AddCMakeTest(FileUpload "")
 
-if(HAVE_ELF_H)
-  AddCMakeTest(ELF "")
-endif()
-
 set(EndStuff_PreArgs
   "-Ddir:STRING=${CMAKE_CURRENT_BINARY_DIR}/EndStuffTest"
   )
 AddCMakeTest(EndStuff "${EndStuff_PreArgs}")
 
-set(GetPrerequisites_PreArgs
-  "-DCTEST_CONFIGURATION_TYPE:STRING=\\\${CTEST_CONFIGURATION_TYPE}"
-  )
-AddCMakeTest(GetPrerequisites "${GetPrerequisites_PreArgs}")
+AddCMakeTest(GetPrerequisites "-DConfiguration:STRING=$<CONFIGURATION>")
 
 if(GIT_EXECUTABLE)
   set(PolicyCheck_PreArgs

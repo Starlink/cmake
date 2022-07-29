@@ -31,13 +31,13 @@ __FBSDID("$FreeBSD$");
 #endif
 #include <stdlib.h>
 #ifdef HAVE_BZLIB_H
-#include <cm_bzlib.h>
+#include <cm3p/bzlib.h>
 #endif
 #if HAVE_LZMA_H
-#include <lzma.h>
+#include <cm3p/lzma.h>
 #endif
 #ifdef HAVE_ZLIB_H
-#include <cm_zlib.h>
+#include <cm3p/zlib.h>
 #endif
 
 #include "archive.h"
@@ -52,6 +52,7 @@ __FBSDID("$FreeBSD$");
 #include "archive_rb.h"
 #include "archive_string.h"
 #include "archive_write_private.h"
+#include "archive_write_set_format_private.h"
 
 /*
  * Codec ID
@@ -164,7 +165,7 @@ struct file {
 	mode_t			 mode;
 	uint32_t		 crc32;
 
-	int			 dir:1;
+	signed int		 dir:1;
 };
 
 struct _7zip {
@@ -205,7 +206,7 @@ struct _7zip {
 	/*
 	 * The list of the file entries which has its contents is used to
 	 * manage struct file objects.
-	 * We use 'next' a menber of struct file to chain.
+	 * We use 'next' (a member of struct file) to chain.
 	 */
 	struct {
 		struct file	*first;
@@ -439,7 +440,8 @@ _7z_write_header(struct archive_write *a, struct archive_entry *entry)
 
 	r = file_new(a, entry, &file);
 	if (r < ARCHIVE_WARN) {
-		file_free(file);
+		if (file != NULL)
+			file_free(file);
 		return (r);
 	}
 	if (file->size == 0 && file->dir) {
@@ -753,6 +755,10 @@ _7z_close(struct archive_write *a)
 		 */
 #if HAVE_LZMA_H
 		header_compression = _7Z_LZMA1;
+		if(zip->opt_compression == _7Z_LZMA2 ||
+		   zip->opt_compression == _7Z_COPY)
+			header_compression = zip->opt_compression;
+
 		/* If the stored file is only one, do not encode the header.
 		 * This is the same way 7z command does. */
 		if (zip->total_number_entry == 1)
@@ -760,7 +766,8 @@ _7z_close(struct archive_write *a)
 #else
 		header_compression = _7Z_COPY;
 #endif
-		r = _7z_compression_init_encoder(a, header_compression, 6);
+		r = _7z_compression_init_encoder(a, header_compression,
+		                                 zip->opt_compression_level);
 		if (r < 0)
 			return (r);
 		zip->crc32flg = PRECODE_CRC32;
@@ -1358,7 +1365,7 @@ make_header(struct archive_write *a, uint64_t offset, uint64_t pack_size,
 	if (r < 0)
 		return (r);
 
-	/* Write Nume size. */
+	/* Write Name size. */
 	r = enc_uint64(a, zip->total_bytes_entry_name+1);
 	if (r < 0)
 		return (r);
@@ -1449,6 +1456,10 @@ static int
 _7z_free(struct archive_write *a)
 {
 	struct _7zip *zip = (struct _7zip *)a->format_data;
+
+	/* Close the temporary file. */
+	if (zip->temp_fd >= 0)
+		close(zip->temp_fd);
 
 	file_free_register(zip);
 	compression_end(&(a->archive), &(zip->stream));
@@ -1921,8 +1932,8 @@ compression_init_encoder_lzma(struct archive *a,
 		return (ARCHIVE_FATAL);
 	}
 	lzmafilters = (lzma_filter *)(strm+1);
-	if (level > 6)
-		level = 6;
+	if (level > 9)
+		level = 9;
 	if (lzma_lzma_preset(&lzma_opt, level)) {
 		free(strm);
 		lastrm->real_stream = NULL;
@@ -2091,19 +2102,6 @@ compression_init_encoder_lzma2(struct archive *a,
 /*
  * _7_PPMD compressor.
  */
-static void *
-ppmd_alloc(void *p, size_t size)
-{
-	(void)p;
-	return malloc(size);
-}
-static void
-ppmd_free(void *p, void *address)
-{
-	(void)p;
-	free(address);
-}
-static ISzAlloc g_szalloc = { ppmd_alloc, ppmd_free };
 static void
 ppmd_write(void *p, Byte b)
 {
@@ -2163,7 +2161,7 @@ compression_init_encoder_ppmd(struct archive *a,
 	archive_le32enc(props+1, msize);
 	__archive_ppmd7_functions.Ppmd7_Construct(&strm->ppmd7_context);
 	r = __archive_ppmd7_functions.Ppmd7_Alloc(
-		&strm->ppmd7_context, msize, &g_szalloc);
+		&strm->ppmd7_context, msize);
 	if (r == 0) {
 		free(strm->buff);
 		free(strm);
@@ -2239,7 +2237,7 @@ compression_end_ppmd(struct archive *a, struct la_zstream *lastrm)
 	(void)a; /* UNUSED */
 
 	strm = (struct ppmd_stream *)lastrm->real_stream;
-	__archive_ppmd7_functions.Ppmd7_Free(&strm->ppmd7_context, &g_szalloc);
+	__archive_ppmd7_functions.Ppmd7_Free(&strm->ppmd7_context);
 	free(strm->buff);
 	free(strm);
 	lastrm->real_stream = NULL;

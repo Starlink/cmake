@@ -1,62 +1,58 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2013 Stephen Kelly <steveire@gmail.com>
-
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
-
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmTargetCompileOptionsCommand.h"
 
-bool cmTargetCompileOptionsCommand
-::InitialPass(std::vector<std::string> const& args, cmExecutionStatus &)
-{
-  return this->HandleArguments(args, "COMPILE_OPTIONS", PROCESS_BEFORE);
-}
+#include "cmListFileCache.h"
+#include "cmMakefile.h"
+#include "cmMessageType.h"
+#include "cmPolicies.h"
+#include "cmStringAlgorithms.h"
+#include "cmTarget.h"
+#include "cmTargetPropCommandBase.h"
 
-void cmTargetCompileOptionsCommand
-::HandleImportedTarget(const std::string &tgt)
-{
-  cmOStringStream e;
-  e << "Cannot specify compile options for imported target \""
-    << tgt << "\".";
-  this->Makefile->IssueMessage(cmake::FATAL_ERROR, e.str());
-}
+namespace {
 
-void cmTargetCompileOptionsCommand
-::HandleMissingTarget(const std::string &name)
+class TargetCompileOptionsImpl : public cmTargetPropCommandBase
 {
-  cmOStringStream e;
-  e << "Cannot specify compile options for target \"" << name << "\" "
-       "which is not built by this project.";
-  this->Makefile->IssueMessage(cmake::FATAL_ERROR, e.str());
-}
+public:
+  using cmTargetPropCommandBase::cmTargetPropCommandBase;
 
-//----------------------------------------------------------------------------
-std::string cmTargetCompileOptionsCommand
-::Join(const std::vector<std::string> &content)
-{
-  std::string defs;
-  std::string sep;
-  for(std::vector<std::string>::const_iterator it = content.begin();
-    it != content.end(); ++it)
-    {
-    defs += sep + *it;
-    sep = ";";
+private:
+  void HandleMissingTarget(const std::string& name) override
+  {
+    this->Makefile->IssueMessage(
+      MessageType::FATAL_ERROR,
+      cmStrCat("Cannot specify compile options for target \"", name,
+               "\" which is not built by this project."));
+  }
+
+  bool HandleDirectContent(cmTarget* tgt,
+                           const std::vector<std::string>& content,
+                           bool prepend, bool /*system*/) override
+  {
+    cmPolicies::PolicyStatus policyStatus =
+      this->Makefile->GetPolicyStatus(cmPolicies::CMP0101);
+    if (policyStatus == cmPolicies::OLD || policyStatus == cmPolicies::WARN) {
+      prepend = false;
     }
-  return defs;
-}
 
-//----------------------------------------------------------------------------
-void cmTargetCompileOptionsCommand
-::HandleDirectContent(cmTarget *tgt, const std::vector<std::string> &content,
-                                   bool, bool)
+    cmListFileBacktrace lfbt = this->Makefile->GetBacktrace();
+    tgt->InsertCompileOption(BT<std::string>(this->Join(content), lfbt),
+                             prepend);
+    return true; // Successfully handled.
+  }
+
+  std::string Join(const std::vector<std::string>& content) override
+  {
+    return cmJoin(content, ";");
+  }
+};
+
+} // namespace
+
+bool cmTargetCompileOptionsCommand(std::vector<std::string> const& args,
+                                   cmExecutionStatus& status)
 {
-  cmListFileBacktrace lfbt;
-  this->Makefile->GetBacktrace(lfbt);
-  cmValueWithOrigin entry(this->Join(content), lfbt);
-  tgt->InsertCompileOption(entry);
+  return TargetCompileOptionsImpl(status).HandleArguments(
+    args, "COMPILE_OPTIONS", TargetCompileOptionsImpl::PROCESS_BEFORE);
 }

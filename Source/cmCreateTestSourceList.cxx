@@ -1,63 +1,47 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
-
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
-
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmCreateTestSourceList.h"
+
+#include <algorithm>
+
+#include "cmExecutionStatus.h"
+#include "cmMakefile.h"
 #include "cmSourceFile.h"
+#include "cmStringAlgorithms.h"
+#include "cmSystemTools.h"
 
-// cmCreateTestSourceList
-bool cmCreateTestSourceList
-::InitialPass(std::vector<std::string> const& args, cmExecutionStatus &)
+bool cmCreateTestSourceList(std::vector<std::string> const& args,
+                            cmExecutionStatus& status)
 {
-  if (args.size() < 3)
-    {
-    this->SetError("called with wrong number of arguments.");
+  if (args.size() < 3) {
+    status.SetError("called with wrong number of arguments.");
     return false;
-    }
+  }
 
-
-  std::vector<std::string>::const_iterator i = args.begin();
+  auto i = args.begin();
   std::string extraInclude;
   std::string function;
   std::vector<std::string> tests;
   // extract extra include and function ot
-  for(; i != args.end(); i++)
-    {
-    if(*i == "EXTRA_INCLUDE")
-      {
+  for (; i != args.end(); i++) {
+    if (*i == "EXTRA_INCLUDE") {
       ++i;
-      if(i == args.end())
-        {
-        this->SetError("incorrect arguments to EXTRA_INCLUDE");
+      if (i == args.end()) {
+        status.SetError("incorrect arguments to EXTRA_INCLUDE");
         return false;
-        }
-      extraInclude = "#include \"";
-      extraInclude += *i;
-      extraInclude += "\"\n";
       }
-    else if(*i == "FUNCTION")
-      {
+      extraInclude = cmStrCat("#include \"", *i, "\"\n");
+    } else if (*i == "FUNCTION") {
       ++i;
-      if(i == args.end())
-        {
-        this->SetError("incorrect arguments to FUNCTION");
+      if (i == args.end()) {
+        status.SetError("incorrect arguments to FUNCTION");
         return false;
-        }
-      function = *i;
-      function += "(&ac, &av);\n";
       }
-    else
-      {
+      function = cmStrCat(*i, "(&ac, &av);\n");
+    } else {
       tests.push_back(*i);
-      }
     }
+  }
   i = tests.begin();
 
   // Name of the source list
@@ -67,24 +51,21 @@ bool cmCreateTestSourceList
 
   // Name of the test driver
   // make sure they specified an extension
-  if (cmSystemTools::GetFilenameExtension(*i).size() < 2)
-    {
-    this->SetError(
+  if (cmSystemTools::GetFilenameExtension(*i).size() < 2) {
+    status.SetError(
       "You must specify a file extension for the test driver file.");
     return false;
-    }
-  std::string driver = this->Makefile->GetCurrentOutputDirectory();
-  driver += "/";
-  driver += *i;
+  }
+  cmMakefile& mf = status.GetMakefile();
+  std::string driver = cmStrCat(mf.GetCurrentBinaryDirectory(), '/', *i);
   ++i;
 
-  std::string configFile =
-    this->Makefile->GetRequiredDefinition("CMAKE_ROOT");
+  std::string configFile = cmSystemTools::GetCMakeRoot();
 
   configFile += "/Templates/TestDriver.cxx.in";
   // Create the test driver file
 
-  std::vector<std::string>::const_iterator testsBegin = i;
+  auto testsBegin = i;
   std::vector<std::string> tests_func_name;
 
   // The rest of the arguments consist of a list of test source files.
@@ -94,96 +75,81 @@ bool cmCreateTestSourceList
   // For the moment:
   //   - replace spaces ' ', ':' and '/' with underscores '_'
   std::string forwardDeclareCode;
-  for(i = testsBegin; i != tests.end(); ++i)
-    {
-    if(*i == "EXTRA_INCLUDE")
-      {
+  for (i = testsBegin; i != tests.end(); ++i) {
+    if (*i == "EXTRA_INCLUDE") {
       break;
-      }
+    }
     std::string func_name;
-    if (cmSystemTools::GetFilenamePath(*i).size() > 0)
-      {
+    if (!cmSystemTools::GetFilenamePath(*i).empty()) {
       func_name = cmSystemTools::GetFilenamePath(*i) + "/" +
         cmSystemTools::GetFilenameWithoutLastExtension(*i);
-      }
-    else
-      {
+    } else {
       func_name = cmSystemTools::GetFilenameWithoutLastExtension(*i);
-      }
-    cmSystemTools::ConvertToUnixSlashes(func_name);
-    cmSystemTools::ReplaceString(func_name, " ", "_");
-    cmSystemTools::ReplaceString(func_name, "/", "_");
-    cmSystemTools::ReplaceString(func_name, ":", "_");
-    tests_func_name.push_back(func_name);
-    forwardDeclareCode += "int ";
-    forwardDeclareCode += func_name;
-    forwardDeclareCode += "(int, char*[]);\n";
     }
+    cmSystemTools::ConvertToUnixSlashes(func_name);
+    std::replace(func_name.begin(), func_name.end(), ' ', '_');
+    std::replace(func_name.begin(), func_name.end(), '/', '_');
+    std::replace(func_name.begin(), func_name.end(), ':', '_');
+    bool already_declared =
+      std::find(tests_func_name.begin(), tests_func_name.end(), func_name) !=
+      tests_func_name.end();
+    tests_func_name.push_back(func_name);
+    if (!already_declared) {
+      forwardDeclareCode += "int ";
+      forwardDeclareCode += func_name;
+      forwardDeclareCode += "(int, char*[]);\n";
+    }
+  }
 
   std::string functionMapCode;
   int numTests = 0;
   std::vector<std::string>::iterator j;
-  for(i = testsBegin, j = tests_func_name.begin(); i != tests.end(); ++i, ++j)
-    {
+  for (i = testsBegin, j = tests_func_name.begin(); i != tests.end();
+       ++i, ++j) {
     std::string func_name;
-    if (cmSystemTools::GetFilenamePath(*i).size() > 0)
-      {
+    if (!cmSystemTools::GetFilenamePath(*i).empty()) {
       func_name = cmSystemTools::GetFilenamePath(*i) + "/" +
         cmSystemTools::GetFilenameWithoutLastExtension(*i);
-      }
-    else
-      {
+    } else {
       func_name = cmSystemTools::GetFilenameWithoutLastExtension(*i);
-      }
+    }
     functionMapCode += "  {\n"
-      "    \"";
+                       "    \"";
     functionMapCode += func_name;
     functionMapCode += "\",\n"
-      "    ";
-    functionMapCode +=  *j;
+                       "    ";
+    functionMapCode += *j;
     functionMapCode += "\n"
-      "  },\n";
+                       "  },\n";
     numTests++;
-    }
-  if(extraInclude.size())
-    {
-    this->Makefile->AddDefinition("CMAKE_TESTDRIVER_EXTRA_INCLUDES",
-                                  extraInclude.c_str());
-    }
-  if(function.size())
-    {
-    this->Makefile->AddDefinition("CMAKE_TESTDRIVER_ARGVC_FUNCTION",
-                                  function.c_str());
-    }
-  this->Makefile->AddDefinition("CMAKE_FORWARD_DECLARE_TESTS",
-    forwardDeclareCode.c_str());
-  this->Makefile->AddDefinition("CMAKE_FUNCTION_TABLE_ENTIRES",
-    functionMapCode.c_str());
+  }
+  if (!extraInclude.empty()) {
+    mf.AddDefinition("CMAKE_TESTDRIVER_EXTRA_INCLUDES", extraInclude);
+  }
+  if (!function.empty()) {
+    mf.AddDefinition("CMAKE_TESTDRIVER_ARGVC_FUNCTION", function);
+  }
+  mf.AddDefinition("CMAKE_FORWARD_DECLARE_TESTS", forwardDeclareCode);
+  mf.AddDefinition("CMAKE_FUNCTION_TABLE_ENTRIES", functionMapCode);
   bool res = true;
-  if ( !this->Makefile->ConfigureFile(configFile.c_str(), driver.c_str(),
-      false, true, false) )
-    {
+  if (!mf.ConfigureFile(configFile, driver, false, true, false)) {
     res = false;
-    }
+  }
 
   // Construct the source list.
   std::string sourceListValue;
   {
-  cmSourceFile* sf = this->Makefile->GetOrCreateSource(driver.c_str());
-  sf->SetProperty("ABSTRACT","0");
-  sourceListValue = args[1];
+    cmSourceFile* sf = mf.GetOrCreateSource(driver);
+    sf->SetProperty("ABSTRACT", "0");
+    sourceListValue = args[1];
   }
-  for(i = testsBegin; i != tests.end(); ++i)
-    {
-    cmSourceFile* sf = this->Makefile->GetOrCreateSource(i->c_str());
-    sf->SetProperty("ABSTRACT","0");
+  for (i = testsBegin; i != tests.end(); ++i) {
+    cmSourceFile* sf = mf.GetOrCreateSource(*i);
+    sf->SetProperty("ABSTRACT", "0");
     sourceListValue += ";";
     sourceListValue += *i;
-    }
+  }
 
-  this->Makefile->AddDefinition(sourceList, sourceListValue.c_str());
+  mf.AddDefinition(sourceList, sourceListValue);
   return res;
 }
-
-
-

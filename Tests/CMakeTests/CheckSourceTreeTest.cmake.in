@@ -16,8 +16,13 @@ string(REPLACE "\\" "\\\\" HOME "${HOME}")
 # (i.e. - is it an "in source" build?)
 #
 set(in_source_build 0)
+set(build_under_source 0)
 
-if(CMake_SOURCE_DIR STREQUAL "${CMake_BINARY_DIR}")
+string(FIND "${CMake_BINARY_DIR}" "${CMake_SOURCE_DIR}/" pos)
+if(pos EQUAL 0)
+  message("build dir is *inside* source dir")
+  set(build_under_source 1)
+elseif(CMake_SOURCE_DIR STREQUAL "${CMake_BINARY_DIR}")
   message("build dir *is* source dir")
   set(in_source_build 1)
 else()
@@ -39,8 +44,13 @@ message("bin_len='${bin_len}'")
 message("substr_len='${substr_len}'")
 message("bin_dir='${bin_dir}'")
 message("in_source_build='${in_source_build}'")
+message("build_under_source='${build_under_source}'")
 message("")
 
+if(build_under_source)
+  message(STATUS "Skipping rest of test because build tree is under source tree")
+  return()
+endif()
 
 # If this does not appear to be a git checkout, just pass the test here
 # and now. (Do not let the test fail if it is run in a tree *exported* from a
@@ -268,12 +278,12 @@ if(NOT ov STREQUAL "")
 
     if(consider)
       if(is_git_checkout)
-        if(line MATCHES "^#[ \t]*modified:")
+        if(line MATCHES "^#?[ \t]*modified:")
           message("   locally modified file detected...")
           set(modifications 1)
         endif()
 
-        if(line MATCHES "^# Untracked")
+        if(line MATCHES "^(# )?Untracked")
           message("   locally non-added file/directory detected...")
           set(nonadditions 1)
         endif()
@@ -298,13 +308,11 @@ message("=======================================================================
 if("$ENV{DASHBOARD_TEST_FROM_CTEST}" STREQUAL "")
 
   # developers are allowed to have local additions and modifications...
-  set(is_dashboard 0)
   message("interactive test run")
   message("")
 
 else()
 
-  set(is_dashboard 1)
   message("dashboard test run")
   message("")
 
@@ -331,7 +339,7 @@ endif()
 # Not even developers.
 #
 if(nonadditions)
-  if(in_source_build AND is_dashboard)
+  if(in_source_build)
     message("
 warning: test results confounded because this is an 'in-source' build - cannot
 distinguish between non-added files that are in-source build products and

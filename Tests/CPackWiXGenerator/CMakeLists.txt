@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 2.8.12)
 
 project(CPackWiXGenerator)
 
@@ -8,6 +8,11 @@ add_executable(my-libapp mylibapp.cpp)
 target_link_libraries(my-libapp mylib)
 
 add_executable(my-other-app myotherapp.cpp)
+
+file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/empty)
+install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/empty
+  DESTINATION extras
+  COMPONENT extras)
 
 install(TARGETS mylib
   ARCHIVE
@@ -44,6 +49,9 @@ set(CPACK_PACKAGE_INSTALL_DIRECTORY "CPack Component Example")
 set(CPACK_WIX_UPGRADE_GUID "BF20CE5E-7F7C-401D-8F7C-AB45E8D170E6")
 set(CPACK_WIX_UNINSTALL "1")
 
+# Support non-interactive sessions (like CI).
+set(CPACK_WIX_LIGHT_EXTRA_FLAGS "-sval")
+
 set(CPACK_PACKAGE_EXECUTABLES
   "my-libapp" "CPack WiX Test"
   "my-other-app" "Second CPack WiX Test"
@@ -58,6 +66,9 @@ set(CPACK_WIX_PATCH_FILE "${CMAKE_CURRENT_SOURCE_DIR}/patch.xml")
 
 set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/license.txt")
 
+set(CPACK_WIX_PROPERTY_ARPCOMMENTS "My Custom ARPCOMMENTS")
+set(CPACK_WIX_PROPERTY_ARPHELPLINK "https://cmake.org")
+
 include(CPack)
 
 cpack_add_install_type(Full DISPLAY_NAME "Everything")
@@ -68,6 +79,12 @@ cpack_add_component_group(Runtime)
 cpack_add_component_group(Development
   EXPANDED
   DESCRIPTION "All of the tools you'll ever need to develop software")
+
+cpack_add_component(extras
+  DISPLAY_NAME "Extras"
+  DESCRIPTION "Extras"
+  GROUP Runtime
+  INSTALL_TYPES Full)
 
 cpack_add_component(applications
   REQUIRED

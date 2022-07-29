@@ -1,16 +1,6 @@
+# Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+# file Copyright.txt or https://cmake.org/licensing for details.
 
-#=============================================================================
-# Copyright 2004-2009 Kitware, Inc.
-#
-# Distributed under the OSI-approved BSD License (the "License");
-# see accompanying file Copyright.txt for details.
-#
-# This software is distributed WITHOUT ANY WARRANTY; without even the
-# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the License for more information.
-#=============================================================================
-# (To distribute this file outside of CMake, substitute the full
-#  License text for the above reference.)
 
 # determine the compiler to use for RC programs
 # NOTE, a generator may set CMAKE_RC_COMPILER before
@@ -20,10 +10,10 @@
 # as a default compiler
 if(NOT CMAKE_RC_COMPILER)
   # prefer the environment variable RC
-  if($ENV{RC} MATCHES ".+")
+  if(NOT $ENV{RC} STREQUAL "")
     get_filename_component(CMAKE_RC_COMPILER_INIT $ENV{RC} PROGRAM PROGRAM_ARGS CMAKE_RC_FLAGS_ENV_INIT)
     if(CMAKE_RC_FLAGS_ENV_INIT)
-      set(CMAKE_RC_COMPILER_ARG1 "${CMAKE_RC_FLAGS_ENV_INIT}" CACHE STRING "First argument to RC compiler")
+      set(CMAKE_RC_COMPILER_ARG1 "${CMAKE_RC_FLAGS_ENV_INIT}" CACHE STRING "Arguments to RC compiler")
     endif()
     if(EXISTS ${CMAKE_RC_COMPILER_INIT})
     else()

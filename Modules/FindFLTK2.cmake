@@ -1,39 +1,30 @@
-#.rst:
-# FindFLTK2
-# ---------
-#
-# Find the native FLTK2 includes and library
-#
-# The following settings are defined
-#
-# ::
-#
-#   FLTK2_FLUID_EXECUTABLE, where to find the Fluid tool
-#   FLTK2_WRAP_UI, This enables the FLTK2_WRAP_UI command
-#   FLTK2_INCLUDE_DIR, where to find include files
-#   FLTK2_LIBRARIES, list of fltk2 libraries
-#   FLTK2_FOUND, Don't use FLTK2 if false.
-#
-# The following settings should not be used in general.
-#
-# ::
-#
-#   FLTK2_BASE_LIBRARY   = the full path to fltk2.lib
-#   FLTK2_GL_LIBRARY     = the full path to fltk2_gl.lib
-#   FLTK2_IMAGES_LIBRARY = the full path to fltk2_images.lib
+# Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+# file Copyright.txt or https://cmake.org/licensing for details.
 
-#=============================================================================
-# Copyright 2007-2009 Kitware, Inc.
-#
-# Distributed under the OSI-approved BSD License (the "License");
-# see accompanying file Copyright.txt for details.
-#
-# This software is distributed WITHOUT ANY WARRANTY; without even the
-# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the License for more information.
-#=============================================================================
-# (To distribute this file outside of CMake, substitute the full
-#  License text for the above reference.)
+#[=======================================================================[.rst:
+FindFLTK2
+---------
+
+Find the native FLTK 2.0 includes and library
+
+The following settings are defined
+
+::
+
+  FLTK2_FLUID_EXECUTABLE, where to find the Fluid tool
+  FLTK2_WRAP_UI, This enables the FLTK2_WRAP_UI command
+  FLTK2_INCLUDE_DIR, where to find include files
+  FLTK2_LIBRARIES, list of fltk2 libraries
+  FLTK2_FOUND, Don't use FLTK2 if false.
+
+The following settings should not be used in general.
+
+::
+
+  FLTK2_BASE_LIBRARY   = the full path to fltk2.lib
+  FLTK2_GL_LIBRARY     = the full path to fltk2_gl.lib
+  FLTK2_IMAGES_LIBRARY = the full path to fltk2_images.lib
+#]=======================================================================]
 
 set (FLTK2_DIR $ENV{FLTK2_DIR} )
 
@@ -90,24 +81,11 @@ if(NOT FLTK2_DIR)
     # Look in places relative to the system executable search path.
     ${FLTK2_DIR_SEARCH}
 
-    # Look in standard UNIX install locations.
-    /usr/local/lib/fltk2
-    /usr/lib/fltk2
-    /usr/local/fltk2
-    /usr/X11R6/include
-
-    # Read from the CMakeSetup registry entries.  It is likely that
-    # FLTK2 will have been recently built.
-    [HKEY_CURRENT_USER\\Software\\Kitware\\CMakeSetup\\Settings\\StartPath;WhereBuild1]
-    [HKEY_CURRENT_USER\\Software\\Kitware\\CMakeSetup\\Settings\\StartPath;WhereBuild2]
-    [HKEY_CURRENT_USER\\Software\\Kitware\\CMakeSetup\\Settings\\StartPath;WhereBuild3]
-    [HKEY_CURRENT_USER\\Software\\Kitware\\CMakeSetup\\Settings\\StartPath;WhereBuild4]
-    [HKEY_CURRENT_USER\\Software\\Kitware\\CMakeSetup\\Settings\\StartPath;WhereBuild5]
-    [HKEY_CURRENT_USER\\Software\\Kitware\\CMakeSetup\\Settings\\StartPath;WhereBuild6]
-    [HKEY_CURRENT_USER\\Software\\Kitware\\CMakeSetup\\Settings\\StartPath;WhereBuild7]
-    [HKEY_CURRENT_USER\\Software\\Kitware\\CMakeSetup\\Settings\\StartPath;WhereBuild8]
-    [HKEY_CURRENT_USER\\Software\\Kitware\\CMakeSetup\\Settings\\StartPath;WhereBuild9]
-    [HKEY_CURRENT_USER\\Software\\Kitware\\CMakeSetup\\Settings\\StartPath;WhereBuild10]
+    PATH_SUFFIXES
+    fltk2
+    fltk2/include
+    lib/fltk2
+    lib/fltk2/include
 
     # Help the user find it if we cannot.
     DOC "The ${FLTK2_DIR_STRING}"
@@ -198,25 +176,16 @@ if(FLTK2_DIR)
       set(FLTK2_WRAP_UI 1)
     endif()
 
-    set(FLTK2_INCLUDE_SEARCH_PATH ${FLTK2_INCLUDE_SEARCH_PATH}
-      /usr/local/fltk2
-      /usr/X11R6/include
-      )
+    find_path(FLTK2_INCLUDE_DIR fltk/run.h ${FLTK2_INCLUDE_SEARCH_PATH} PATH_SUFFIXES fltk2 fltk2/include)
 
-    find_path(FLTK2_INCLUDE_DIR fltk/run.h ${FLTK2_INCLUDE_SEARCH_PATH})
-
-    set(FLTK2_LIBRARY_SEARCH_PATH ${FLTK2_LIBRARY_SEARCH_PATH}
-      /usr/local/fltk2/lib
-      /usr/X11R6/lib
-      ${FLTK2_INCLUDE_DIR}/lib
-      )
+    list(APPEND FLTK2_LIBRARY_SEARCH_PATH ${FLTK2_INCLUDE_DIR}/lib)
 
     find_library(FLTK2_BASE_LIBRARY NAMES fltk2
-      PATHS ${FLTK2_LIBRARY_SEARCH_PATH})
+      PATHS ${FLTK2_LIBRARY_SEARCH_PATH} PATH_SUFFIXES fltk2 fltk2/lib)
     find_library(FLTK2_GL_LIBRARY NAMES fltk2_gl
-      PATHS ${FLTK2_LIBRARY_SEARCH_PATH})
+      PATHS ${FLTK2_LIBRARY_SEARCH_PATH} PATH_SUFFIXES fltk2 fltk2/lib)
     find_library(FLTK2_IMAGES_LIBRARY NAMES fltk2_images
-      PATHS ${FLTK2_LIBRARY_SEARCH_PATH})
+      PATHS ${FLTK2_LIBRARY_SEARCH_PATH} PATH_SUFFIXES fltk2 fltk2/lib)
 
     # Find the extra libraries needed for the fltk_images library.
     if(UNIX)
@@ -226,9 +195,7 @@ if(FLTK2_DIR)
           OUTPUT_VARIABLE FLTK2_IMAGES_LDFLAGS)
         set(FLTK2_LIBS_EXTRACT_REGEX ".*-lfltk2_images (.*) -lfltk2.*")
         if("${FLTK2_IMAGES_LDFLAGS}" MATCHES "${FLTK2_LIBS_EXTRACT_REGEX}")
-          string(REGEX REPLACE "${FLTK2_LIBS_EXTRACT_REGEX}" "\\1"
-            FLTK2_IMAGES_LIBS "${FLTK2_IMAGES_LDFLAGS}")
-          string(REGEX REPLACE " +" ";" FLTK2_IMAGES_LIBS "${FLTK2_IMAGES_LIBS}")
+          string(REGEX REPLACE " +" ";" FLTK2_IMAGES_LIBS "${CMAKE_MATCH_1}")
           # The EXEC_PROGRAM will not be inherited into subdirectories from
           # the file that originally included this module.  Save the answer.
           set(FLTK2_IMAGES_LIBS "${FLTK2_IMAGES_LIBS}" CACHE INTERNAL
@@ -276,4 +243,3 @@ else()
     endif()
   endif()
 endif()
-

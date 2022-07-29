@@ -1,16 +1,11 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmCTestUploadHandler_h
-#define cmCTestUploadHandler_h
+#include <set>
+#include <string>
 
 #include "cmCTestGenericHandler.h"
 
@@ -23,23 +18,20 @@
 class cmCTestUploadHandler : public cmCTestGenericHandler
 {
 public:
-  cmTypeMacro(cmCTestUploadHandler, cmCTestGenericHandler);
+  using Superclass = cmCTestGenericHandler;
 
   cmCTestUploadHandler();
-  ~cmCTestUploadHandler() {}
 
   /*
    * The main entry point for this class
    */
-  int ProcessHandler();
+  int ProcessHandler() override;
 
-  void Initialize();
+  void Initialize() override;
 
   /** Specify a set of files to submit.  */
-  void SetFiles(cmCTest::SetOfStrings const& files);
+  void SetFiles(std::set<std::string> const& files);
 
 private:
-  cmCTest::SetOfStrings Files;
+  std::set<std::string> Files;
 };
-
-#endif

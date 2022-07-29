@@ -1,16 +1,6 @@
+# Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+# file Copyright.txt or https://cmake.org/licensing for details.
 
-#=============================================================================
-# Copyright 2002-2009 Kitware, Inc.
-#
-# Distributed under the OSI-approved BSD License (the "License");
-# see accompanying file Copyright.txt for details.
-#
-# This software is distributed WITHOUT ANY WARRANTY; without even the
-# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the License for more information.
-#=============================================================================
-# (To distribute this file outside of CMake, substitute the full
-#  License text for the above reference.)
 
 # This file is included by cmGlobalGenerator::EnableLanguage.
 # It is included after the compiler has been determined, so
@@ -24,6 +14,7 @@
 set(APPLE  )
 set(UNIX   )
 set(CYGWIN )
+set(MSYS )
 set(WIN32  )
 
 
@@ -37,16 +28,15 @@ include(${CMAKE_SYSTEM_INFO_FILE} OPTIONAL RESULT_VARIABLE _INCLUDED_SYSTEM_INFO
 
 if(NOT _INCLUDED_SYSTEM_INFO_FILE)
   message("System is unknown to cmake, create:\n${CMAKE_SYSTEM_INFO_FILE}"
-          " to use this system, please send your config file to "
-          "cmake@www.cmake.org so it can be added to cmake")
+          " to use this system, please post your config file on "
+          "discourse.cmake.org so it can be added to cmake")
   if(EXISTS ${CMAKE_BINARY_DIR}/CMakeCache.txt)
     configure_file(${CMAKE_BINARY_DIR}/CMakeCache.txt
                    ${CMAKE_BINARY_DIR}/CopyOfCMakeCache.txt COPYONLY)
     message("Your CMakeCache.txt file was copied to CopyOfCMakeCache.txt. "
-            "Please send that file to cmake@www.cmake.org.")
-   endif()
+            "Please post that file on discourse.cmake.org.")
+  endif()
 endif()
-
 
 # optionally include a file which can do extra-generator specific things, e.g.
 # CMakeFindEclipseCDT4.cmake asks gcc for the system include dirs for the Eclipse CDT4 generator

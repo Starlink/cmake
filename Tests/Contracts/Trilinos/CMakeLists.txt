@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 2.8.12)
 project(Trilinos)
 
 include(ExternalProject)
@@ -6,28 +6,11 @@ include(ExternalProject)
 include("${CMAKE_CURRENT_SOURCE_DIR}/LocalOverrides.cmake" OPTIONAL)
 include("${CMAKE_CURRENT_BINARY_DIR}/LocalOverrides.cmake" OPTIONAL)
 
-if(NOT DEFINED HOME)
-  if(DEFINED ENV{CTEST_REAL_HOME})
-    set(HOME "$ENV{CTEST_REAL_HOME}")
-  else()
-    set(HOME "$ENV{HOME}")
-  endif()
-
-  if(NOT HOME AND WIN32)
-    # Try for USERPROFILE as HOME equivalent:
-    string(REPLACE "\\" "/" HOME "$ENV{USERPROFILE}")
-
-    # But just use root of SystemDrive if USERPROFILE contains any spaces:
-    # (Default on XP and earlier...)
-    if(HOME MATCHES " ")
-      string(REPLACE "\\" "/" HOME "$ENV{SystemDrive}")
-    endif()
-  endif()
-endif()
+include(${CMAKE_CURRENT_SOURCE_DIR}/../Home.cmake)
 message(STATUS "HOME='${HOME}'")
 
 if(NOT DEFINED url)
-  set(url "http://www.cmake.org/files/contracts/trilinos-11.4.1.tar.gz")
+  set(url "https://cmake.org/files/contracts/trilinos-11.4.1.tar.gz")
 endif()
 message(STATUS "url='${url}'")
 

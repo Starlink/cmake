@@ -1,5 +1,7 @@
 set(CMAKE_SHARED_LIBRARY_PREFIX "lib")          # lib
 set(CMAKE_SHARED_LIBRARY_SUFFIX ".so")          # .so
+set(CMAKE_AIX_IMPORT_FILE_PREFIX "")
+set(CMAKE_AIX_IMPORT_FILE_SUFFIX ".imp")
 set(CMAKE_DL_LIBS "-lld")
 
 # RPATH support on AIX is called libpath.  By default the runtime
@@ -8,7 +10,9 @@ set(CMAKE_DL_LIBS "-lld")
 # -Wl,-blibpath:/usr/lib:/lib whether RPATH support is on or not.
 # When our own RPATH is to be added it may be inserted before the
 # "always" paths.
-set(CMAKE_PLATFORM_REQUIRED_RUNTIME_PATH /usr/lib /lib)
+if(NOT DEFINED CMAKE_PLATFORM_REQUIRED_RUNTIME_PATH)
+  set(CMAKE_PLATFORM_REQUIRED_RUNTIME_PATH /usr/lib /lib)
+endif()
 
 # Files named "libfoo.a" may actually be shared libraries.
 set_property(GLOBAL PROPERTY TARGET_ARCHIVES_MAY_BE_SHARED_LIBS 1)

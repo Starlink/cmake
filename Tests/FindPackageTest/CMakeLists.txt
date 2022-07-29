@@ -1,6 +1,9 @@
 cmake_minimum_required (VERSION 2.6)
 project(FindPackageTest)
 
+# Protect tests from running inside the default install prefix.
+set(CMAKE_INSTALL_PREFIX "${CMAKE_CURRENT_BINARY_DIR}/NotDefaultPrefix")
+
 list(APPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR})
 
 # Look for a package which uses FindPackageHandleStandardArgs.cmake with the
@@ -21,7 +24,7 @@ find_package(VTK QUIET)
 
 add_executable(FindPackageTest FindPackageTest.cxx)
 
-# test behaviour of cmFindBase wrt. the CMAKE_PREFIX_PATH variable
+# test behavior of cmFindBase wrt. the CMAKE_PREFIX_PATH variable
 # foo.h should be found in ${CMAKE_CURRENT_SOURCE_DIR}/include:
 
 set(CMAKE_PREFIX_PATH /blub /blah "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -45,12 +48,18 @@ endif()
 
 find_package(SomePackage)
 if(NOT SomePackage_FOUND)
-  message(SEND_ERROR "SomePackage with FOUND_VAR SomePackage_FOUND not found !")
+  message(SEND_ERROR "SomePackage not found !")
+endif()
+if(NOT SOMEPACKAGE_FOUND)
+  message(SEND_ERROR "SomePackage compatibility name SOMEPACKAGE_FOUND not set!")
 endif()
 
 find_package(UpperCasePackage)
+if(NOT UpperCasePackage_FOUND)
+  message(SEND_ERROR "UpperCasePackage not found!")
+endif()
 if(NOT UPPERCASEPACKAGE_FOUND)
-  message(SEND_ERROR "UpperCasePackage with FOUND_VAR UPPERCASEPACKAGE_FOUND not found !")
+  message(SEND_ERROR "SomePackage compatibility name SOMEPACKAGE_FOUND not set!")
 endif()
 
 #-----------------------------------------------------------------------------
@@ -93,6 +102,7 @@ endif()
 set(PACKAGES
   foo Foo Bar Blub TFramework Tframework TApp Tapp Special
   VersionedA VersionedB VersionedC VersionedD VersionedE
+  VersionedF VersionedG VersionedH
   WrongA WrongB WrongC WrongD
   wibbleA wibbleB
   RecursiveA RecursiveB RecursiveC
@@ -133,6 +143,10 @@ find_package(VersionedB 3.1 EXACT NAMES zot)
 find_package(VersionedC 4.0 EXACT NAMES zot)
 find_package(VersionedD 1.1 EXACT NAMES Baz)
 find_package(VersionedE 1.2 EXACT NAMES Baz)
+find_package(VersionedF 1.3 EXACT NAMES Baz)
+find_package(VersionedG 2.0 EXACT NAMES Baz)
+find_package(VersionedH 2.1 EXACT NAMES Baz)
+
 
 # Test Config files which set Xyz_FOUND themselves:
 find_package(SetFoundTRUE NO_MODULE)
@@ -149,12 +163,12 @@ find_package(WrongB 1.2 EXACT NAMES Baz)
 
 # Test wrong initial path when result is missing.
 set(WrongC_DIR "${VersionedD_DIR}")
-find_package(WrongC 1.3 EXACT QUIET NAMES Baz)
+find_package(WrongC 1.4 EXACT QUIET NAMES Baz)
 
 # Test wrong initial cache entry of UNINITIALIZED type when result is missing.
 set(WrongD_DIR "${VersionedD_DIR}" CACHE UNINITIALIZED "Wrong Value" FORCE)
 get_property(type CACHE WrongD_DIR PROPERTY TYPE)
-find_package(WrongD 1.3 EXACT QUIET NAMES Baz)
+find_package(WrongD 1.4 EXACT QUIET NAMES Baz)
 
 # HINTS should override the system but PATHS should not
 list(INSERT CMAKE_SYSTEM_PREFIX_PATH 0 "${CMAKE_CURRENT_SOURCE_DIR}/A")
@@ -174,7 +188,45 @@ find_package(ArchC 3.1 EXACT NAMES zot)
 find_package(ArchD 4.0 EXACT NAMES zot)
 unset(CMAKE_LIBRARY_ARCHITECTURE)
 
-# Test <Package>_DIR environment variable.
+# Test find_package() with CMAKE_FIND_PACKAGE_RESOLVE_SYMLINKS enabled
+if(UNIX
+    AND NOT MSYS # FIXME: This works on CYGWIN but not on MSYS
+    )
+  # Create ./symlink pointing back here.
+  execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink
+      . "${CMAKE_CURRENT_SOURCE_DIR}/symlink")
+  # Make find_package search through the symlink
+  set(CMAKE_PREFIX_PATH "${CMAKE_CURRENT_SOURCE_DIR}/symlink")
+
+  # First, test the default behavior where symlinks are preserved.
+  set(SetFoundResolved_DIR "")
+  find_package(SetFoundResolved)
+  # The result must preserve the /symlink/ path.
+  set(SetFoundResolved_EXPECTED "${CMAKE_CURRENT_SOURCE_DIR}/symlink/cmake")
+  if(NOT "${SetFoundResolved_DIR}" STREQUAL "${SetFoundResolved_EXPECTED}")
+    message(SEND_ERROR "SetFoundResolved_DIR set by find_package() is set to \"${SetFoundResolved_DIR}\" (expected \"${SetFoundResolved_EXPECTED}\")")
+  endif()
+
+  # This part of the test only works if there are no symlinks in our path.
+  get_filename_component(real_src_dir "${CMAKE_CURRENT_SOURCE_DIR}" REALPATH)
+  if(real_src_dir STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    # Resolve symlinks when finding the package.
+    set(CMAKE_FIND_PACKAGE_RESOLVE_SYMLINKS TRUE)
+    set(SetFoundResolved_DIR "")
+    find_package(SetFoundResolved)
+    # ./symlink points back here so it should be gone when resolved.
+    set(SetFoundResolved_EXPECTED "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+    if(NOT "${SetFoundResolved_DIR}" STREQUAL "${SetFoundResolved_EXPECTED}")
+      message(SEND_ERROR "SetFoundResolved_DIR set by find_package() is set to \"${SetFoundResolved_DIR}\" (expected \"${SetFoundResolved_EXPECTED}\")")
+    endif()
+  endif()
+
+  # Cleanup.
+  unset(CMAKE_FIND_PACKAGE_RESOLVE_SYMLINKS)
+  file(REMOVE "${CMAKE_CURRENT_SOURCE_DIR}/symlink")
+endif()
+
+# Test <PackageName>_DIR environment variable.
 # We erase the main prefix path to ensure the env var is used.
 set(CMAKE_PREFIX_PATH)
 set(ENV{EnvA_DIR} "${CMAKE_CURRENT_SOURCE_DIR}/lib/zot-3.1")
@@ -207,6 +259,9 @@ set(VersionedB_EXPECTED "lib/zot-3.1/zot-config.cmake")
 set(VersionedC_EXPECTED "lib/cmake/zot-4.0/zot-config.cmake")
 set(VersionedD_EXPECTED "Baz 1.1/BazConfig.cmake")
 set(VersionedE_EXPECTED "Baz 1.2/CMake/BazConfig.cmake")
+set(VersionedF_EXPECTED "Baz 1.3/lib/cmake/Baz/BazConfig.cmake")
+set(VersionedG_EXPECTED "Baz 2.0/share/Baz 2/BazConfig.cmake")
+set(VersionedH_EXPECTED "Baz 2.1/lib/Baz 2/cmake/BazConfig.cmake")
 set(WrongA_EXPECTED "${VersionedE_EXPECTED}")
 set(WrongB_EXPECTED "${VersionedE_EXPECTED}")
 set(WrongC_MISSING "WrongC_DIR-NOTFOUND")
@@ -320,23 +375,109 @@ endif()
 
 #-----------------------------------------------------------------------------
 # Test export(PACKAGE) with find_package.
+
+# Choose a unique version.
+string(REGEX REPLACE "-.*$" "" version ${CMAKE_VERSION})
+string(RANDOM LENGTH 4 ALPHABET "0123456789" v)
+string(APPEND version ".${v}")
+
 message(STATUS "Preparing export(PACKAGE) test project")
 try_compile(EXPORTER_COMPILED
-  ${FindPackageTest_BINARY_DIR}/Exporter
+  ${FindPackageTest_BINARY_DIR}/Exporter-build
   ${FindPackageTest_SOURCE_DIR}/Exporter
   CMakeTestExportPackage dummy
+  CMAKE_FLAGS "-UCMAKE_EXPORT_NO_PACKAGE_REGISTRY"
+    "-DCMAKE_POLICY_DEFAULT_CMP0090:STRING=OLD"
+    -Dversion=${version}
   OUTPUT_VARIABLE output)
 message(STATUS "Searching for export(PACKAGE) test project")
 set(CMakeTestExportPackage_DIR "" CACHE FILEPATH
   "Wipe out find results for testing." FORCE)
-string(REGEX REPLACE "-.*$" "" version ${CMAKE_VERSION})
+
+message(STATUS "Searching for export(PACKAGE) with CMAKE_FIND_USE_PACKAGE_REGISTRY=TRUE")
+set(CMAKE_FIND_USE_PACKAGE_REGISTRY TRUE)
 find_package(CMakeTestExportPackage 1.${version} EXACT REQUIRED)
+if(NOT CMakeTestExportPackage_FOUND)
+  message(SEND_ERROR "CMakeTestExportPackage should be FOUND!")
+endif()
+unset(CMAKE_FIND_USE_PACKAGE_REGISTRY)
+
+message(STATUS "Searching for export(PACKAGE) with CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=FALSE")
+set(CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY FALSE)
+find_package(CMakeTestExportPackage 1.${version} EXACT REQUIRED)
+if(NOT CMakeTestExportPackage_FOUND)
+  message(SEND_ERROR "CMakeTestExportPackage should be FOUND!")
+endif()
+unset(CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY)
+
+message(STATUS "Searching for export(PACKAGE) with CMAKE_FIND_USE_PACKAGE_REGISTRY=TRUE and CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=TRUE")
+set(CMAKE_FIND_USE_PACKAGE_REGISTRY TRUE)
+set(CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY TRUE)
+set(CMakeTestExportPackage_DIR FALSE)
+find_package(CMakeTestExportPackage 1.${version} EXACT REQUIRED)
+if(NOT CMakeTestExportPackage_FOUND)
+  message(SEND_ERROR "CMakeTestExportPackage should be FOUND!")
+endif()
+unset(CMAKE_FIND_USE_PACKAGE_REGISTRY)
+unset(CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY)
+
+message(STATUS "Searching for export(PACKAGE) with CMAKE_FIND_USE_PACKAGE_REGISTRY=FALSE and CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=FALSE")
+set(CMAKE_FIND_USE_PACKAGE_REGISTRY FALSE)
+set(CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY FALSE)
+set(CMakeTestExportPackage_DIR "" CACHE FILEPATH
+  "Wipe out find results for testing." FORCE)
+find_package(CMakeTestExportPackage 1.${version} EXACT QUIET)
+if(CMakeTestExportPackage_FOUND)
+  message(SEND_ERROR "CMakeTestExportPackage should be not FOUND!")
+endif()
+unset(CMAKE_FIND_USE_PACKAGE_REGISTRY)
+unset(CMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY)
+
+message(STATUS "Remove export(PACKAGE) test project")
+file(REMOVE_RECURSE ${FindPackageTest_BINARY_DIR}/Exporter-build)
+set(CMakeTestExportPackage_DIR "" CACHE FILEPATH
+  "Wipe out find results for testing." FORCE)
+find_package(CMakeTestExportPackage QUIET) # Should clean the user package cache
+#
+message(STATUS "Preparing export(PACKAGE) test project with CMAKE_EXPORT_NO_PACKAGE_REGISTRY=TRUE")
+try_compile(EXPORTER_COMPILED
+  ${FindPackageTest_BINARY_DIR}/Exporter-build
+  ${FindPackageTest_SOURCE_DIR}/Exporter
+  CMakeTestExportPackage dummy
+  CMAKE_FLAGS "-DCMAKE_EXPORT_NO_PACKAGE_REGISTRY:BOOL=TRUE"
+    -Dversion=${version}
+  OUTPUT_VARIABLE output)
+message(STATUS "Searching for export(PACKAGE) test project")
+find_package(CMakeTestExportPackage 1.${version} EXACT QUIET)
+if(CMakeTestExportPackage_FOUND)
+  message(SEND_ERROR "CMakeTestExportPackage should not be FOUND!")
+endif()
+
+message(STATUS "Remove export(PACKAGE) test project")
+file(REMOVE_RECURSE ${FindPackageTest_BINARY_DIR}/Exporter-build)
+
+message(STATUS "Preparing export(PACKAGE) test project with POLICY CMP0090=NEW")
+try_compile(EXPORTER_COMPILED
+  ${FindPackageTest_BINARY_DIR}/Exporter-build
+  ${FindPackageTest_SOURCE_DIR}/Exporter
+  CMakeTestExportPackage dummy
+  CMAKE_FLAGS
+   "-DCMAKE_POLICY_DEFAULT_CMP0090:STRING=NEW"
+    -Dversion=${version}
+  OUTPUT_VARIABLE output)
+message(STATUS "Searching for export(PACKAGE) test project")
+find_package(CMakeTestExportPackage 1.${version} EXACT QUIET)
+if(CMakeTestExportPackage_FOUND)
+  message(SEND_ERROR "CMakeTestExportPackage should not be FOUND!")
+endif()
+
 
 #-----------------------------------------------------------------------------
 # Test configure_package_config_file().
 
 include(CMakePackageConfigHelpers)
 
+# Generate a config file ready to be installed.
 set(INCLUDE_INSTALL_DIR include )
 set(SHARE_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/share/" )
 set(CURRENT_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}" )
@@ -370,174 +511,153 @@ if(Relocatable_FOUND)
   message(SEND_ERROR "Relocatable_FOUND set to TRUE !")
 endif()
 
-#-----------------------------------------------------------------------------
-# Test write_basic_config_version_file().
+# Generate a config file for the build tree.
+set(INCLUDE_INSTALL_DIR include )
+set(SHARE_INSTALL_DIR "${CMAKE_CURRENT_BINARY_DIR}/share/" )
+set(CURRENT_BUILD_DIR "${CMAKE_CURRENT_BINARY_DIR}" )
 
-# also test that an empty CMAKE_SIZEOF_VOID_P is accepted:
-set(_CMAKE_SIZEOF_VOID_P ${CMAKE_SIZEOF_VOID_P})
-set(CMAKE_SIZEOF_VOID_P "")
+configure_package_config_file(RelocatableConfig.cmake.in "${CMAKE_CURRENT_BINARY_DIR}/RelocatableConfig.cmake"
+                              INSTALL_DESTINATION "${CMAKE_CURRENT_BINARY_DIR}"
+                              PATH_VARS INCLUDE_INSTALL_DIR SHARE_INSTALL_DIR CURRENT_BUILD_DIR
+                              INSTALL_PREFIX "${CMAKE_CURRENT_BINARY_DIR}"
+                             )
 
-write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/Foo123ConfigVersion.cmake
-                                 VERSION 1.2.3
-                                 COMPATIBILITY AnyNewerVersion)
+set(Relocatable_FIND_COMPONENTS AComp BComp CComp)
+set(Relocatable_FIND_REQUIRED_BComp 1)
+include("${CMAKE_CURRENT_BINARY_DIR}/RelocatableConfig.cmake")
 
-set(CMAKE_SIZEOF_VOID_P ${_CMAKE_SIZEOF_VOID_P})
-
-set(PACKAGE_FIND_VERSION 2.3.4)
-include(${CMAKE_CURRENT_BINARY_DIR}/Foo123ConfigVersion.cmake)
-if(PACKAGE_VERSION_COMPATIBLE)
-  message(SEND_ERROR "Found Foo123 with version 1.2.3, but 2.3.4 was requested !")
+if(NOT "${RELOC_INCLUDE_DIR}" STREQUAL "${CMAKE_CURRENT_BINARY_DIR}/include")
+  message(SEND_ERROR "RELOC_INCLUDE_DIR set by configure_package_config_file() is set to \"${RELOC_INCLUDE_DIR}\" (expected \"${CMAKE_CURRENT_BINARY_DIR}/include\")")
 endif()
 
-set(PACKAGE_FIND_VERSION 0.0.1)
-include(${CMAKE_CURRENT_BINARY_DIR}/Foo123ConfigVersion.cmake)
-if(NOT PACKAGE_VERSION_COMPATIBLE)
-  message(SEND_ERROR "Did not find Foo123 with version 1.2.3 (0.0.1 was requested) !")
+if(NOT "${RELOC_SHARE_DIR}" STREQUAL "${CMAKE_CURRENT_BINARY_DIR}/share/")
+  message(SEND_ERROR "RELOC_SHARE_DIR set by configure_package_config_file() is set to \"${RELOC_SHARE_DIR}\" (expected \"${CMAKE_CURRENT_BINARY_DIR}/share/\")")
 endif()
 
-if(PACKAGE_VERSION_UNSUITABLE)
-  message(SEND_ERROR "PACKAGE_VERSION_UNSUITABLE set, but must not be !")
+if(NOT "${RELOC_BUILD_DIR}" STREQUAL "${CMAKE_CURRENT_BINARY_DIR}")
+  message(SEND_ERROR "RELOC_BUILD_DIR set by configure_package_config_file() is set to \"${RELOC_BUILD_DIR}\" (expected \"${CMAKE_CURRENT_BINARY_DIR}\")")
 endif()
 
-set(PACKAGE_FIND_VERSION 1.0.0)
-include(${CMAKE_CURRENT_BINARY_DIR}/Foo123ConfigVersion.cmake)
-if(NOT PACKAGE_VERSION_COMPATIBLE)
-  message(SEND_ERROR "Did not find Foo123 with version 1.2.3 (1.0.0 was requested) !")
-endif()
-if(PACKAGE_VERSION_EXACT)
-  message(SEND_ERROR "PACKAGE_VERSION_EXACT set, although it should not be !")
+if(NOT DEFINED Relocatable_FOUND)
+  message(SEND_ERROR "Relocatable_FOUND not defined !")
 endif()
 
-set(PACKAGE_FIND_VERSION 1.2.3)
-include(${CMAKE_CURRENT_BINARY_DIR}/Foo123ConfigVersion.cmake)
-if(NOT PACKAGE_VERSION_COMPATIBLE)
-  message(SEND_ERROR "Did not find Foo123 with version 1.2.3 (1.2.3 was requested) !")
-endif()
-if(NOT PACKAGE_VERSION_EXACT)
-  message(SEND_ERROR "PACKAGE_VERSION_EXACT not set, although it should be !")
+if(Relocatable_FOUND)
+  message(SEND_ERROR "Relocatable_FOUND set to TRUE !")
 endif()
 
 
-#######################
-include(WriteBasicConfigVersionFile)
+############################################################################
+##Test FIND_PACKAGE using sorting
+set(CMAKE_PREFIX_PATH ${CMAKE_CURRENT_SOURCE_DIR})
+SET(CMAKE_FIND_PACKAGE_SORT_ORDER NAME)
+SET(CMAKE_FIND_PACKAGE_SORT_DIRECTION ASC)
 
-write_basic_config_version_file(${CMAKE_CURRENT_BINARY_DIR}/Boo123ConfigVersion.cmake
-                                VERSION 1.2.3
-                                COMPATIBILITY SameMajorVersion)
-
-unset(PACKAGE_VERSION_UNSUITABLE)
-set(PACKAGE_VERSION_EXACT FALSE)
-set(PACKAGE_FIND_VERSION 2.3.4)
-set(PACKAGE_FIND_VERSION_MAJOR 2)
-include(${CMAKE_CURRENT_BINARY_DIR}/Boo123ConfigVersion.cmake)
-if(PACKAGE_VERSION_COMPATIBLE)
-  message(SEND_ERROR "Found Boo123 with version 1.2.3, but 2.3.4 was requested !")
+set(SortLib_DIR "" CACHE FILEPATH "Wipe out find results for testing." FORCE)
+FIND_PACKAGE(SortLib CONFIG)
+IF (NOT "${SortLib_VERSION}" STREQUAL "3.1.1")
+  message(SEND_ERROR "FIND_PACKAGE_SORT_ORDER Name Asc! ${SortLib_VERSION}")
 endif()
-if(PACKAGE_VERSION_EXACT)
-  message(SEND_ERROR "PACKAGE_VERSION_EXACT set, although it should not be !")
-endif()
-
-set(PACKAGE_FIND_VERSION 0.0.1)
-set(PACKAGE_FIND_VERSION_MAJOR 0)
-include(${CMAKE_CURRENT_BINARY_DIR}/Boo123ConfigVersion.cmake)
-if(PACKAGE_VERSION_COMPATIBLE)
-  message(SEND_ERROR "Found Boo123 with version 1.2.3, but 0.0.1 was requested !")
-endif()
-if(PACKAGE_VERSION_EXACT)
-  message(SEND_ERROR "PACKAGE_VERSION_EXACT set, although it should not be !")
-endif()
-
-set(PACKAGE_FIND_VERSION 1.0.0)
-set(PACKAGE_FIND_VERSION_MAJOR 1)
-include(${CMAKE_CURRENT_BINARY_DIR}/Boo123ConfigVersion.cmake)
-if(NOT PACKAGE_VERSION_COMPATIBLE)
-  message(SEND_ERROR "Did not find Boo123 with version 1.2.3 (1.0.0 was requested) !")
-endif()
-if(PACKAGE_VERSION_EXACT)
-  message(SEND_ERROR "PACKAGE_VERSION_EXACT set, although it should not be !")
-endif()
-
-set(PACKAGE_FIND_VERSION 1.2.3)
-set(PACKAGE_FIND_VERSION_MAJOR 1)
-include(${CMAKE_CURRENT_BINARY_DIR}/Boo123ConfigVersion.cmake)
-if(NOT PACKAGE_VERSION_COMPATIBLE)
-  message(SEND_ERROR "Did not find Boo123 with version 1.2.3 (1.2.3 was requested) !")
-endif()
-if(NOT PACKAGE_VERSION_EXACT)
-  message(SEND_ERROR "PACKAGE_VERSION_EXACT not set, although it should be !")
-endif()
-
-if(PACKAGE_VERSION_UNSUITABLE)
-  message(SEND_ERROR "PACKAGE_VERSION_UNSUITABLE set, but must not be !")
-endif()
-
-#######################
-
-write_basic_package_version_file(${CMAKE_CURRENT_BINARY_DIR}/Bar123ConfigVersion.cmake
-                                 VERSION 1.2.3.17
-                                 COMPATIBILITY ExactVersion)
-
-unset(PACKAGE_VERSION_UNSUITABLE)
-set(PACKAGE_VERSION_EXACT FALSE)
-set(PACKAGE_FIND_VERSION 2.3.4)
-include(${CMAKE_CURRENT_BINARY_DIR}/Bar123ConfigVersion.cmake)
-if(PACKAGE_VERSION_COMPATIBLE)
-  message(SEND_ERROR "Found Bar123 with version 1.2.3 (2.3.4 was requested) !")
-endif()
-if(PACKAGE_VERSION_EXACT)
-  message(SEND_ERROR "PACKAGE_VERSION_EXACT set, although it should not be !")
-endif()
-
-set(PACKAGE_FIND_VERSION 1.2)
-include(${CMAKE_CURRENT_BINARY_DIR}/Bar123ConfigVersion.cmake)
-if(PACKAGE_VERSION_COMPATIBLE)
-  message(SEND_ERROR "Found Bar123 with version 1.2.3 (1.2 was requested) !")
-endif()
-if(PACKAGE_VERSION_EXACT)
-  message(SEND_ERROR "PACKAGE_VERSION_EXACT set, although it should not be !")
-endif()
-
-set(PACKAGE_FIND_VERSION 1)
-include(${CMAKE_CURRENT_BINARY_DIR}/Bar123ConfigVersion.cmake)
-if(PACKAGE_VERSION_COMPATIBLE)
-  message(SEND_ERROR "Found Bar123 with version 1.2.3 (1 was requested) !")
-endif()
-if(PACKAGE_VERSION_EXACT)
-  message(SEND_ERROR "PACKAGE_VERSION_EXACT set, although it should not be !")
-endif()
-
-set(PACKAGE_FIND_VERSION 1.2.3.4)
-include(${CMAKE_CURRENT_BINARY_DIR}/Bar123ConfigVersion.cmake)
-if(NOT PACKAGE_VERSION_COMPATIBLE)
-  message(SEND_ERROR "Did not find Bar123 with version 1.2.3 (1.2.3.4 was requested) !")
-endif()
-if(PACKAGE_VERSION_EXACT)
-  message(SEND_ERROR "PACKAGE_VERSION_EXACT set, although it should not be !")
-endif()
-
-set(PACKAGE_FIND_VERSION 1.2.3)
-set(PACKAGE_VERSION_EXACT FALSE)
-set(PACKAGE_VERSION_COMPATIBLE FALSE)
-include(${CMAKE_CURRENT_BINARY_DIR}/Bar123ConfigVersion.cmake)
-if(NOT PACKAGE_VERSION_COMPATIBLE)
-  message(SEND_ERROR "Did not find Bar123 with version 1.2.3 (1.2.3 was requested) !")
-endif()
-if(PACKAGE_VERSION_EXACT)
-  message(SEND_ERROR "PACKAGE_VERSION_EXACT set, although it should not be !")
-endif()
+unset(SortLib_VERSION)
 
 
-set(PACKAGE_FIND_VERSION 1.2.3.17)
-set(PACKAGE_VERSION_EXACT FALSE)
-set(PACKAGE_VERSION_COMPATIBLE FALSE)
-include(${CMAKE_CURRENT_BINARY_DIR}/Bar123ConfigVersion.cmake)
-if(NOT PACKAGE_VERSION_COMPATIBLE)
-  message(SEND_ERROR "Did not find Bar123 with version 1.2.3 (1.2.3.17 was requested) !")
+set(SortLib_DIR "" CACHE FILEPATH "Wipe out find results for testing." FORCE)
+SET(CMAKE_FIND_PACKAGE_SORT_ORDER NATURAL)
+SET(CMAKE_FIND_PACKAGE_SORT_DIRECTION DEC)
+FIND_PACKAGE(SortLib CONFIG)
+IF (NOT "${SortLib_VERSION}" STREQUAL "3.10.1")
+  message(SEND_ERROR "FIND_PACKAGE_SORT_ORDER Natural! Dec ${SortLib_VERSION}")
 endif()
-if(NOT PACKAGE_VERSION_EXACT)
-  message(SEND_ERROR "PACKAGE_VERSION_EXACT not set, although it should be !")
+set(SortLib_DIR "" CACHE FILEPATH "Wipe out find results for testing." FORCE)
+unset(SortLib_VERSION)
+
+unset(CMAKE_FIND_PACKAGE_SORT_ORDER)
+unset(CMAKE_FIND_PACKAGE_SORT_DIRECTION)
+set(CMAKE_PREFIX_PATH )
+
+############################################################################
+##Test FIND_PACKAGE CMAKE_FIND_PACKAGE_PREFER_CONFIG
+
+set(CMAKE_PREFIX_PATH ${CMAKE_CURRENT_SOURCE_DIR}/PreferConfig)
+set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/PreferConfig)
+
+# prefer module mode
+set(CMAKE_FIND_PACKAGE_PREFER_CONFIG OFF)
+unset(ABC_FOUND)
+unset(ABC_CONFIG)
+
+find_package(ABC)
+if(NOT ABC_FOUND)
+    message(SEND_ERROR "Did not find ABC package")
+endif()
+if(ABC_CONFIG)
+    message(SEND_ERROR "Incorrectly found ABC in CONFIG mode, expected to find it with MODULE mode")
 endif()
 
-if(PACKAGE_VERSION_UNSUITABLE)
-  message(SEND_ERROR "PACKAGE_VERSION_UNSUITABLE set, but must not be !")
+# Now prefer config mode
+set(CMAKE_FIND_PACKAGE_PREFER_CONFIG ON)
+unset(ABC_FOUND)
+unset(ABC_CONFIG)
+
+find_package(ABC)
+if(NOT ABC_FOUND)
+    message(SEND_ERROR "Did not find ABC package")
 endif()
+if(NOT ABC_CONFIG)
+    message(SEND_ERROR "Incorrectly found ABC in MODULE mode, expected to find it with CONFIG mode")
+endif()
+
+set(CMAKE_FIND_PACKAGE_PREFER_CONFIG OFF)
+set(CMAKE_PREFIX_PATH)
+set(CMAKE_MODULE_PATH)
+
+############################################################################
+##Test FIND_PACKAGE CMAKE_FIND_PACKAGE_PREFER_CONFIG - Do not recurse
+
+# No CMAKE_PREFIX_PATH
+set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/PreferConfigRecurse)
+
+# Now prefer config mode
+set(CMAKE_FIND_PACKAGE_PREFER_CONFIG ON)
+unset(ACME_FOUND)
+unset(ACME_CONFIG)
+
+find_package(ACME)
+if(ACME_FOUND AND ACME_CONFIG)
+    message(SEND_ERROR "Incorrectly found ACME in CONFIG mode, from the MODULE package")
+endif()
+
+set(CMAKE_FIND_PACKAGE_PREFER_CONFIG OFF)
+set(CMAKE_MODULE_PATH)
+
+############################################################################
+##Test find_package CMAKE_FIND_PACKAGE_PREFER_CONFIG with module fallback
+
+set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/PreferConfigOnlyModule)
+
+set(CMAKE_FIND_PACKAGE_PREFER_CONFIG ON)
+
+find_package(ACME REQUIRED)
+
+if(NOT ACME_FOUND)
+    message(SEND_ERROR "Did not find ACME package")
+endif()
+
+############################################################################
+##Test find_package CMAKE_FIND_PACKAGE_PREFER_CONFIG with NO_MODULE
+
+set(CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/PreferConfigOnlyModule)
+
+set(CMAKE_FIND_PACKAGE_PREFER_CONFIG ON)
+
+find_package(ACME NO_MODULE)
+
+if(ACME_FOUND)
+    message(SEND_ERROR "Should not find ACME package")
+endif()
+
+############################################################################
+##Test find_package CMAKE_FIND_PACKAGE_PREFER_CONFIG with unknown package
+
+set(CMAKE_FIND_PACKAGE_PREFER_CONFIG ON)
+find_package(DoesNotExist)

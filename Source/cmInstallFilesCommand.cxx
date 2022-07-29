@@ -1,144 +1,132 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
-
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
-
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmInstallFilesCommand.h"
 
-#include "cmInstallFilesGenerator.h"
+#include <cm/memory>
 
-// cmExecutableCommand
-bool cmInstallFilesCommand
-::InitialPass(std::vector<std::string> const& argsIn, cmExecutionStatus &)
+#include "cmExecutionStatus.h"
+#include "cmGeneratorExpression.h"
+#include "cmGlobalGenerator.h"
+#include "cmInstallFilesGenerator.h"
+#include "cmInstallGenerator.h"
+#include "cmLocalGenerator.h"
+#include "cmMakefile.h"
+#include "cmRange.h"
+#include "cmStringAlgorithms.h"
+#include "cmSystemTools.h"
+
+class cmListFileBacktrace;
+
+static std::string FindInstallSource(cmMakefile& makefile, const char* name);
+static void CreateInstallGenerator(cmMakefile& makefile,
+                                   std::string const& dest,
+                                   std::vector<std::string> const& files);
+static void FinalAction(cmMakefile& makefile, std::string const& dest,
+                        std::vector<std::string> const& args);
+
+bool cmInstallFilesCommand(std::vector<std::string> const& args,
+                           cmExecutionStatus& status)
 {
-  if(argsIn.size() < 2)
-    {
-    this->SetError("called with incorrect number of arguments");
+  if (args.size() < 2) {
+    status.SetError("called with incorrect number of arguments");
     return false;
-    }
+  }
+
+  cmMakefile& mf = status.GetMakefile();
 
   // Enable the install target.
-  this->Makefile->GetLocalGenerator()
-    ->GetGlobalGenerator()->EnableInstallTarget();
+  mf.GetGlobalGenerator()->EnableInstallTarget();
 
-  std::vector<std::string> args;
-  this->Makefile->ExpandSourceListArguments(argsIn, args, 2);
+  std::string const& dest = args[0];
 
-  this->Destination = args[0];
-
-  if((args.size() > 1) && (args[1] == "FILES"))
-    {
-    this->IsFilesForm = true;
-    for(std::vector<std::string>::const_iterator s = args.begin()+2;
-        s != args.end(); ++s)
-      {
+  if ((args.size() > 1) && (args[1] == "FILES")) {
+    std::vector<std::string> files;
+    for (std::string const& arg : cmMakeRange(args).advance(2)) {
       // Find the source location for each file listed.
-      std::string f = this->FindInstallSource(s->c_str());
-      this->Files.push_back(f);
-      }
-    this->CreateInstallGenerator();
+      files.push_back(FindInstallSource(mf, arg.c_str()));
     }
-  else
-    {
-    this->IsFilesForm = false;
-    std::vector<std::string>::const_iterator s = args.begin();
-    for (++s;s != args.end(); ++s)
-      {
-      this->FinalArgs.push_back(*s);
-      }
-    }
+    CreateInstallGenerator(mf, dest, files);
+  } else {
+    std::vector<std::string> finalArgs(args.begin() + 1, args.end());
+    mf.AddGeneratorAction(
+      [dest, finalArgs](cmLocalGenerator& lg, const cmListFileBacktrace&) {
+        FinalAction(*lg.GetMakefile(), dest, finalArgs);
+      });
+  }
 
-  this->Makefile->GetLocalGenerator()->GetGlobalGenerator()
-                      ->AddInstallComponent(this->Makefile->GetSafeDefinition(
-                                      "CMAKE_INSTALL_DEFAULT_COMPONENT_NAME"));
+  mf.GetGlobalGenerator()->AddInstallComponent(
+    mf.GetSafeDefinition("CMAKE_INSTALL_DEFAULT_COMPONENT_NAME"));
 
   return true;
 }
 
-void cmInstallFilesCommand::FinalPass()
+static void FinalAction(cmMakefile& makefile, std::string const& dest,
+                        std::vector<std::string> const& args)
 {
-  // No final pass for "FILES" form of arguments.
-  if(this->IsFilesForm)
-    {
-    return;
-    }
-
   std::string testf;
-  std::string ext = this->FinalArgs[0];
+  std::string const& ext = args[0];
+  std::vector<std::string> installFiles;
 
   // two different options
-  if (this->FinalArgs.size() > 1)
-    {
+  if (args.size() > 1) {
     // now put the files into the list
-    std::vector<std::string>::iterator s = this->FinalArgs.begin();
+    auto s = args.begin();
     ++s;
     // for each argument, get the files
-    for (;s != this->FinalArgs.end(); ++s)
-      {
+    for (; s != args.end(); ++s) {
       // replace any variables
-      std::string temps = *s;
-      if (cmSystemTools::GetFilenamePath(temps).size() > 0)
-        {
-          testf = cmSystemTools::GetFilenamePath(temps) + "/" +
-            cmSystemTools::GetFilenameWithoutLastExtension(temps) + ext;
-        }
-      else
-        {
-          testf = cmSystemTools::GetFilenameWithoutLastExtension(temps) + ext;
-        }
+      std::string const& temps = *s;
+      if (!cmSystemTools::GetFilenamePath(temps).empty()) {
+        testf = cmSystemTools::GetFilenamePath(temps) + "/" +
+          cmSystemTools::GetFilenameWithoutLastExtension(temps) + ext;
+      } else {
+        testf = cmSystemTools::GetFilenameWithoutLastExtension(temps) + ext;
+      }
 
       // add to the result
-      this->Files.push_back(this->FindInstallSource(testf.c_str()));
-      }
+      installFiles.push_back(FindInstallSource(makefile, testf.c_str()));
     }
-  else     // reg exp list
-    {
+  } else // reg exp list
+  {
     std::vector<std::string> files;
-    std::string regex = this->FinalArgs[0].c_str();
-    cmSystemTools::Glob(this->Makefile->GetCurrentDirectory(),
-                        regex.c_str(), files);
+    std::string const& regex = args[0];
+    cmSystemTools::Glob(makefile.GetCurrentSourceDirectory(), regex, files);
 
-    std::vector<std::string>::iterator s = files.begin();
+    auto s = files.begin();
     // for each argument, get the files
-    for (;s != files.end(); ++s)
-      {
-      this->Files.push_back(this->FindInstallSource(s->c_str()));
-      }
+    for (; s != files.end(); ++s) {
+      installFiles.push_back(FindInstallSource(makefile, s->c_str()));
     }
+  }
 
-  this->CreateInstallGenerator();
+  CreateInstallGenerator(makefile, dest, installFiles);
 }
 
-void cmInstallFilesCommand::CreateInstallGenerator() const
+static void CreateInstallGenerator(cmMakefile& makefile,
+                                   std::string const& dest,
+                                   std::vector<std::string> const& files)
 {
   // Construct the destination.  This command always installs under
   // the prefix.  We skip the leading slash given by the user.
-  std::string destination = this->Destination.substr(1);
+  std::string destination = dest.substr(1);
   cmSystemTools::ConvertToUnixSlashes(destination);
-  if(destination.empty())
-    {
+  if (destination.empty()) {
     destination = ".";
-    }
+  }
 
   // Use a file install generator.
-  const char* no_permissions = "";
-  const char* no_rename = "";
-  std::string no_component = this->Makefile->GetSafeDefinition(
-                                       "CMAKE_INSTALL_DEFAULT_COMPONENT_NAME");
+  const std::string no_permissions;
+  const std::string no_rename;
+  bool no_exclude_from_all = false;
+  std::string no_component =
+    makefile.GetSafeDefinition("CMAKE_INSTALL_DEFAULT_COMPONENT_NAME");
   std::vector<std::string> no_configurations;
-  this->Makefile->AddInstallGenerator(
-    new cmInstallFilesGenerator(this->Makefile, this->Files,
-                                destination.c_str(), false,
-                                no_permissions, no_configurations,
-                                no_component.c_str(), no_rename));
+  cmInstallGenerator::MessageLevel message =
+    cmInstallGenerator::SelectMessageLevel(&makefile);
+  makefile.AddInstallGenerator(cm::make_unique<cmInstallFilesGenerator>(
+    files, destination, false, no_permissions, no_configurations, no_component,
+    message, no_exclude_from_all, no_rename, false, makefile.GetBacktrace()));
 }
-
 
 /**
  * Find a file in the build or source tree for installation given a
@@ -146,37 +134,27 @@ void cmInstallFilesCommand::CreateInstallGenerator() const
  * present in the build tree.  If a full path is given, it is just
  * returned.
  */
-std::string cmInstallFilesCommand::FindInstallSource(const char* name) const
+static std::string FindInstallSource(cmMakefile& makefile, const char* name)
 {
-  if(cmSystemTools::FileIsFullPath(name) ||
-     cmGeneratorExpression::Find(name) == 0)
-    {
+  if (cmSystemTools::FileIsFullPath(name) ||
+      cmGeneratorExpression::Find(name) == 0) {
     // This is a full path.
     return name;
-    }
+  }
 
   // This is a relative path.
-  std::string tb = this->Makefile->GetCurrentOutputDirectory();
-  tb += "/";
-  tb += name;
-  std::string ts = this->Makefile->GetCurrentDirectory();
-  ts += "/";
-  ts += name;
+  std::string tb = cmStrCat(makefile.GetCurrentBinaryDirectory(), '/', name);
+  std::string ts = cmStrCat(makefile.GetCurrentSourceDirectory(), '/', name);
 
-  if(cmSystemTools::FileExists(tb.c_str()))
-    {
+  if (cmSystemTools::FileExists(tb)) {
     // The file exists in the binary tree.  Use it.
     return tb;
-    }
-  else if(cmSystemTools::FileExists(ts.c_str()))
-    {
+  }
+  if (cmSystemTools::FileExists(ts)) {
     // The file exists in the source tree.  Use it.
     return ts;
-    }
-  else
-    {
-    // The file doesn't exist.  Assume it will be present in the
-    // binary tree when the install occurs.
-    return tb;
-    }
+  }
+  // The file doesn't exist.  Assume it will be present in the
+  // binary tree when the install occurs.
+  return tb;
 }

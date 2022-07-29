@@ -25,16 +25,23 @@
  * $FreeBSD: head/lib/libarchive/archive_write_private.h 201155 2009-12-29 05:20:12Z kientzle $
  */
 
+#ifndef ARCHIVE_WRITE_PRIVATE_H_INCLUDED
+#define ARCHIVE_WRITE_PRIVATE_H_INCLUDED
+
 #ifndef __LIBARCHIVE_BUILD
+#ifndef __LIBARCHIVE_TEST
 #error This header is only to be used internally to libarchive.
 #endif
-
-#ifndef ARCHIVE_WRITE_PRIVATE_H_INCLUDED
-#define	ARCHIVE_WRITE_PRIVATE_H_INCLUDED
+#endif
 
 #include "archive.h"
 #include "archive_string.h"
 #include "archive_private.h"
+
+#define	ARCHIVE_WRITE_FILTER_STATE_NEW		1U
+#define	ARCHIVE_WRITE_FILTER_STATE_OPEN		2U
+#define	ARCHIVE_WRITE_FILTER_STATE_CLOSED	4U
+#define	ARCHIVE_WRITE_FILTER_STATE_FATAL	0x8000U
 
 struct archive_write;
 
@@ -53,6 +60,7 @@ struct archive_write_filter {
 	int	  code;
 	int	  bytes_per_block;
 	int	  bytes_in_last_block;
+	int	  state;
 };
 
 #if ARCHIVE_VERSION < 4000000
@@ -64,8 +72,6 @@ struct archive_write_filter *__archive_write_allocate_filter(struct archive *);
 int __archive_write_output(struct archive_write *, const void *, size_t);
 int __archive_write_nulls(struct archive_write *, size_t);
 int __archive_write_filter(struct archive_write_filter *, const void *, size_t);
-int __archive_write_open_filter(struct archive_write_filter *);
-int __archive_write_close_filter(struct archive_write_filter *);
 
 struct archive_write {
 	struct archive	archive;
@@ -83,6 +89,7 @@ struct archive_write {
 	archive_open_callback	*client_opener;
 	archive_write_callback	*client_writer;
 	archive_close_callback	*client_closer;
+	archive_free_callback	*client_freer;
 	void			*client_data;
 
 	/*
@@ -116,6 +123,14 @@ struct archive_write {
 		    const void *buff, size_t);
 	int	(*format_close)(struct archive_write *);
 	int	(*format_free)(struct archive_write *);
+
+
+	/*
+	 * Encryption passphrase.
+	 */
+	char		*passphrase;
+	archive_passphrase_callback *passphrase_callback;
+	void		*passphrase_client_data;
 };
 
 /*
@@ -134,7 +149,7 @@ __archive_write_format_header_ustar(struct archive_write *, char buff[512],
     struct archive_string_conv *);
 
 struct archive_write_program_data;
-struct archive_write_program_data * __archive_write_program_allocate(void);
+struct archive_write_program_data * __archive_write_program_allocate(const char *program_name);
 int	__archive_write_program_free(struct archive_write_program_data *);
 int	__archive_write_program_open(struct archive_write_filter *,
 	    struct archive_write_program_data *, const char *);
@@ -142,4 +157,9 @@ int	__archive_write_program_close(struct archive_write_filter *,
 	    struct archive_write_program_data *);
 int	__archive_write_program_write(struct archive_write_filter *,
 	    struct archive_write_program_data *, const void *, size_t);
+
+/*
+ * Get a encryption passphrase.
+ */
+const char * __archive_write_get_passphrase(struct archive_write *a);
 #endif

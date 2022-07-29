@@ -1,7 +1,7 @@
 #
 # Wrapping
 #
-cmake_minimum_required (VERSION 2.6)
+cmake_minimum_required (VERSION 2.8.12)
 project (CustomCommand)
 
 add_subdirectory(GeneratedHeader)
@@ -70,7 +70,7 @@ add_custom_command(OUTPUT ${PROJECT_BINARY_DIR}/doc1.h APPEND
   COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_BINARY_DIR}/doc1temp.h
                                    ${PROJECT_BINARY_DIR}/doc1.h
   COMMAND ${CMAKE_COMMAND} -E echo " Removing doc1temp.h."
-  COMMAND ${CMAKE_COMMAND} -E remove -f ${PROJECT_BINARY_DIR}/doc1temp.h
+  COMMAND ${CMAKE_COMMAND} -E rm -f ${PROJECT_BINARY_DIR}/doc1temp.h
   )
 
 # Add custom command to generate foo.h.
@@ -117,6 +117,7 @@ add_custom_command(
   COMMAND ${CMAKE_COMMAND} -E echo " Copying doc1pre.txt to doc2post.txt."
   COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_BINARY_DIR}/doc1pre.txt
                                    ${PROJECT_BINARY_DIR}/doc2post.txt
+  BYPRODUCTS ${PROJECT_BINARY_DIR}/doc2post.txt
   COMMENT "Running TDocument post-build commands"
   )
 
@@ -153,6 +154,19 @@ add_custom_command(OUTPUT ${PROJECT_BINARY_DIR}/foo.c
   ${PROJECT_BINARY_DIR}/foo.c
   )
 
+# Test using OBJECT_DEPENDS to bring in a custom command.
+# Use a path that can be simplified to make sure paths
+# are consistently normalized.
+add_custom_command(
+  OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/subdir/../subdir/subdir.h
+  COMMAND ${CMAKE_COMMAND} -E copy
+            ${CMAKE_CURRENT_SOURCE_DIR}/subdir.h.in
+            ${CMAKE_CURRENT_BINARY_DIR}/subdir/subdir.h
+  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/subdir.h.in
+  )
+set_property(SOURCE ${PROJECT_BINARY_DIR}/foo.c PROPERTY
+  OBJECT_DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/subdir/../subdir/subdir.h)
+
 # Add custom command to generate not_included.h, which is a header
 # file that is not included by any source in this project.  This will
 # test whether all custom command outputs explicitly listed as sources
@@ -161,13 +175,6 @@ add_custom_command(OUTPUT ${PROJECT_BINARY_DIR}/not_included.h
   DEPENDS ${PROJECT_SOURCE_DIR}/foo.h.in
   COMMAND ${CMAKE_COMMAND} -E copy ${PROJECT_SOURCE_DIR}/foo.h.in
                                    ${PROJECT_BINARY_DIR}/not_included.h
-  )
-
-# Tell the executable where to find not_included.h.
-configure_file(
-  ${PROJECT_SOURCE_DIR}/config.h.in
-  ${PROJECT_BINARY_DIR}/config.h
-  @ONLY
   )
 
 # add the executable
@@ -185,7 +192,7 @@ add_executable(CustomCommand
 # here to test adding the generation rule after referencing the
 # generated source in a target.
 add_custom_command(OUTPUT ${PROJECT_BINARY_DIR}/generated.c
-  DEPENDS generator
+  DEPENDS $<1:generator> $<0:does_not_exist>
   COMMAND generator
   ARGS ${PROJECT_BINARY_DIR}/generated.c
   )
@@ -221,8 +228,11 @@ add_subdirectory(GeneratorInExtraDir)
 
 add_executable(tcat tcat.cxx)
 
+# Test that list expansion from a generator expression works.
+set_property(TARGET tcat PROPERTY DEPSLIST tcat gen_redirect_in.c)
+
 add_custom_command(OUTPUT gen_redirect.c
-  DEPENDS tcat gen_redirect_in.c
+  DEPENDS $<TARGET_PROPERTY:tcat,DEPSLIST>
   COMMAND tcat < ${CMAKE_CURRENT_SOURCE_DIR}/gen_redirect_in.c > gen_redirect.c
   COMMAND ${CMAKE_COMMAND} -E echo "#endif" >> gen_redirect.c
   VERBATIM
@@ -364,10 +374,10 @@ endif()
 
 foreach(arg ${CHECK_ARGS} "")
   set(ARG "${arg}")
-  string(REGEX REPLACE "\\\\" "\\\\\\\\" ARG "${ARG}")
-  string(REGEX REPLACE "\"" "\\\\\"" ARG "${ARG}")
-  set(EXPECTED_ARGUMENTS
-    "${EXPECTED_ARGUMENTS}  \"${ARG}\",
+  string(REPLACE "\\" "\\\\" ARG "${ARG}")
+  string(REPLACE "\"" "\\\"" ARG "${ARG}")
+  string(APPEND EXPECTED_ARGUMENTS
+    "  \"${ARG}\",
 ")
 endforeach()
 configure_file(${CMAKE_CURRENT_SOURCE_DIR}/check_command_line.c.in
@@ -402,7 +412,7 @@ add_custom_target(do_check_command_line ALL
 add_dependencies(do_check_command_line check_command_line)
 
 add_custom_target(pre_check_command_line
-  COMMAND ${CMAKE_COMMAND} -E remove ${CMAKE_CURRENT_BINARY_DIR}/check_mark.txt
+  COMMAND ${CMAKE_COMMAND} -E rm -f ${CMAKE_CURRENT_BINARY_DIR}/check_mark.txt
   )
 add_dependencies(do_check_command_line pre_check_command_line)
 
@@ -453,3 +463,126 @@ add_custom_target(source_in_custom_target SOURCES source_in_custom_target.cpp)
 set_property(SOURCE source_in_custom_target
   PROPERTY COMPILE_DEFINITIONS "TEST"
 )
+
+set(gen_path "${CMAKE_CURRENT_BINARY_DIR}//./foo")
+set(gen_file "${gen_path}/foo.cxx")
+
+add_custom_command(
+  OUTPUT "${gen_file}"
+  # Make sure the output directory exists before trying to write to it.
+  COMMAND ${CMAKE_COMMAND} -E make_directory "${gen_path}"
+  COMMAND ${CMAKE_COMMAND} -E touch "${gen_file}"
+)
+
+add_library(NormOutput "${gen_file}")
+
+string(APPEND gen_path "/bar")
+set(gen_file "${gen_path}/bar.cxx")
+
+add_custom_command(
+  OUTPUT "${gen_path}"
+  COMMAND ${CMAKE_COMMAND} -E make_directory "${gen_path}"
+)
+
+add_custom_command(
+  OUTPUT "${gen_file}"
+  DEPENDS "${gen_path}"
+  COMMAND ${CMAKE_COMMAND} -E touch "${gen_file}")
+
+add_library(NormDepends "${gen_file}")
+
+# Test that USES_TERMINAL is parsed correctly.
+# It seems much more difficult to test that USES_TERMINAL actually gives
+# the subprocess console access, as test output is piped through CTest,
+# and CTest itself might not be connected to the console.
+
+set(gen_file "${gen_path}/bar2.cxx")
+
+add_custom_command(
+  OUTPUT "${gen_file}"
+  DEPENDS "${gen_path}"
+  COMMAND ${CMAKE_COMMAND} -E touch "${gen_file}"
+  VERBATIM
+  USES_TERMINAL
+)
+
+add_library(UseConsole "${gen_file}")
+
+add_custom_target(UseConsoleTarget ALL
+  COMMAND ${CMAKE_COMMAND} -E echo "Custom console target."
+  VERBATIM
+  USES_TERMINAL
+)
+
+if(CMAKE_XCODE_BUILD_SYSTEM VERSION_GREATER_EQUAL 12)
+  # Xcode's "new build system" does not support multiple targets
+  # producing the same custom command output.
+  add_custom_target(GenPath DEPENDS "${gen_path}")
+  add_dependencies(NormDepends GenPath)
+  add_dependencies(UseConsole GenPath)
+endif()
+
+# Test COMMAND_EXPAND_LISTS
+set(cmp_args "1ARG=COMMAND_EXPAND_LISTS" "2ARG=test" "3ARG=outfile"
+  "4ARG=content")
+set(AARGS "")
+foreach(arg IN LISTS cmp_args)
+  list(APPEND AARGS "-DA${arg}")
+endforeach()
+
+set(gen_file "expand_custom_command.phony")
+add_custom_command(
+  OUTPUT "${gen_file}"
+  COMMAND ${CMAKE_COMMAND} ${AARGS}
+    "-DB$<JOIN:$<TARGET_PROPERTY:command_expand_lists,CMPARGS>,;-DB>"
+    "-P" "${CMAKE_CURRENT_SOURCE_DIR}/compare_options.cmake"
+    COMMAND_EXPAND_LISTS
+  VERBATIM
+)
+set_property(SOURCE "${gen_file}" PROPERTY SYMBOLIC ON)
+add_custom_target(command_expand_lists ALL DEPENDS "${gen_file}")
+set_property(TARGET command_expand_lists PROPERTY CMPARGS "${cmp_args}")
+
+# This also tests that `./` is squeezed out of the resulting path.
+set(depends_path "./depended_upon_path.txt")
+
+add_custom_command(
+  OUTPUT ${depends_path}
+  COMMAND ${CMAKE_COMMAND} -E touch ${depends_path}
+)
+
+add_custom_command(
+  OUTPUT "depends_on_path.txt"
+  COMMAND ${CMAKE_COMMAND} -E touch "depends_on_path.txt"
+  DEPENDS ${depends_path}
+)
+
+add_custom_target(depends_on_path ALL DEPENDS "depends_on_path.txt")
+
+add_custom_command(
+  OUTPUT "depends_on_in_source_path.txt"
+  COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/main.cxx" depends_on_in_source_path.txt
+  DEPENDS main.cxx
+)
+
+add_custom_target(depends_on_in_source_path ALL DEPENDS "depends_on_in_source_path.txt")
+
+add_custom_command(
+  OUTPUT "depends_on_in_rel_source_path.txt"
+  COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/main.cxx" depends_on_in_rel_source_path.txt
+  DEPENDS ./main.cxx
+)
+
+add_custom_target(depends_on_in_rel_source_path ALL DEPENDS "depends_on_in_rel_source_path.txt")
+
+add_library(mac_fw SHARED mac_fw.c)
+set_target_properties(mac_fw PROPERTIES
+  FRAMEWORK 1
+  LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/lib
+  )
+add_custom_command(OUTPUT mac_fw.txt COMMAND ${CMAKE_COMMAND} -E touch mac_fw.txt DEPENDS mac_fw)
+add_custom_target(drive_mac_fw ALL DEPENDS mac_fw.txt)
+
+# Test empty COMMANDs are omitted
+add_executable(empty_command empty_command.cxx)
+add_custom_command(TARGET empty_command POST_BUILD COMMAND $<0:date>)

@@ -1,44 +1,54 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmVisualStudioGeneratorOptions_h
-#define cmVisualStudioGeneratorOptions_h
+#include <iosfwd>
+#include <string>
 
-#include "cmLocalVisualStudioGenerator.h"
-
+#include "cmGlobalVisualStudioGenerator.h"
+#include "cmIDEFlagTable.h"
 #include "cmIDEOptions.h"
-typedef cmIDEFlagTable cmVS7FlagTable;
 
-class cmVisualStudio10TargetGenerator;
+class cmLocalVisualStudioGenerator;
 
-//----------------------------------------------------------------------------
-class cmVisualStudioGeneratorOptions: public cmIDEOptions
+using cmVS7FlagTable = cmIDEFlagTable;
+
+class cmVisualStudioGeneratorOptions : public cmIDEOptions
 {
 public:
   // Construct an options table for a given tool.
   enum Tool
   {
     Compiler,
+    ResourceCompiler,
+    CudaCompiler,
+    MasmCompiler,
+    NasmCompiler,
     Linker,
-    FortranCompiler
+    FortranCompiler,
+    CSharpCompiler
   };
-  cmVisualStudioGeneratorOptions(cmLocalVisualStudioGenerator* lg,
-                                 Tool tool,
-                                 cmVS7FlagTable const* table,
-                                 cmVS7FlagTable const* extraTable = 0,
-                                 cmVisualStudio10TargetGenerator* g = 0);
+  cmVisualStudioGeneratorOptions(cmLocalVisualStudioGenerator* lg, Tool tool,
+                                 cmVS7FlagTable const* table = nullptr,
+                                 cmVS7FlagTable const* extraTable = nullptr);
+
+  // Add a table of flags.
+  void AddTable(cmVS7FlagTable const* table);
+
+  // Clear the flag tables.
+  void ClearTables();
 
   // Store options from command line flags.
-  void Parse(const char* flags);
+  void Parse(const std::string& flags);
   void ParseFinish();
+
+  void PrependInheritedString(std::string const& key);
+
+  // Parse the content of the given flag table entry again to extract
+  // known flags and leave the rest in the original entry.
+  void Reparse(std::string const& key);
 
   // Fix the ExceptionHandling option to default to off.
   void FixExceptionHandlingDefault();
@@ -50,30 +60,41 @@ public:
   bool UsingUnicode() const;
   bool UsingSBCS() const;
 
+  void FixCudaCodeGeneration();
+
+  void FixManifestUACFlags();
+
   bool IsDebug() const;
+  bool IsWinRt() const;
+  bool IsManaged() const;
   // Write options to output.
-  void OutputPreprocessorDefinitions(std::ostream& fout,
-                                     const char* prefix,
-                                     const char* suffix,
-                                     const char* lang);
-  void OutputFlagMap(std::ostream& fout, const char* indent);
-  void OutputAdditionalOptions(std::ostream& fout,
-                               const char* prefix,
-                               const char* suffix);
-  void SetConfiguration(const char* config);
+  void OutputPreprocessorDefinitions(std::ostream& fout, int indent,
+                                     const std::string& lang);
+  void OutputAdditionalIncludeDirectories(std::ostream& fout, int indent,
+                                          const std::string& lang);
+  void OutputFlagMap(std::ostream& fout, int indent);
+  void SetConfiguration(const std::string& config);
+  const std::string& GetConfiguration() const;
+
+protected:
+  virtual void OutputFlag(std::ostream& fout, int indent,
+                          const std::string& tag,
+                          const std::string& content) = 0;
+
 private:
   cmLocalVisualStudioGenerator* LocalGenerator;
-  cmLocalVisualStudioGenerator::VSVersion Version;
+  cmGlobalVisualStudioGenerator::VSVersion Version;
 
   std::string Configuration;
   Tool CurrentTool;
-  cmVisualStudio10TargetGenerator* TargetGenerator;
 
   bool FortranRuntimeDebug;
   bool FortranRuntimeDLL;
   bool FortranRuntimeMT;
 
-  virtual void StoreUnknownFlag(const char* flag);
-};
+  std::string UnknownFlagField;
 
-#endif
+  void StoreUnknownFlag(std::string const& flag) override;
+
+  FlagValue TakeFlag(std::string const& key);
+};

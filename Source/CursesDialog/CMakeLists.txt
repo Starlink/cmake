@@ -1,38 +1,63 @@
-#=============================================================================
-# CMake - Cross Platform Makefile Generator
-# Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
-#
-# Distributed under the OSI-approved BSD License (the "License");
-# see accompanying file Copyright.txt for details.
-#
-# This software is distributed WITHOUT ANY WARRANTY; without even the
-# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the License for more information.
-#=============================================================================
+# Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+# file Copyright.txt or https://cmake.org/licensing for details.
 
-set( CURSES_SRCS
-              CursesDialog/cmCursesOptionsWidget
-              CursesDialog/cmCursesBoolWidget
-              CursesDialog/cmCursesCacheEntryComposite
-              CursesDialog/cmCursesDummyWidget
-              CursesDialog/cmCursesFilePathWidget
-              CursesDialog/cmCursesForm
-              CursesDialog/cmCursesLabelWidget
-              CursesDialog/cmCursesLongMessageForm
-              CursesDialog/cmCursesMainForm
-              CursesDialog/cmCursesPathWidget
-              CursesDialog/cmCursesStringWidget
-              CursesDialog/cmCursesWidget
-              CursesDialog/ccmake
-   )
-
-include_directories(${CMake_SOURCE_DIR}/Source/CursesDialog/form
-                    ${CMake_BINARY_DIR}/Source/CursesDialog/form)
-include_directories(${CURSES_INCLUDE_PATH})
-
-
-add_executable(ccmake ${CURSES_SRCS} )
+add_executable(ccmake
+  ccmake.cxx
+  cmCursesBoolWidget.cxx
+  cmCursesCacheEntryComposite.cxx
+  cmCursesColor.cxx
+  cmCursesDummyWidget.cxx
+  cmCursesFilePathWidget.cxx
+  cmCursesForm.cxx
+  cmCursesLabelWidget.cxx
+  cmCursesLongMessageForm.cxx
+  cmCursesMainForm.cxx
+  cmCursesOptionsWidget.cxx
+  cmCursesPathWidget.cxx
+  cmCursesStringWidget.cxx
+  cmCursesWidget.cxx
+  )
+target_include_directories(ccmake PRIVATE ${CURSES_INCLUDE_PATH})
+set(CMAKE_REQUIRED_INCLUDES ${CURSES_INCLUDE_PATH})
 target_link_libraries(ccmake CMakeLib)
-target_link_libraries(ccmake cmForm)
+if(CMAKE_USE_SYSTEM_FORM)
+  find_path(CURSES_FORM_INCLUDE_DIR NAMES form.h HINTS ${CURSES_INCLUDE_PATH} ${CURSES_INCLUDE_PATH}/ncurses)
+  if(CURSES_FORM_INCLUDE_DIR)
+    target_include_directories(ccmake PRIVATE ${CURSES_FORM_INCLUDE_DIR})
+    list(APPEND CMAKE_REQUIRED_INCLUDES ${CURSES_FORM_INCLUDE_DIR})
+  endif()
+  target_link_libraries(ccmake
+    ${CURSES_FORM_LIBRARY}
+    ${CURSES_LIBRARY}
+  )
+  set(CMAKE_REQUIRED_LIBRARIES
+    ${CURSES_FORM_LIBRARY}
+    ${CURSES_LIBRARY}
+  )
+  if(CURSES_EXTRA_LIBRARY)
+    target_link_libraries(ccmake ${CURSES_EXTRA_LIBRARY})
+    list(APPEND CMAKE_REQUIRED_LIBRARIES ${CURSES_EXTRA_LIBRARY})
+  endif()
+else()
+  target_link_libraries(ccmake cmForm)
+  get_target_property(cmFormIncludeDirs cmForm INTERFACE_INCLUDE_DIRECTORIES)
+  list(APPEND CMAKE_REQUIRED_INCLUDES ${cmFormIncludeDirs})
+  get_target_property(cmFormLibraries cmForm INTERFACE_LINK_LIBRARIES)
+  set(CMAKE_REQUIRED_LIBRARIES ${cmFormLibraries})
+endif()
 
-install(TARGETS ccmake DESTINATION bin)
+include(CheckSymbolExists)
+check_symbol_exists(use_default_colors
+  "form.h"
+  HAVE_CURSES_USE_DEFAULT_COLORS)
+if(HAVE_CURSES_USE_DEFAULT_COLORS)
+  set_source_files_properties(cmCursesColor.cxx
+    PROPERTIES COMPILE_DEFINITIONS HAVE_CURSES_USE_DEFAULT_COLORS)
+endif()
+
+if(CMake_JOB_POOL_LINK_BIN)
+  set_property(TARGET ccmake PROPERTY JOB_POOL_LINK "link-bin")
+endif()
+
+CMake_OPTIONAL_COMPONENT(ccmake)
+install(TARGETS ccmake DESTINATION ${CMAKE_BIN_DIR} ${COMPONENT})

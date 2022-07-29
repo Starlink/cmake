@@ -1,38 +1,41 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef __cmCursesLongMessageForm_h
-#define __cmCursesLongMessageForm_h
+#include <string>
+#include <vector>
 
-#include "../cmStandardIncludes.h"
 #include "cmCursesForm.h"
 #include "cmCursesStandardIncludes.h"
-
-class cmCursesCacheEntryComposite;
 
 class cmCursesLongMessageForm : public cmCursesForm
 {
 public:
+  enum class ScrollBehavior
+  {
+    NoScroll,
+    ScrollDown
+  };
+
   cmCursesLongMessageForm(std::vector<std::string> const& messages,
-                          const char* title);
-  virtual ~cmCursesLongMessageForm();
+                          const char* title, ScrollBehavior scrollBehavior);
+  ~cmCursesLongMessageForm() override;
+
+  cmCursesLongMessageForm(cmCursesLongMessageForm const&) = delete;
+  cmCursesLongMessageForm& operator=(cmCursesLongMessageForm const&) = delete;
+
+  void UpdateContent(std::string const& output, std::string const& title);
 
   // Description:
   // Handle user input.
-  virtual void HandleInput();
+  void HandleInput() override;
 
   // Description:
   // Display form. Use a window of size width x height, starting
   // at top, left.
-  virtual void Render(int left, int top, int width, int height);
+  void Render(int left, int top, int width, int height) override;
 
   // Description:
   // This method should normally  called only by the form.
@@ -42,17 +45,16 @@ public:
   // Description:
   // This method should normally  called only by the form.
   // The only exception is during a resize.
-  virtual void UpdateStatusBar();
+  void UpdateStatusBar() override;
 
 protected:
-  cmCursesLongMessageForm(const cmCursesLongMessageForm& from);
-  void operator=(const cmCursesLongMessageForm&);
+  static constexpr int MAX_CONTENT_SIZE = 60000;
+
+  void DrawMessage(const char* msg) const;
 
   std::string Messages;
   std::string Title;
+  ScrollBehavior Scrolling;
 
   FIELD* Fields[2];
-
 };
-
-#endif // __cmCursesLongMessageForm_h

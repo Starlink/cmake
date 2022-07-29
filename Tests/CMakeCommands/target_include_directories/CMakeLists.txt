@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 2.8.12)
 
 project(target_include_directories)
 
@@ -41,6 +41,20 @@ target_include_directories(target_include_directories
 add_executable(consumer
   "${CMAKE_CURRENT_SOURCE_DIR}/consumer.cpp"
 )
+
+target_sources(consumer PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/consumer.c"
+)
+target_include_directories(consumer
+  PRIVATE
+    $<$<COMPILE_LANGUAGE:CXX>:${CMAKE_CURRENT_SOURCE_DIR}/cxx_only>
+    $<$<COMPILE_LANGUAGE:C>:${CMAKE_CURRENT_SOURCE_DIR}/c_only>
+)
+if(CMAKE_GENERATOR MATCHES "Visual Studio|Xcode")
+  target_compile_definitions(consumer
+    PRIVATE TEST_LANG_DEFINES_FOR_VISUAL_STUDIO_OR_XCODE
+  )
+endif()
 
 target_include_directories(consumer
   PRIVATE

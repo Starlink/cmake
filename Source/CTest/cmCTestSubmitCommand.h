@@ -1,19 +1,18 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmCTestSubmitCommand_h
-#define cmCTestSubmitCommand_h
+#include <memory>
+#include <string>
+#include <vector>
 
 #include "cmCTestHandlerCommand.h"
-#include "cmCTest.h"
+
+class cmCommand;
+class cmCTestGenericHandler;
+class cmExecutionStatus;
 
 /** \class cmCTestSubmit
  * \brief Run a ctest script
@@ -24,57 +23,34 @@
 class cmCTestSubmitCommand : public cmCTestHandlerCommand
 {
 public:
+  std::unique_ptr<cmCommand> Clone() override;
 
-  cmCTestSubmitCommand()
-    {
-    this->PartsMentioned = false;
-    this->FilesMentioned = false;
-    this->InternalTest = false;
-    this->RetryCount = "";
-    this->RetryDelay = "";
-    }
-
-  /**
-   * This is a virtual constructor for the command.
-   */
-  virtual cmCommand* Clone()
-    {
-    cmCTestSubmitCommand* ni = new cmCTestSubmitCommand;
-    ni->CTest = this->CTest;
-    ni->CTestScriptHandler = this->CTestScriptHandler;
-    return ni;
-    }
+  bool InitialPass(std::vector<std::string> const& args,
+                   cmExecutionStatus& status) override;
 
   /**
    * The name of the command as specified in CMakeList.txt.
    */
-  virtual const char* GetName() const { return "ctest_submit";}
-
-  cmTypeMacro(cmCTestSubmitCommand, cmCTestHandlerCommand);
+  std::string GetName() const override { return "ctest_submit"; }
 
 protected:
-  cmCTestGenericHandler* InitializeHandler();
+  void BindArguments() override;
+  void CheckArguments(std::vector<std::string> const& keywords) override;
+  cmCTestGenericHandler* InitializeHandler() override;
 
-  virtual bool CheckArgumentKeyword(std::string const& arg);
-  virtual bool CheckArgumentValue(std::string const& arg);
+  bool CDashUpload = false;
+  bool FilesMentioned = false;
+  bool InternalTest = false;
+  bool PartsMentioned = false;
 
-  enum
-  {
-    ArgumentDoingParts = Superclass::ArgumentDoingLast1,
-    ArgumentDoingFiles,
-    ArgumentDoingRetryDelay,
-    ArgumentDoingRetryCount,
-    ArgumentDoingLast2
-  };
-
-  bool PartsMentioned;
-  std::set<cmCTest::Part> Parts;
-  bool FilesMentioned;
-  bool InternalTest;
-  cmCTest::SetOfStrings Files;
+  std::string BuildID;
+  std::string CDashUploadFile;
+  std::string CDashUploadType;
   std::string RetryCount;
   std::string RetryDelay;
+  std::string SubmitURL;
+
+  std::vector<std::string> Files;
+  std::vector<std::string> HttpHeaders;
+  std::vector<std::string> Parts;
 };
-
-
-#endif

@@ -1,23 +1,30 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmGlobalUnixMakefileGenerator3_h
-#define cmGlobalUnixMakefileGenerator3_h
+#include <cstddef>
+#include <iosfwd>
+#include <map>
+#include <memory>
+#include <set>
+#include <string>
+#include <vector>
 
-#include "cmGlobalGenerator.h"
+#include "cmBuildOptions.h"
+#include "cmGeneratorTarget.h"
+#include "cmGlobalCommonGenerator.h"
 #include "cmGlobalGeneratorFactory.h"
+#include "cmStateSnapshot.h"
 
 class cmGeneratedFileStream;
-class cmMakefileTargetGenerator;
+class cmLocalGenerator;
 class cmLocalUnixMakefileGenerator3;
+class cmMakefile;
+class cmMakefileTargetGenerator;
+class cmake;
+struct cmDocumentationEntry;
 
 /** \class cmGlobalUnixMakefileGenerator3
  * \brief Write a Unix makefiles.
@@ -51,52 +58,93 @@ class cmLocalUnixMakefileGenerator3;
 
  */
 
-class cmGlobalUnixMakefileGenerator3 : public cmGlobalGenerator
+class cmGlobalUnixMakefileGenerator3 : public cmGlobalCommonGenerator
 {
 public:
-  cmGlobalUnixMakefileGenerator3();
-  static cmGlobalGeneratorFactory* NewFactory() {
-    return new cmGlobalGeneratorSimpleFactory
-      <cmGlobalUnixMakefileGenerator3>(); }
+  cmGlobalUnixMakefileGenerator3(cmake* cm);
+  static std::unique_ptr<cmGlobalGeneratorFactory> NewFactory()
+  {
+    return std::unique_ptr<cmGlobalGeneratorFactory>(
+      new cmGlobalGeneratorSimpleFactory<cmGlobalUnixMakefileGenerator3>());
+  }
 
-  ///! Get the name for the generator.
-  virtual const char* GetName() const {
-    return cmGlobalUnixMakefileGenerator3::GetActualName();}
-  static const char* GetActualName() {return "Unix Makefiles";}
+  ~cmGlobalUnixMakefileGenerator3() override;
+
+  cmGlobalUnixMakefileGenerator3(const cmGlobalUnixMakefileGenerator3&) =
+    delete;
+  cmGlobalUnixMakefileGenerator3& operator=(
+    const cmGlobalUnixMakefileGenerator3&) = delete;
+
+  //! Get the name for the generator.
+  std::string GetName() const override
+  {
+    return cmGlobalUnixMakefileGenerator3::GetActualName();
+  }
+  static std::string GetActualName() { return "Unix Makefiles"; }
+
+  /**
+   * Utilized by the generator factory to determine if this generator
+   * supports toolsets.
+   */
+  static bool SupportsToolset() { return false; }
+
+  /**
+   * Utilized by the generator factory to determine if this generator
+   * supports platforms.
+   */
+  static bool SupportsPlatform() { return false; }
+
+  /**
+   * Utilized to determine if this generator
+   * supports DEPFILE option.
+   */
+  bool SupportsCustomCommandDepfile() const override { return true; }
 
   /** Get the documentation entry for this generator.  */
   static void GetDocumentation(cmDocumentationEntry& entry);
 
-  ///! Create a local generator appropriate to this Global Generator3
-  virtual cmLocalGenerator *CreateLocalGenerator();
+  std::unique_ptr<cmLocalGenerator> CreateLocalGenerator(
+    cmMakefile* mf) override;
 
   /**
-   * Try to determine system infomation such as shared library
+   * Try to determine system information such as shared library
    * extension, pthreads, byte order etc.
    */
-  virtual void EnableLanguage(std::vector<std::string>const& languages,
-                              cmMakefile *, bool optional);
+  void EnableLanguage(std::vector<std::string> const& languages, cmMakefile*,
+                      bool optional) override;
 
-  virtual void Configure();
+  void Configure() override;
 
   /**
    * Generate the all required files for building this project/tree. This
    * basically creates a series of LocalGenerators for each directory and
    * requests that they Generate.
    */
-  virtual void Generate();
+  void Generate() override;
 
-
-  void WriteMainCMakefileLanguageRules(cmGeneratedFileStream& cmakefileStream,
-                                       std::vector<cmLocalGenerator *> &);
+  void WriteMainCMakefileLanguageRules(
+    cmGeneratedFileStream& cmakefileStream,
+    std::vector<std::unique_ptr<cmLocalGenerator>>&);
 
   // write out the help rule listing the valid targets
   void WriteHelpRule(std::ostream& ruleFileStream,
-                     cmLocalUnixMakefileGenerator3 *);
+                     cmLocalUnixMakefileGenerator3*);
 
   // write the top level target rules
   void WriteConvenienceRules(std::ostream& ruleFileStream,
-                             std::set<cmStdString> &emitted);
+                             std::set<std::string>& emitted);
+
+  // Make tool supports dependency files generated by compiler
+  bool SupportsCompilerDependencies() const
+  {
+    return this->ToolSupportsCompilerDependencies;
+  }
+
+  // Make tool supports long line dependencies
+  bool SupportsLongLineDependencies() const
+  {
+    return this->ToolSupportsLongLineDependencies;
+  }
 
   /** Get the command to use for a target that has no rule.  This is
       used for multiple output dependencies and for cmake_force.  */
@@ -106,62 +154,97 @@ public:
       or dependencies.  */
   std::string GetEmptyRuleHackDepends() { return this->EmptyRuleHackDepends; }
 
+  /**
+   * Convert a file path to a Makefile target or dependency with
+   * escaping and quoting suitable for the generator's make tool.
+   */
+  std::string ConvertToMakefilePath(std::string const& path) const;
+
   // change the build command for speed
-  virtual void GenerateBuildCommand(
-    std::vector<std::string>& makeCommand,
-    const char* makeProgram,
-    const char* projectName,
-    const char* projectDir,
-    const char* targetName,
-    const char* config,
-    bool fast,
-    std::vector<std::string> const& makeOptions = std::vector<std::string>()
-    );
+  std::vector<GeneratedMakeCommand> GenerateBuildCommand(
+    const std::string& makeProgram, const std::string& projectName,
+    const std::string& projectDir, std::vector<std::string> const& targetNames,
+    const std::string& config, int jobs, bool verbose,
+    const cmBuildOptions& buildOptions = cmBuildOptions(),
+    std::vector<std::string> const& makeOptions =
+      std::vector<std::string>()) override;
 
   /** Record per-target progress information.  */
   void RecordTargetProgress(cmMakefileTargetGenerator* tg);
 
-  void AddCXXCompileCommand(const std::string &sourceFile,
-                            const std::string &workingDirectory,
-                            const std::string &compileCommand);
+  void AddCXXCompileCommand(const std::string& sourceFile,
+                            const std::string& workingDirectory,
+                            const std::string& compileCommand);
 
   /** Does the make tool tolerate .NOTPARALLEL? */
   virtual bool AllowNotParallel() const { return true; }
+
+  /** Does the make tool tolerate .DELETE_ON_ERROR? */
+  virtual bool AllowDeleteOnError() const { return true; }
+
+  /** Does the make tool interpret '\#' as '#'?  */
+  virtual bool CanEscapeOctothorpe() const;
+
+  bool IsIPOSupported() const override { return true; }
+
+  void ComputeTargetObjectDirectory(cmGeneratorTarget* gt) const override;
+
+  std::string IncludeDirective;
+  std::string LineContinueDirective;
+  bool DefineWindowsNULL;
+  bool PassMakeflags;
+  bool UnixCD;
 
 protected:
   void WriteMainMakefile2();
   void WriteMainCMakefile();
 
   void WriteConvenienceRules2(std::ostream& ruleFileStream,
-                              cmLocalUnixMakefileGenerator3*);
+                              cmLocalUnixMakefileGenerator3&);
 
   void WriteDirectoryRule2(std::ostream& ruleFileStream,
-                           cmLocalUnixMakefileGenerator3* lg,
-                           const char* pass, bool check_all,
-                           bool check_relink);
+                           DirectoryTarget const& dt, const char* pass,
+                           bool check_all, bool check_relink,
+                           std::vector<std::string> const& commands = {});
   void WriteDirectoryRules2(std::ostream& ruleFileStream,
-                            cmLocalUnixMakefileGenerator3* lg);
+                            DirectoryTarget const& dt);
 
   void AppendGlobalTargetDepends(std::vector<std::string>& depends,
-                                 cmTarget& target);
-
-  // does this generator need a requires step for any of its targets
-  bool NeedRequiresStep(cmTarget const&);
+                                 cmGeneratorTarget* target);
 
   // Target name hooks for superclass.
-  const char* GetAllTargetName()           const { return "all"; }
-  const char* GetInstallTargetName()       const { return "install"; }
-  const char* GetInstallLocalTargetName()  const { return "install/local"; }
-  const char* GetInstallStripTargetName()  const { return "install/strip"; }
-  const char* GetPreinstallTargetName()    const { return "preinstall"; }
-  const char* GetTestTargetName()          const { return "test"; }
-  const char* GetPackageTargetName()       const { return "package"; }
-  const char* GetPackageSourceTargetName() const { return "package_source"; }
-  const char* GetEditCacheTargetName()     const { return "edit_cache"; }
-  const char* GetRebuildCacheTargetName()  const { return "rebuild_cache"; }
-  const char* GetCleanTargetName()         const { return "clean"; }
+  const char* GetAllTargetName() const override { return "all"; }
+  const char* GetInstallTargetName() const override { return "install"; }
+  const char* GetInstallLocalTargetName() const override
+  {
+    return "install/local";
+  }
+  const char* GetInstallStripTargetName() const override
+  {
+    return "install/strip";
+  }
+  const char* GetPreinstallTargetName() const override { return "preinstall"; }
+  const char* GetTestTargetName() const override { return "test"; }
+  const char* GetPackageTargetName() const override { return "package"; }
+  const char* GetPackageSourceTargetName() const override
+  {
+    return "package_source";
+  }
+  const char* GetRebuildCacheTargetName() const override
+  {
+    return "rebuild_cache";
+  }
+  const char* GetCleanTargetName() const override { return "clean"; }
 
-  virtual bool CheckALLOW_DUPLICATE_CUSTOM_TARGETS() const { return true; }
+  bool CheckALLOW_DUPLICATE_CUSTOM_TARGETS() const override { return true; }
+
+  // Specify if the make tool is able to consume dependency files
+  // generated by the compiler
+  bool ToolSupportsCompilerDependencies = true;
+
+  // some Make generator, such as Borland not support long line dependencies,
+  // we add SupportsLongLineDependencies to predicate.
+  bool ToolSupportsLongLineDependencies = true;
 
   // Some make programs (Borland) do not keep a rule if there are no
   // dependencies or commands.  This is a problem for creating rules
@@ -178,27 +261,27 @@ protected:
   // Store per-target progress counters.
   struct TargetProgress
   {
-    TargetProgress(): NumberOfActions(0) {}
-    unsigned long NumberOfActions;
+    unsigned long NumberOfActions = 0;
     std::string VariableFile;
     std::vector<unsigned long> Marks;
     void WriteProgressVariables(unsigned long total, unsigned long& current);
   };
-  struct ProgressMapCompare { bool operator()(cmTarget const*,
-                                              cmTarget const*) const; };
-  typedef std::map<cmTarget const*, TargetProgress,
-                   ProgressMapCompare> ProgressMapType;
+  using ProgressMapType = std::map<cmGeneratorTarget const*, TargetProgress,
+                                   cmGeneratorTarget::StrictTargetComparison>;
   ProgressMapType ProgressMap;
 
-  size_t CountProgressMarksInTarget(cmTarget const* target,
-                                    std::set<cmTarget const*>& emitted);
-  size_t CountProgressMarksInAll(cmLocalUnixMakefileGenerator3* lg);
+  size_t CountProgressMarksInTarget(
+    cmGeneratorTarget const* target,
+    std::set<cmGeneratorTarget const*>& emitted);
+  size_t CountProgressMarksInAll(const cmLocalGenerator& lg);
 
-  cmGeneratedFileStream *CommandDatabase;
+  std::unique_ptr<cmGeneratedFileStream> CommandDatabase;
+
 private:
-  virtual const char* GetBuildIgnoreErrorsFlag() const { return "-i"; }
-  virtual std::string GetEditCacheCommand() const;
-  virtual void ComputeTargetObjects(cmGeneratorTarget* gt) const;
-};
+  const char* GetBuildIgnoreErrorsFlag() const override { return "-i"; }
 
-#endif
+  std::map<cmStateSnapshot, std::set<cmGeneratorTarget const*>,
+           cmStateSnapshot::StrictWeakOrder>
+    DirectoryTargetsMap;
+  void InitializeProgressMarks() override;
+};

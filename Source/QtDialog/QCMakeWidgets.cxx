@@ -1,41 +1,42 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
-
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
+#define QT_DEPRECATED_WARNINGS_SINCE QT_VERSION_CHECK(5, 14, 0)
 
 #include "QCMakeWidgets.h"
 
-#include <QDirModel>
-#include <QFileInfo>
-#include <QFileDialog>
-#include <QToolButton>
-#include <QResizeEvent>
+#include <utility>
 
-QCMakeFileEditor::QCMakeFileEditor(QWidget* p, const QString& var)
-  : QLineEdit(p), Variable(var)
+#include <QFileDialog>
+#include <QFileInfo>
+#include <QResizeEvent>
+#include <QToolButton>
+
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+#  include <QFileSystemModel>
+#else
+#  include <QDirModel>
+#endif
+
+QCMakeFileEditor::QCMakeFileEditor(QWidget* p, QString var)
+  : QLineEdit(p)
+  , Variable(std::move(var))
 {
   this->ToolButton = new QToolButton(this);
   this->ToolButton->setText("...");
   this->ToolButton->setCursor(QCursor(Qt::ArrowCursor));
-  QObject::connect(this->ToolButton, SIGNAL(clicked(bool)),
-                   this, SLOT(chooseFile()));
+  QObject::connect(this->ToolButton, &QAbstractButton::clicked, this,
+                   &QCMakeFileEditor::chooseFile);
 }
 
 QCMakeFilePathEditor::QCMakeFilePathEditor(QWidget* p, const QString& var)
- : QCMakeFileEditor(p, var)
+  : QCMakeFileEditor(p, var)
 {
   this->setCompleter(new QCMakeFileCompleter(this, false));
 }
 
 QCMakePathEditor::QCMakePathEditor(QWidget* p, const QString& var)
- : QCMakeFileEditor(p, var)
+  : QCMakeFileEditor(p, var)
 {
   this->setCompleter(new QCMakeFileCompleter(this, true));
 }
@@ -57,23 +58,21 @@ void QCMakeFilePathEditor::chooseFile()
   QString path;
   QFileInfo info(this->text());
   QString title;
-  if(this->Variable.isEmpty())
-    {
+  if (this->Variable.isEmpty()) {
     title = tr("Select File");
-    }
-  else
-    {
+  } else {
     title = tr("Select File for %1");
     title = title.arg(this->Variable);
-    }
-  this->fileDialogExists(true);
-  path = QFileDialog::getOpenFileName(this, title, info.absolutePath());
-  this->fileDialogExists(false);
+  }
+  emit this->fileDialogExists(true);
+  path =
+    QFileDialog::getOpenFileName(this, title, info.absolutePath(), QString(),
+                                 nullptr, QFileDialog::DontResolveSymlinks);
+  emit this->fileDialogExists(false);
 
-  if(!path.isEmpty())
-    {
+  if (!path.isEmpty()) {
     this->setText(QDir::fromNativeSeparators(path));
-    }
+  }
 }
 
 void QCMakePathEditor::chooseFile()
@@ -81,54 +80,78 @@ void QCMakePathEditor::chooseFile()
   // choose a file and set it
   QString path;
   QString title;
-  if(this->Variable.isEmpty())
-    {
+  if (this->Variable.isEmpty()) {
     title = tr("Select Path");
-    }
-  else
-    {
+  } else {
     title = tr("Select Path for %1");
     title = title.arg(this->Variable);
-    }
-  this->fileDialogExists(true);
-  path = QFileDialog::getExistingDirectory(this, title, this->text());
-  this->fileDialogExists(false);
-  if(!path.isEmpty())
-    {
+  }
+  emit this->fileDialogExists(true);
+  path = QFileDialog::getExistingDirectory(this, title, this->text(),
+                                           QFileDialog::ShowDirsOnly |
+                                             QFileDialog::DontResolveSymlinks);
+  emit this->fileDialogExists(false);
+  if (!path.isEmpty()) {
     this->setText(QDir::fromNativeSeparators(path));
-    }
+  }
 }
 
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+// use same QFileSystemModel for all completers
+static QFileSystemModel* fileDirModel()
+
+{
+  static QFileSystemModel* m = nullptr;
+  if (!m) {
+    m = new QFileSystemModel();
+  }
+  return m;
+}
+static QFileSystemModel* pathDirModel()
+{
+  static QFileSystemModel* m = nullptr;
+  if (!m) {
+    m = new QFileSystemModel();
+    m->setFilter(QDir::AllDirs | QDir::Drives | QDir::NoDotAndDotDot);
+  }
+  return m;
+}
+#else
 // use same QDirModel for all completers
 static QDirModel* fileDirModel()
+
 {
-  static QDirModel* m = NULL;
-  if(!m)
-    {
+  static QDirModel* m = nullptr;
+  if (!m) {
     m = new QDirModel();
-    }
+  }
   return m;
 }
 static QDirModel* pathDirModel()
 {
-  static QDirModel* m = NULL;
-  if(!m)
-    {
+  static QDirModel* m = nullptr;
+  if (!m) {
     m = new QDirModel();
     m->setFilter(QDir::AllDirs | QDir::Drives | QDir::NoDotAndDotDot);
-    }
+  }
   return m;
 }
+#endif
 
 QCMakeFileCompleter::QCMakeFileCompleter(QObject* o, bool dirs)
   : QCompleter(o)
 {
+#if (QT_VERSION >= QT_VERSION_CHECK(6, 0, 0))
+  QFileSystemModel* m = dirs ? pathDirModel() : fileDirModel();
+  this->setModel(m);
+  m->setRootPath(QString());
+#else
   QDirModel* m = dirs ? pathDirModel() : fileDirModel();
   this->setModel(m);
+#endif
 }
 
 QString QCMakeFileCompleter::pathFromIndex(const QModelIndex& idx) const
 {
   return QDir::fromNativeSeparators(QCompleter::pathFromIndex(idx));
 }
-

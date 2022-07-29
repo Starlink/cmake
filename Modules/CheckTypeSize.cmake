@@ -1,121 +1,151 @@
-#.rst:
-# CheckTypeSize
-# -------------
-#
-# Check sizeof a type
-#
-# ::
-#
-#   CHECK_TYPE_SIZE(TYPE VARIABLE [BUILTIN_TYPES_ONLY]
-#                                 [LANGUAGE <language>])
-#
-# Check if the type exists and determine its size.  On return,
-# "HAVE_${VARIABLE}" holds the existence of the type, and "${VARIABLE}"
-# holds one of the following:
-#
-# ::
-#
-#    <size> = type has non-zero size <size>
-#    "0"    = type has arch-dependent size (see below)
-#    ""     = type does not exist
-#
-# Furthermore, the variable "${VARIABLE}_CODE" holds C preprocessor code
-# to define the macro "${VARIABLE}" to the size of the type, or leave
-# the macro undefined if the type does not exist.
-#
-# The variable "${VARIABLE}" may be "0" when CMAKE_OSX_ARCHITECTURES has
-# multiple architectures for building OS X universal binaries.  This
-# indicates that the type size varies across architectures.  In this
-# case "${VARIABLE}_CODE" contains C preprocessor tests mapping from
-# each architecture macro to the corresponding type size.  The list of
-# architecture macros is stored in "${VARIABLE}_KEYS", and the value for
-# each key is stored in "${VARIABLE}-${KEY}".
-#
-# If the BUILTIN_TYPES_ONLY option is not given, the macro checks for
-# headers <sys/types.h>, <stdint.h>, and <stddef.h>, and saves results
-# in HAVE_SYS_TYPES_H, HAVE_STDINT_H, and HAVE_STDDEF_H.  The type size
-# check automatically includes the available headers, thus supporting
-# checks of types defined in the headers.
-#
-# If LANGUAGE is set, the specified compiler will be used to perform the
-# check. Acceptable values are C and CXX
-#
-# Despite the name of the macro you may use it to check the size of more
-# complex expressions, too.  To check e.g.  for the size of a struct
-# member you can do something like this:
-#
-# ::
-#
-#   check_type_size("((struct something*)0)->member" SIZEOF_MEMBER)
-#
-#
-#
-# The following variables may be set before calling this macro to modify
-# the way the check is run:
-#
-# ::
-#
-#   CMAKE_REQUIRED_FLAGS = string of compile command line flags
-#   CMAKE_REQUIRED_DEFINITIONS = list of macros to define (-DFOO=bar)
-#   CMAKE_REQUIRED_INCLUDES = list of include directories
-#   CMAKE_REQUIRED_LIBRARIES = list of libraries to link
-#   CMAKE_EXTRA_INCLUDE_FILES = list of extra headers to include
+# Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+# file Copyright.txt or https://cmake.org/licensing for details.
 
-#=============================================================================
-# Copyright 2002-2009 Kitware, Inc.
-#
-# Distributed under the OSI-approved BSD License (the "License");
-# see accompanying file Copyright.txt for details.
-#
-# This software is distributed WITHOUT ANY WARRANTY; without even the
-# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the License for more information.
-#=============================================================================
-# (To distribute this file outside of CMake, substitute the full
-#  License text for the above reference.)
+#[=======================================================================[.rst:
+CheckTypeSize
+-------------
+
+Check sizeof a type
+
+.. command:: check_type_size
+
+  .. code-block:: cmake
+
+    check_type_size(<type> <variable> [BUILTIN_TYPES_ONLY]
+                                      [LANGUAGE <language>])
+
+  Check if the type exists and determine its size.  Results are reported
+  in the following variables:
+
+  ``HAVE_<variable>``
+    Holds a true or false value indicating whether the type exists.
+
+  ``<variable>``
+    Holds one of the following values:
+
+    ``<size>``
+       Type has non-zero size ``<size>``.
+
+    ``0``
+       Type has architecture-dependent size.  This may occur when
+       :variable:`CMAKE_OSX_ARCHITECTURES` has multiple architectures.
+       In this case ``<variable>_CODE`` contains C preprocessor tests
+       mapping from each architecture macro to the corresponding type size.
+       The list of architecture macros is stored in ``<variable>_KEYS``,
+       and the value for each key is stored in ``<variable>-<key>``.
+
+    "" (empty string)
+       Type does not exist.
+
+  ``<variable>_CODE``
+    Holds C preprocessor code to define the macro ``<variable>`` to the size
+    of the type, or to leave the macro undefined if the type does not exist.
+
+  The options are:
+
+  ``BUILTIN_TYPES_ONLY``
+
+    Support only compiler-builtin types.  If *not* given, the macro checks
+    for headers ``<sys/types.h>``, ``<stdint.h>``, and ``<stddef.h>``, and
+    saves results in ``HAVE_SYS_TYPES_H``, ``HAVE_STDINT_H``, and
+    ``HAVE_STDDEF_H``.  The type size check automatically includes the
+    available headers, thus supporting checks of types defined in the headers.
+
+  ``LANGUAGE <language>``
+    Use the ``<language>`` compiler to perform the check.
+    Acceptable values are ``C`` and ``CXX``.
+
+Despite the name of the macro you may use it to check the size of more
+complex expressions, too.  To check e.g.  for the size of a struct
+member you can do something like this:
+
+.. code-block:: cmake
+
+  check_type_size("((struct something*)0)->member" SIZEOF_MEMBER)
+
+
+The following variables may be set before calling this macro to modify
+the way the check is run:
+
+``CMAKE_REQUIRED_FLAGS``
+  string of compile command line flags.
+``CMAKE_REQUIRED_DEFINITIONS``
+  list of macros to define (-DFOO=bar).
+``CMAKE_REQUIRED_INCLUDES``
+  list of include directories.
+``CMAKE_REQUIRED_LINK_OPTIONS``
+  .. versionadded:: 3.14
+    list of options to pass to link command.
+``CMAKE_REQUIRED_LIBRARIES``
+  list of libraries to link.
+``CMAKE_REQUIRED_QUIET``
+  .. versionadded:: 3.1
+    execute quietly without messages.
+``CMAKE_EXTRA_INCLUDE_FILES``
+  list of extra headers to include.
+#]=======================================================================]
 
 include(CheckIncludeFile)
-
-cmake_policy(PUSH)
-cmake_minimum_required(VERSION 2.6 FATAL_ERROR)
+include(CheckIncludeFileCXX)
 
 get_filename_component(__check_type_size_dir "${CMAKE_CURRENT_LIST_FILE}" PATH)
+
+include_guard(GLOBAL)
+
+cmake_policy(PUSH)
+cmake_policy(SET CMP0054 NEW)
 
 #-----------------------------------------------------------------------------
 # Helper function.  DO NOT CALL DIRECTLY.
 function(__check_type_size_impl type var map builtin language)
-  message(STATUS "Check size of ${type}")
-
-  # Include header files.
-  set(headers)
-  if(builtin)
-    if(HAVE_SYS_TYPES_H)
-      set(headers "${headers}#include <sys/types.h>\n")
-    endif()
-    if(HAVE_STDINT_H)
-      set(headers "${headers}#include <stdint.h>\n")
-    endif()
-    if(HAVE_STDDEF_H)
-      set(headers "${headers}#include <stddef.h>\n")
-    endif()
+  if(NOT CMAKE_REQUIRED_QUIET)
+    message(CHECK_START "Check size of ${type}")
   endif()
-  foreach(h ${CMAKE_EXTRA_INCLUDE_FILES})
-    set(headers "${headers}#include \"${h}\"\n")
-  endforeach()
 
-  # Perform the check.
-
-  if("${language}" STREQUAL "C")
+  # Perform language check
+  if(language STREQUAL "C")
     set(src ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CheckTypeSize/${var}.c)
-  elseif("${language}" STREQUAL "CXX")
+  elseif(language STREQUAL "CXX")
     set(src ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CheckTypeSize/${var}.cpp)
   else()
     message(FATAL_ERROR "Unknown language:\n  ${language}\nSupported languages: C, CXX.\n")
   endif()
+
+  # Include header files.
+  set(headers)
+  if(builtin)
+    if(language STREQUAL "CXX" AND type MATCHES "^std::")
+      if(HAVE_SYS_TYPES_H)
+        string(APPEND headers "#include <sys/types.h>\n")
+      endif()
+      if(HAVE_CSTDINT)
+        string(APPEND headers "#include <cstdint>\n")
+      endif()
+      if(HAVE_CSTDDEF)
+        string(APPEND headers "#include <cstddef>\n")
+      endif()
+    else()
+      if(HAVE_SYS_TYPES_H)
+        string(APPEND headers "#include <sys/types.h>\n")
+      endif()
+      if(HAVE_STDINT_H)
+        string(APPEND headers "#include <stdint.h>\n")
+      endif()
+      if(HAVE_STDDEF_H)
+        string(APPEND headers "#include <stddef.h>\n")
+      endif()
+    endif()
+  endif()
+  foreach(h ${CMAKE_EXTRA_INCLUDE_FILES})
+    string(APPEND headers "#include \"${h}\"\n")
+  endforeach()
+
+  # Perform the check.
   set(bin ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CheckTypeSize/${var}.bin)
   configure_file(${__check_type_size_dir}/CheckTypeSize.c.in ${src} @ONLY)
   try_compile(HAVE_${var} ${CMAKE_BINARY_DIR} ${src}
     COMPILE_DEFINITIONS ${CMAKE_REQUIRED_DEFINITIONS}
+    LINK_OPTIONS ${CMAKE_REQUIRED_LINK_OPTIONS}
     LINK_LIBRARIES ${CMAKE_REQUIRED_LIBRARIES}
     CMAKE_FLAGS
       "-DCOMPILE_DEFINITIONS:STRING=${CMAKE_REQUIRED_FLAGS}"
@@ -138,7 +168,7 @@ function(__check_type_size_impl type var map builtin language)
     foreach(info ${strings})
       if("${info}" MATCHES "${regex_size}")
         # Get the type size.
-        string(REGEX REPLACE "${regex_size}" "\\1" size "${info}")
+        set(size "${CMAKE_MATCH_1}")
         if(first)
           set(${var} ${size})
         elseif(NOT "${size}" STREQUAL "${${var}}")
@@ -150,7 +180,7 @@ function(__check_type_size_impl type var map builtin language)
         string(REGEX MATCH   "${regex_key}"       key "${info}")
         string(REGEX REPLACE "${regex_key}" "\\1" key "${key}")
         if(key)
-          set(code "${code}\nset(${var}-${key} \"${size}\")")
+          string(APPEND code "\nset(${var}-${key} \"${size}\")")
           list(APPEND keys ${key})
         endif()
       endif()
@@ -168,13 +198,17 @@ function(__check_type_size_impl type var map builtin language)
       message(SEND_ERROR "CHECK_TYPE_SIZE found different results, consider setting CMAKE_OSX_ARCHITECTURES or CMAKE_TRY_COMPILE_OSX_ARCHITECTURES to one or no architecture !")
     endif()
 
-    message(STATUS "Check size of ${type} - done")
+    if(NOT CMAKE_REQUIRED_QUIET)
+      message(CHECK_PASS "done")
+    endif()
     file(APPEND ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeOutput.log
       "Determining size of ${type} passed with the following output:\n${output}\n\n")
     set(${var} "${${var}}" CACHE INTERNAL "CHECK_TYPE_SIZE: sizeof(${type})")
   else()
     # The check failed to compile.
-    message(STATUS "Check size of ${type} - failed")
+    if(NOT CMAKE_REQUIRED_QUIET)
+      message(CHECK_FAIL "failed")
+    endif()
     file(READ ${src} content)
     file(APPEND ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeError.log
       "Determining size of ${type} failed with the following output:\n${output}\n${src}:\n${content}\n\n")
@@ -218,9 +252,20 @@ macro(CHECK_TYPE_SIZE TYPE VARIABLE)
     set(_builtin 0)
   else()
     set(_builtin 1)
-    check_include_file(sys/types.h HAVE_SYS_TYPES_H)
-    check_include_file(stdint.h HAVE_STDINT_H)
-    check_include_file(stddef.h HAVE_STDDEF_H)
+    if(_language STREQUAL "C")
+      check_include_file(sys/types.h HAVE_SYS_TYPES_H)
+      check_include_file(stdint.h HAVE_STDINT_H)
+      check_include_file(stddef.h HAVE_STDDEF_H)
+    elseif(_language STREQUAL "CXX")
+      check_include_file_cxx(sys/types.h HAVE_SYS_TYPES_H)
+      if("${TYPE}" MATCHES "^std::")
+        check_include_file_cxx(cstdint HAVE_CSTDINT)
+        check_include_file_cxx(cstddef HAVE_CSTDDEF)
+      else()
+        check_include_file_cxx(stdint.h HAVE_STDINT_H)
+        check_include_file_cxx(stddef.h HAVE_STDDEF_H)
+      endif()
+    endif()
   endif()
   unset(_CHECK_TYPE_SIZE_BUILTIN_TYPES_ONLY)
   unset(_CHECK_TYPE_SIZE_LANGUAGE)
@@ -240,10 +285,10 @@ macro(CHECK_TYPE_SIZE TYPE VARIABLE)
     set(${VARIABLE}_CODE)
     set(_if if)
     foreach(key ${${VARIABLE}_KEYS})
-      set(${VARIABLE}_CODE "${${VARIABLE}_CODE}#${_if} defined(${key})\n# define ${VARIABLE} ${${VARIABLE}-${key}}\n")
+      string(APPEND ${VARIABLE}_CODE "#${_if} defined(${key})\n# define ${VARIABLE} ${${VARIABLE}-${key}}\n")
       set(_if elif)
     endforeach()
-    set(${VARIABLE}_CODE "${${VARIABLE}_CODE}#else\n# error ${VARIABLE} unknown\n#endif")
+    string(APPEND ${VARIABLE}_CODE "#else\n# error ${VARIABLE} unknown\n#endif")
     set(_if)
   elseif(${VARIABLE})
     set(${VARIABLE}_CODE "#define ${VARIABLE} ${${VARIABLE}}")
