@@ -1,26 +1,29 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
-
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
-
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmCursesPathWidget.h"
 
+#include <vector>
+
+#include "cmCursesColor.h"
 #include "cmCursesMainForm.h"
+#include "cmCursesStringWidget.h"
+#include "cmStateTypes.h"
 #include "cmSystemTools.h"
 
-cmCursesPathWidget::cmCursesPathWidget(int width, int height,
-                                           int left, int top) :
-  cmCursesStringWidget(width, height, left, top)
+cmCursesPathWidget::cmCursesPathWidget(int width, int height, int left,
+                                       int top)
+  : cmCursesStringWidget(width, height, left, top)
 {
-  this->Type = cmCacheManager::PATH;
+  this->Type = cmStateEnums::PATH;
   this->Cycle = false;
   this->CurrentIndex = 0;
+  if (cmCursesColor::HasColors()) {
+    set_field_fore(this->Field, COLOR_PAIR(cmCursesColor::Path));
+    set_field_back(this->Field, COLOR_PAIR(cmCursesColor::Path));
+  } else {
+    set_field_fore(this->Field, A_NORMAL);
+    set_field_back(this->Field, A_STANDOUT);
+  }
 }
 
 void cmCursesPathWidget::OnType(int& key, cmCursesMainForm* fm, WINDOW* w)
@@ -33,59 +36,51 @@ void cmCursesPathWidget::OnType(int& key, cmCursesMainForm* fm, WINDOW* w)
 
 void cmCursesPathWidget::OnTab(cmCursesMainForm* fm, WINDOW* w)
 {
-  if ( !this->GetString() )
-    {
+  if (!this->GetString()) {
     return;
-    }
+  }
   FORM* form = fm->GetForm();
   form_driver(form, REQ_NEXT_FIELD);
   form_driver(form, REQ_PREV_FIELD);
   std::string cstr = this->GetString();
-  cstr = cstr.substr(0, cstr.find_last_not_of(" \t\n\r")+1);
-  if ( this->LastString != cstr )
-    {
+  cstr = cstr.substr(0, cstr.find_last_not_of(" \t\n\r") + 1);
+  if (this->LastString != cstr) {
     this->Cycle = false;
     this->CurrentIndex = 0;
     this->LastGlob = "";
-    }
+  }
   std::string glob;
-  if ( this->Cycle )
-    {
+  if (this->Cycle) {
     glob = this->LastGlob;
-    }
-  else
-    {
+  } else {
     glob = cstr + "*";
-    }
-  std::vector<cmStdString> dirs;
+  }
+  std::vector<std::string> dirs;
 
-  cmSystemTools::SimpleGlob(glob.c_str(), dirs, (this->Type == cmCacheManager::PATH?-1:0));
-  if ( this->CurrentIndex < dirs.size() )
-    {
+  cmSystemTools::SimpleGlob(glob, dirs,
+                            (this->Type == cmStateEnums::PATH ? -1 : 0));
+  if (this->CurrentIndex < dirs.size()) {
     cstr = dirs[this->CurrentIndex];
-    }
-  if ( cstr[cstr.size()-1] == '*' )
-    {
-    cstr = cstr.substr(0, cstr.size()-1);
-    }
+  }
+  if (cstr[cstr.size() - 1] == '*') {
+    cstr = cstr.substr(0, cstr.size() - 1);
+  }
 
-  if ( cmSystemTools::FileIsDirectory(cstr.c_str()) )
-    {
+  if (cmSystemTools::FileIsDirectory(cstr)) {
     cstr += "/";
-    }
+  }
 
-  this->SetString(cstr.c_str());
+  this->SetString(cstr);
   touchwin(w);
   wrefresh(w);
   form_driver(form, REQ_END_FIELD);
   this->LastGlob = glob;
   this->LastString = cstr;
   this->Cycle = true;
-  this->CurrentIndex ++;
-  if ( this->CurrentIndex >= dirs.size() )
-    {
+  this->CurrentIndex++;
+  if (this->CurrentIndex >= dirs.size()) {
     this->CurrentIndex = 0;
-    }
+  }
 }
 
 void cmCursesPathWidget::OnReturn(cmCursesMainForm* fm, WINDOW* w)

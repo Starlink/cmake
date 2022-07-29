@@ -4,7 +4,7 @@
 # application (mylibapp). We create a binary installer that allows
 # users to select which pieces will be installed: the example
 # application, the library binaries, and/or the header file.
-cmake_minimum_required(VERSION 2.6)
+cmake_minimum_required(VERSION 2.8.12)
 project(CPackComponents)
 
 # Create the mylib library
@@ -72,14 +72,14 @@ set(CPACK_PACKAGE_INSTALL_DIRECTORY "CPack Component Example")
 set(CPACK_NSIS_MENU_LINKS
   "ftp://ftpserver" "Test Ftp Link"
   "ftps://ftpsserver" "Test Ftps Link"
-  "http://www.cmake.org" "CMake Web Site"
+  "https://cmake.org" "CMake Web Site"
   "https://github.com/" "Test Https Link"
   "mailto:kitware@kitware.com" "Test MailTo Link"
   "news://newsserver" "Test News Link"
   )
 
 # Suggested default root for end users of the installer:
-set(CPACK_NSIS_INSTALL_ROOT "C:\\Program Files\\CMake Tests Install Root")
+set(CPACK_NSIS_INSTALL_ROOT "C:/Program Files/CMake Tests Install Root")
 
 # Include CPack to introduce the appropriate targets
 include(CPack)

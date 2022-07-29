@@ -14,7 +14,7 @@ include(CheckCXXSourceCompiles)
 include(CheckIncludeFile)
 
 # Note: The designable form is assumed to have a .h extension as is default in Visual Studio.
-# Node: The designable form is assumed to have a .resx file with the same name and path (save extension) as is default in Visual Studio
+# Note: The designable form is assumed to have a .resx file with the same name and path (save extension) as is default in Visual Studio
 
 set(TARGET_H
   WindowsFormsResx/MyForm.h
@@ -33,6 +33,12 @@ set(TARGET_RESX
 
 set(TARGET_LIBRARIES ${SYSLIBS})
 add_executable(${PROJECT_NAME} ${TARGET_SRC} ${TARGET_H} ${TARGET_RESX})
+if(NOT CMAKE_GENERATOR MATCHES "Visual Studio 1[0-6]")
+  # VS 17 2022 and above require a global mark on managed assemblies.
+  # CMake adds this automatically when using COMMON_LANGUAGE_RUNTIME,
+  # but this test covers direct use of /clr.
+  set_property(TARGET ${PROJECT_NAME} PROPERTY VS_GLOBAL_ManagedAssembly "true")
+endif()
 
 # Note: The property VS_GLOBAL_KEYWORD must be set.
 set_property(TARGET ${PROJECT_NAME} PROPERTY VS_GLOBAL_KEYWORD "ManagedCProj")

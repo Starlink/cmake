@@ -1,53 +1,46 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmDependsJavaParserHelper_h
-#define cmDependsJavaParserHelper_h
-
-#include "cmStandardIncludes.h"
-
-#define YYSTYPE cmDependsJavaParserHelper::ParserType
-#define YYSTYPE_IS_DECLARED
-#define YY_EXTRA_TYPE cmDependsJavaParserHelper*
-#define YY_DECL int cmDependsJava_yylex(YYSTYPE* yylvalp, yyscan_t yyscanner)
+#include <memory>
+#include <string>
+#include <vector>
 
 /** \class cmDependsJavaParserHelper
  * \brief Helper class for parsing java source files
  *
  * Finds dependencies for java file and list of outputs
  */
-
 class cmDependsJavaParserHelper
 {
 public:
-  typedef struct {
+  struct ParserType
+  {
     char* str;
-  } ParserType;
+  };
 
   cmDependsJavaParserHelper();
   ~cmDependsJavaParserHelper();
+
+  cmDependsJavaParserHelper(const cmDependsJavaParserHelper&) = delete;
+  cmDependsJavaParserHelper& operator=(const cmDependsJavaParserHelper&) =
+    delete;
 
   int ParseString(const char* str, int verb);
   int ParseFile(const char* file);
 
   // For the lexer:
   void AllocateParserType(cmDependsJavaParserHelper::ParserType* pt,
-    const char* str, int len = 0);
+                          const char* str, int len = 0);
 
   int LexInput(char* buf, int maxlen);
   void Error(const char* str);
 
   // For yacc
   void AddClassFound(const char* sclass);
-  void PrepareElement(ParserType* opt);
+  void PrepareElement(ParserType* me);
   void DeallocateParserType(char** pt);
   void CheckEmpty(int line, int cnt, ParserType* pt);
   void StartClass(const char* cls);
@@ -59,50 +52,26 @@ public:
   const char* GetCurrentCombine() { return this->CurrentCombine.c_str(); }
   void UpdateCombine(const char* str1, const char* str2);
 
-  std::vector<cmStdString>& GetClassesFound() { return this->ClassesFound; }
+  std::vector<std::string>& GetClassesFound() { return this->ClassesFound; }
 
-  std::vector<cmStdString> GetFilesProduced();
+  std::vector<std::string> GetFilesProduced();
 
 private:
   class CurrentClass
   {
   public:
-    cmStdString Name;
-    std::vector<CurrentClass>* NestedClasses;
-    CurrentClass()
-      {
-        this->NestedClasses = new std::vector<CurrentClass>;
-      }
-    ~CurrentClass()
-      {
-        delete this->NestedClasses;
-      }
-    CurrentClass& operator=(CurrentClass const& c)
-      {
-        this->NestedClasses->clear();
-        this->Name = c.Name;
-        std::copy(
-          c.NestedClasses->begin(),
-          c.NestedClasses->end(),
-          std::back_inserter(
-            *this->NestedClasses)
-          );
-        return *this;
-      }
-    CurrentClass(CurrentClass const& c)
-      {
-        (*this) = c;
-      }
-    void AddFileNamesForPrinting(std::vector<cmStdString> *files,
-                                 const char* prefix, const char* sep);
+    std::string Name;
+    std::vector<CurrentClass> NestedClasses;
+    void AddFileNamesForPrinting(std::vector<std::string>* files,
+                                 const char* prefix, const char* sep) const;
   };
-  cmStdString CurrentPackage;
-  cmStdString::size_type InputBufferPos;
-  cmStdString InputBuffer;
+  std::string CurrentPackage;
+  std::string::size_type InputBufferPos;
+  std::string InputBuffer;
   std::vector<char> OutputBuffer;
-  std::vector<cmStdString> ClassesFound;
-  std::vector<cmStdString> PackagesImport;
-  cmStdString CurrentCombine;
+  std::vector<std::string> ClassesFound;
+  std::vector<std::string> PackagesImport;
+  std::string CurrentCombine;
 
   std::vector<CurrentClass> ClassStack;
 
@@ -112,17 +81,18 @@ private:
   int CurrentDepth;
   int Verbose;
 
-  std::vector<char*> Allocates;
+  std::vector<std::unique_ptr<char[]>> Allocates;
 
   void PrintClasses();
 
-  void Print(const char* place, const char* str);
-  void CombineUnions(char** out, const char* in1, char** in2,
-                     const char* sep);
+  void Print(const char* place, const char* str) const;
+  void CombineUnions(char** out, const char* in1, char** in2, const char* sep);
   void SafePrintMissing(const char* str, int line, int cnt);
 
   void CleanupParser();
 };
 
-#endif
-
+#define YYSTYPE cmDependsJavaParserHelper::ParserType
+#define YYSTYPE_IS_DECLARED
+#define YY_EXTRA_TYPE cmDependsJavaParserHelper*
+#define YY_DECL int cmDependsJava_yylex(YYSTYPE* yylvalp, yyscan_t yyscanner)

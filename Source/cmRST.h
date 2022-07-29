@@ -1,20 +1,16 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2013 Kitware, Inc., Insight Software Consortium
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef _cmRST_h
-#define _cmRST_h
+#include <iosfwd>
+#include <map>
+#include <set>
+#include <string>
+#include <vector>
 
-#include "cmStandardIncludes.h"
-
-#include <cmsys/RegularExpression.hxx>
+#include "cmsys/RegularExpression.hxx"
 
 /** \class cmRST
  * \brief Perform basic .rst processing for command-line help
@@ -29,8 +25,9 @@
 class cmRST
 {
 public:
-  cmRST(std::ostream& os, std::string const& docroot);
+  cmRST(std::ostream& os, std::string docroot);
   bool ProcessFile(std::string const& fname, bool isModule = false);
+
 private:
   enum IncludeType
   {
@@ -86,15 +83,17 @@ private:
   cmsys::RegularExpression TocTreeDirective;
   cmsys::RegularExpression ProductionListDirective;
   cmsys::RegularExpression NoteDirective;
+  cmsys::RegularExpression VersionDirective;
   cmsys::RegularExpression ModuleRST;
   cmsys::RegularExpression CMakeRole;
+  cmsys::RegularExpression InlineLink;
+  cmsys::RegularExpression InlineLiteral;
   cmsys::RegularExpression Substitution;
+  cmsys::RegularExpression TocTreeLink;
 
   std::vector<std::string> MarkupLines;
   std::string DocDir;
-  std::map<cmStdString, cmStdString> Replace;
-  std::set<cmStdString> Replaced;
+  std::map<std::string, std::string> Replace;
+  std::set<std::string> Replaced;
   std::string ReplaceName;
 };
-
-#endif

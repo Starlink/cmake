@@ -1,38 +1,35 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc.
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmCTestGIT_h
-#define cmCTestGIT_h
+#include <iosfwd>
+#include <string>
 
 #include "cmCTestGlobalVC.h"
+
+class cmCTest;
 
 /** \class cmCTestGIT
  * \brief Interaction with git command-line tool
  *
  */
-class cmCTestGIT: public cmCTestGlobalVC
+class cmCTestGIT : public cmCTestGlobalVC
 {
 public:
   /** Construct with a CTest instance and update log stream.  */
   cmCTestGIT(cmCTest* ctest, std::ostream& log);
 
-  virtual ~cmCTestGIT();
+  ~cmCTestGIT() override;
 
 private:
   unsigned int CurrentGitVersion;
   unsigned int GetGitVersion();
   std::string GetWorkingRevision();
-  virtual void NoteOldRevision();
-  virtual void NoteNewRevision();
-  virtual bool UpdateImpl();
+  bool NoteOldRevision() override;
+  bool NoteNewRevision() override;
+  bool UpdateImpl() override;
 
   std::string FindGitDir();
   std::string FindTopDir();
@@ -41,17 +38,17 @@ private:
   bool UpdateByCustom(std::string const& custom);
   bool UpdateInternal();
 
-  void LoadRevisions();
-  void LoadModifications();
+  bool LoadRevisions() override;
+  bool LoadModifications() override;
 
-public: // needed by older Sun compilers
+  // "public" needed by older Sun compilers
+public:
   // Parsing helper classes.
-  class OneLineParser;
-  class DiffParser;
   class CommitParser;
-  friend class OneLineParser;
-  friend class DiffParser;
-  friend class CommitParser;
-};
+  class DiffParser;
+  class OneLineParser;
 
-#endif
+  friend class CommitParser;
+  friend class DiffParser;
+  friend class OneLineParser;
+};

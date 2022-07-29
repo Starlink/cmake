@@ -1,19 +1,21 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
-
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmGlobalVisualStudio71Generator_h
-#define cmGlobalVisualStudio71Generator_h
+#include <iosfwd>
+#include <set>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "cmGlobalVisualStudio7Generator.h"
+#include "cmValue.h"
 
+class cmGeneratorTarget;
+class cmLocalGenerator;
+class cmake;
+template <typename T>
+class BT;
 
 /** \class cmGlobalVisualStudio71Generator
  * \brief Write a Unix makefiles.
@@ -23,58 +25,32 @@
 class cmGlobalVisualStudio71Generator : public cmGlobalVisualStudio7Generator
 {
 public:
-  cmGlobalVisualStudio71Generator(const char* platformName = NULL);
-  static cmGlobalGeneratorFactory* NewFactory() {
-    return new cmGlobalGeneratorSimpleFactory
-      <cmGlobalVisualStudio71Generator>(); }
-
-  ///! Get the name for the generator.
-  virtual const char* GetName() const {
-    return cmGlobalVisualStudio71Generator::GetActualName();}
-  static const char* GetActualName() {return "Visual Studio 7 .NET 2003";}
-
-  /** Get the documentation entry for this generator.  */
-  static void GetDocumentation(cmDocumentationEntry& entry);
-
-  ///! Create a local generator appropriate to this Global Generator
-  virtual cmLocalGenerator *CreateLocalGenerator();
-
-  /**
-   * Where does this version of Visual Studio look for macros for the
-   * current user? Returns the empty string if this version of Visual
-   * Studio does not implement support for VB macros.
-   */
-  virtual std::string GetUserMacrosDirectory();
-
-  /**
-   * What is the reg key path to "vsmacros" for this version of Visual
-   * Studio?
-   */
-  virtual std::string GetUserMacrosRegKeyBase();
+  cmGlobalVisualStudio71Generator(cmake* cm,
+                                  const std::string& platformName = "");
 
 protected:
-  virtual const char* GetIDEVersion() { return "7.1"; }
-  virtual void WriteSLNFile(std::ostream& fout,
-                            cmLocalGenerator* root,
-                            std::vector<cmLocalGenerator*>& generators);
-  virtual void WriteSolutionConfigurations(std::ostream& fout);
-  virtual void WriteProject(std::ostream& fout,
-                            const char* name, const char* path,
-                            cmTarget const& t);
-  virtual void WriteProjectDepends(std::ostream& fout,
-                           const char* name, const char* path,
-                           cmTarget const& t);
-  virtual void WriteProjectConfigurations(
-    std::ostream& fout, const char* name, cmTarget::TargetType type,
+  void WriteSLNFile(std::ostream& fout, cmLocalGenerator* root,
+                    std::vector<cmLocalGenerator*>& generators) override;
+  virtual void WriteSolutionConfigurations(
+    std::ostream& fout, std::vector<std::string> const& configs);
+  void WriteProject(std::ostream& fout, const std::string& name,
+                    const std::string& path,
+                    const cmGeneratorTarget* t) override;
+  void WriteProjectDepends(std::ostream& fout, const std::string& name,
+                           const std::string& path,
+                           cmGeneratorTarget const* t) override;
+  void WriteProjectConfigurations(
+    std::ostream& fout, const std::string& name,
+    cmGeneratorTarget const& target, std::vector<std::string> const& configs,
     const std::set<std::string>& configsPartOfDefaultBuild,
-    const char* platformMapping = NULL);
-  virtual void WriteExternalProject(std::ostream& fout,
-                                    const char* name,
-                                    const char* path,
-                                    const char* typeGuid,
-                                    const std::set<cmStdString>& depends);
-  virtual void WriteSLNHeader(std::ostream& fout);
+    const std::string& platformMapping = "") override;
+  void WriteExternalProject(
+    std::ostream& fout, const std::string& name, const std::string& path,
+    cmValue typeGuid,
+    const std::set<BT<std::pair<std::string, bool>>>& depends) override;
+
+  // Folders are not supported by VS 7.1.
+  bool UseFolderProperty() const override { return false; }
 
   std::string ProjectConfigurationSectionName;
 };
-#endif

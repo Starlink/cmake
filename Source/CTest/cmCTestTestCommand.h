@@ -1,18 +1,19 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmCTestTestCommand_h
-#define cmCTestTestCommand_h
+#include <string>
+#include <utility>
+
+#include <cm/memory>
 
 #include "cmCTestHandlerCommand.h"
+#include "cmCommand.h"
+
+class cmCTestGenericHandler;
+class cmCTestTestHandler;
 
 /** \class cmCTestTest
  * \brief Run a ctest script
@@ -22,47 +23,43 @@
 class cmCTestTestCommand : public cmCTestHandlerCommand
 {
 public:
-
-  cmCTestTestCommand();
-
   /**
    * This is a virtual constructor for the command.
    */
-  virtual cmCommand* Clone()
-    {
-    cmCTestTestCommand* ni = new cmCTestTestCommand;
+  std::unique_ptr<cmCommand> Clone() override
+  {
+    auto ni = cm::make_unique<cmCTestTestCommand>();
     ni->CTest = this->CTest;
     ni->CTestScriptHandler = this->CTestScriptHandler;
-    return ni;
-    }
+    return std::unique_ptr<cmCommand>(std::move(ni));
+  }
 
   /**
    * The name of the command as specified in CMakeList.txt.
    */
-  virtual const char* GetName() const { return "ctest_test";}
-
-  cmTypeMacro(cmCTestTestCommand, cmCTestHandlerCommand);
+  std::string GetName() const override { return "ctest_test"; }
 
 protected:
-  virtual cmCTestGenericHandler* InitializeActualHandler();
-  cmCTestGenericHandler* InitializeHandler();
+  void BindArguments() override;
+  virtual cmCTestTestHandler* InitializeActualHandler();
+  cmCTestGenericHandler* InitializeHandler() override;
 
-  enum {
-    ctt_BUILD = ct_LAST,
-    ctt_RETURN_VALUE,
-    ctt_START,
-    ctt_END,
-    ctt_STRIDE,
-    ctt_EXCLUDE,
-    ctt_INCLUDE,
-    ctt_EXCLUDE_LABEL,
-    ctt_INCLUDE_LABEL,
-    ctt_PARALLEL_LEVEL,
-    ctt_SCHEDULE_RANDOM,
-    ctt_STOP_TIME,
-    ctt_LAST
-  };
+  std::string Start;
+  std::string End;
+  std::string Stride;
+  std::string Exclude;
+  std::string Include;
+  std::string ExcludeLabel;
+  std::string IncludeLabel;
+  std::string ExcludeFixture;
+  std::string ExcludeFixtureSetup;
+  std::string ExcludeFixtureCleanup;
+  std::string ParallelLevel;
+  std::string Repeat;
+  std::string ScheduleRandom;
+  std::string StopTime;
+  std::string TestLoad;
+  std::string ResourceSpecFile;
+  std::string OutputJUnit;
+  bool StopOnFailure = false;
 };
-
-
-#endif

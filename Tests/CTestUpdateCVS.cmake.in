@@ -4,7 +4,7 @@
 #-----------------------------------------------------------------------------
 # Test in a directory next to this script.
 get_filename_component(TOP "${CMAKE_CURRENT_LIST_FILE}" PATH)
-set(TOP "${TOP}/@CTestUpdateCVS_DIR@")
+string(APPEND TOP "/@CTestUpdateCVS_DIR@")
 set(UPDATE_NOT_GLOBAL 1)
 set(UPDATE_MAYBE Updated{CTestConfig.cmake})
 
@@ -17,21 +17,11 @@ message("Using CVS tools:")
 set(CVS "@CVS_EXECUTABLE@")
 message(" cvs = ${CVS}")
 
-set(REPO ${TOP}/repo)
+# Pre-pending :local: prevents cvs from trying to interpret Windows drive
+# letters, like "C:", as host names.
+set(REPO ":local:${TOP}/repo")
 
-# The MSYS cvs tool interprets "c:/" as a "machine:" name for SSH.
-# Detect the MSYS cvs and convert the repo path to an MSYS path.
-if(WIN32)
-  if(EXISTS "${CVS}")
-    file(STRINGS "${CVS}" cvs_is_msys LIMIT_COUNT 1 REGEX "[Mm][Ss][Yy][Ss]")
-    if(cvs_is_msys)
-      message("  '${CVS}' is from MSYS (contains '${cvs_is_msys}')")
-      string(REGEX REPLACE "^([A-Za-z]):" "/\\1" REPO "${REPO}")
-    endif()
-  endif()
-endif()
-
-set(CVSCMD ${CVS} -d${REPO})
+set(CVSCMD ${CVS} -d "${REPO}")
 
 # CVSNT requires an extra option to 'cvs init'.
 set(CVS_INIT_OPT)
@@ -170,3 +160,22 @@ set(CTEST_CHECKOUT_COMMAND
 
 # Run the dashboard script with CTest.
 run_dashboard_script(dash-binary)
+
+#-----------------------------------------------------------------------------
+# Test ctest_update(RETURN_VALUE) on failure
+message("Running CTest Dashboard Script (fail to update)...")
+
+set(ctest_update_check [[
+if(NOT ret LESS 0)
+  message(FATAL_ERROR "ctest_update incorrectly succeeded with ${ret}")
+endif()
+]])
+create_dashboard_script(dash-binary-fail
+  "set(CTEST_CVS_COMMAND \"update-command-does-not-exist\")
+")
+unset(ctest_update_check)
+
+# Run the dashboard script with CTest.
+set(FAIL_UPDATE 1)
+run_dashboard_script(dash-binary-fail)
+unset(FAIL_UPDATE)

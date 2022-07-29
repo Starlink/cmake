@@ -1,4 +1,4 @@
-cmake_minimum_required (VERSION 2.6)
+cmake_minimum_required (VERSION 2.8.12)
 project( Dependency )
 
 # to test directories with only one character One was changed to 1
@@ -51,3 +51,4 @@ add_subdirectory(Case1)
 add_subdirectory(Case2)
 add_subdirectory(Case3)
 add_subdirectory(Case4)
+add_subdirectory(Case5)

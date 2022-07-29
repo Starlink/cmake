@@ -10,7 +10,12 @@ message(STATUS "CMAKE_COMMAND: ${CMAKE_COMMAND}")
 message(STATUS "CMAKE_CPACK_COMMAND: ${CMAKE_CPACK_COMMAND}")
 message(STATUS "CPackWiXGenerator_BINARY_DIR: ${CPackWiXGenerator_BINARY_DIR}")
 
+if(config)
+  set(_C_config -C ${config})
+endif()
+
 execute_process(COMMAND "${CMAKE_CPACK_COMMAND}"
+                        ${_C_config}
   RESULT_VARIABLE CPack_result
   OUTPUT_VARIABLE CPack_output
   ERROR_VARIABLE CPack_error
@@ -69,4 +74,6 @@ endforeach()
 # error SMOK1076 : ICE61: This product should remove only older
 # versions of itself. The Maximum version is not less
 # than the current product. (1.0.0 1.0.0)
-run_wix_command(smoke -nologo -wx -sw1076 "${installer_file}")
+if (NOT no_verify)
+  run_wix_command(smoke -nologo -wx -sw1076 "${installer_file}")
+endif ()

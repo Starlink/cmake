@@ -1,52 +1,43 @@
-#.rst:
-# FindQt3
-# -------
-#
-# Locate Qt include paths and libraries
-#
-# This module defines:
-#
-# ::
-#
-#   QT_INCLUDE_DIR    - where to find qt.h, etc.
-#   QT_LIBRARIES      - the libraries to link against to use Qt.
-#   QT_DEFINITIONS    - definitions to use when
-#                       compiling code that uses Qt.
-#   QT_FOUND          - If false, don't try to use Qt.
-#   QT_VERSION_STRING - the version of Qt found
-#
-#
-#
-# If you need the multithreaded version of Qt, set QT_MT_REQUIRED to
-# TRUE
-#
-# Also defined, but not for general use are:
-#
-# ::
-#
-#   QT_MOC_EXECUTABLE, where to find the moc tool.
-#   QT_UIC_EXECUTABLE, where to find the uic tool.
-#   QT_QT_LIBRARY, where to find the Qt library.
-#   QT_QTMAIN_LIBRARY, where to find the qtmain
-#    library. This is only required by Qt3 on Windows.
+# Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+# file Copyright.txt or https://cmake.org/licensing for details.
+
+#[=======================================================================[.rst:
+FindQt3
+-------
+
+Locate Qt include paths and libraries
+
+This module defines:
+
+::
+
+  QT_INCLUDE_DIR    - where to find qt.h, etc.
+  QT_LIBRARIES      - the libraries to link against to use Qt.
+  QT_DEFINITIONS    - definitions to use when
+                      compiling code that uses Qt.
+  QT_FOUND          - If false, don't try to use Qt.
+  QT_VERSION_STRING - the version of Qt found
+
+
+
+If you need the multithreaded version of Qt, set QT_MT_REQUIRED to
+TRUE
+
+Also defined, but not for general use are:
+
+::
+
+  QT_MOC_EXECUTABLE, where to find the moc tool.
+  QT_UIC_EXECUTABLE, where to find the uic tool.
+  QT_QT_LIBRARY, where to find the Qt library.
+  QT_QTMAIN_LIBRARY, where to find the qtmain
+   library. This is only required by Qt3 on Windows.
+#]=======================================================================]
 
 # These are around for backwards compatibility
 # they will be set
 #  QT_WRAP_CPP, set true if QT_MOC_EXECUTABLE is found
 #  QT_WRAP_UI set true if QT_UIC_EXECUTABLE is found
-
-#=============================================================================
-# Copyright 2005-2009 Kitware, Inc.
-#
-# Distributed under the OSI-approved BSD License (the "License");
-# see accompanying file Copyright.txt for details.
-#
-# This software is distributed WITHOUT ANY WARRANTY; without even the
-# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the License for more information.
-#=============================================================================
-# (To distribute this file outside of CMake, substitute the full
-#  License text for the above reference.)
 
 # If Qt4 has already been found, fail.
 if(QT4_FOUND)
@@ -65,20 +56,18 @@ file(GLOB GLOB_PATHS /usr/lib/qt-3*)
 foreach(GLOB_PATH ${GLOB_PATHS})
   list(APPEND GLOB_PATHS_BIN "${GLOB_PATH}/bin")
 endforeach()
-find_path(QT_INCLUDE_DIR qt.h
+find_path(QT_INCLUDE_DIR
+  NAMES qt.h
+  PATHS
   "[HKEY_CURRENT_USER\\Software\\Trolltech\\Qt3Versions\\3.2.1;InstallDir]/include/Qt"
   "[HKEY_CURRENT_USER\\Software\\Trolltech\\Qt3Versions\\3.2.0;InstallDir]/include/Qt"
   "[HKEY_CURRENT_USER\\Software\\Trolltech\\Qt3Versions\\3.1.0;InstallDir]/include/Qt"
   $ENV{QTDIR}/include
   ${GLOB_PATHS}
-  /usr/local/qt/include
-  /usr/lib/qt/include
-  /usr/lib/qt3/include
-  /usr/include/qt
   /usr/share/qt3/include
   C:/Progra~1/qt/include
-  /usr/include/qt3
   /usr/local/include/X11/qt3
+  PATH_SUFFIXES lib/qt/include lib/qt3/include include/qt include/qt3 qt/include qt3/include
   )
 
 # if qglobal.h is not in the qt_include_dir then set
@@ -111,13 +100,10 @@ if (QT_MT_REQUIRED)
       "[HKEY_CURRENT_USER\\Software\\Trolltech\\Qt3Versions\\3.1.0;InstallDir]"
       ENV QTDIR
       ${GLOB_PATHS_LIB}
-      /usr/local/qt
-      /usr/lib/qt
-      /usr/lib/qt3
       /usr/share/qt3
       C:/Progra~1/qt
     PATH_SUFFIXES
-      lib
+      lib lib/qt lib/qt3 qt qt3 qt/lib qt3/lib
     )
 
 else ()
@@ -132,13 +118,10 @@ else ()
       "[HKEY_CURRENT_USER\\Software\\Trolltech\\Qt3Versions\\3.1.0;InstallDir]"
       ENV QTDIR
       ${GLOB_PATHS_LIB}
-      /usr/local/qt
-      /usr/lib/qt
-      /usr/lib/qt3
       /usr/share/qt3
       C:/Progra~1/qt/lib
     PATH_SUFFIXES
-      lib
+      lib lib/qt lib/qt3 qt qt3 qt/lib qt3/lib
     )
 endif ()
 
@@ -151,17 +134,15 @@ find_library(QT_QASSISTANTCLIENT_LIBRARY
     "[HKEY_CURRENT_USER\\Software\\Trolltech\\Qt3Versions\\3.1.0;InstallDir]"
     ENV QTDIR
     ${GLOB_PATHS_LIB}
-    /usr/local/qt
-    /usr/lib/qt3
     /usr/share/qt3
     C:/Progra~1/qt
   PATH_SUFFIXES
-    lib
+    lib lib/qt lib/qt3 qt qt3 qt/lib qt3/lib
   )
 
 # Qt 3 should prefer QTDIR over the PATH
 find_program(QT_MOC_EXECUTABLE
-  NAMES moc-qt3 moc moc3 moc3-mt
+  NAMES moc-qt3 moc3 moc3-mt moc
   HINTS
     ENV QTDIR
   PATHS
@@ -169,15 +150,10 @@ find_program(QT_MOC_EXECUTABLE
   "[HKEY_CURRENT_USER\\Software\\Trolltech\\Qt3Versions\\3.2.0;InstallDir]/include/Qt"
   "[HKEY_CURRENT_USER\\Software\\Trolltech\\Qt3Versions\\3.1.0;InstallDir]/include/Qt"
   ${GLOB_PATHS_BIN}
-    /usr/local/lib/qt3
-    /usr/local/qt
-    /usr/lib/qt
-    /usr/lib/qt3
     /usr/share/qt3
     C:/Progra~1/qt
-    /usr/X11R6
   PATH_SUFFIXES
-    bin
+    bin lib/qt lib/qt3 qt qt3 qt/bin qt3/bin lib/qt/bin lib/qt3/bin
   )
 
 if(QT_MOC_EXECUTABLE)
@@ -186,7 +162,7 @@ endif()
 
 # Qt 3 should prefer QTDIR over the PATH
 find_program(QT_UIC_EXECUTABLE
-  NAMES uic-qt3 uic uic3 uic3-mt
+  NAMES uic-qt3 uic3 uic3-mt uic
   HINTS
     ENV QTDIR
   PATHS
@@ -194,14 +170,10 @@ find_program(QT_UIC_EXECUTABLE
   "[HKEY_CURRENT_USER\\Software\\Trolltech\\Qt3Versions\\3.2.0;InstallDir]/include/Qt"
   "[HKEY_CURRENT_USER\\Software\\Trolltech\\Qt3Versions\\3.1.0;InstallDir]/include/Qt"
   ${GLOB_PATHS_BIN}
-    /usr/local/qt
-    /usr/lib/qt
-    /usr/lib/qt3
     /usr/share/qt3
     C:/Progra~1/qt
-    /usr/X11R6
   PATH_SUFFIXES
-    bin
+    bin lib/qt lib/qt3 qt qt3 qt/bin qt3/bin lib/qt/bin lib/qt3/bin
   )
 
 if(QT_UIC_EXECUTABLE)
@@ -209,7 +181,8 @@ if(QT_UIC_EXECUTABLE)
 endif()
 
 if (WIN32)
-  find_library(QT_QTMAIN_LIBRARY qtmain
+  find_library(QT_QTMAIN_LIBRARY
+    NAMES qtmain
     HINTS
       ENV QTDIR
       "[HKEY_CURRENT_USER\\Software\\Trolltech\\Qt3Versions\\3.2.1;InstallDir]"
@@ -231,9 +204,16 @@ endif()
 
 # if the include a library are found then we have it
 include(${CMAKE_CURRENT_LIST_DIR}/FindPackageHandleStandardArgs.cmake)
+if (CMAKE_FIND_PACKAGE_NAME STREQUAL "Qt")
+  # FindQt include()'s this module. It's an old pattern, but rather than trying
+  # to suppress this from outside the module (which is then sensitive to the
+  # contents, detect the case in this module and suppress it explicitly.
+  set(FPHSA_NAME_MISMATCHED 1)
+endif ()
 FIND_PACKAGE_HANDLE_STANDARD_ARGS(Qt3
                                   REQUIRED_VARS QT_QT_LIBRARY QT_INCLUDE_DIR QT_MOC_EXECUTABLE
                                   VERSION_VAR QT_VERSION_STRING)
+unset(FPHSA_NAME_MISMATCHED)
 set(QT_FOUND ${QT3_FOUND} )
 
 if(QT_FOUND)
@@ -295,12 +275,12 @@ if(QT_UIC_EXECUTABLE)
 endif()
 
 set(_QT_UIC_VERSION_3 FALSE)
-if("${QTVERSION_UIC}" MATCHES ".* 3..*")
+if("${QTVERSION_UIC}" MATCHES " 3.")
   set(_QT_UIC_VERSION_3 TRUE)
 endif()
 
 set(_QT_MOC_VERSION_3 FALSE)
-if("${QTVERSION_MOC}" MATCHES ".* 3..*")
+if("${QTVERSION_MOC}" MATCHES " 3.")
   set(_QT_MOC_VERSION_3 TRUE)
 endif()
 

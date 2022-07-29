@@ -1,16 +1,6 @@
+# Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+# file Copyright.txt or https://cmake.org/licensing for details.
 
-#=============================================================================
-# Copyright 2002-2009 Kitware, Inc.
-#
-# Distributed under the OSI-approved BSD License (the "License");
-# see accompanying file Copyright.txt for details.
-#
-# This software is distributed WITHOUT ANY WARRANTY; without even the
-# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the License for more information.
-#=============================================================================
-# (To distribute this file outside of CMake, substitute the full
-#  License text for the above reference.)
 
 # determine the compiler to use for Java programs
 # NOTE, a generator may set CMAKE_Java_COMPILER before
@@ -18,24 +8,24 @@
 
 if(NOT CMAKE_Java_COMPILER)
   # prefer the environment variable CC
-  if($ENV{JAVA_COMPILER} MATCHES ".+")
+  if(NOT $ENV{JAVA_COMPILER} STREQUAL "")
     get_filename_component(CMAKE_Java_COMPILER_INIT $ENV{JAVA_COMPILER} PROGRAM PROGRAM_ARGS CMAKE_Java_FLAGS_ENV_INIT)
     if(CMAKE_Java_FLAGS_ENV_INIT)
-      set(CMAKE_Java_COMPILER_ARG1 "${CMAKE_Java_FLAGS_ENV_INIT}" CACHE STRING "First argument to Java compiler")
+      set(CMAKE_Java_COMPILER_ARG1 "${CMAKE_Java_FLAGS_ENV_INIT}" CACHE STRING "Arguments to Java compiler")
     endif()
     if(NOT EXISTS ${CMAKE_Java_COMPILER_INIT})
       message(SEND_ERROR "Could not find compiler set in environment variable JAVA_COMPILER:\n$ENV{JAVA_COMPILER}.")
     endif()
   endif()
 
-  if($ENV{JAVA_RUNTIME} MATCHES ".+")
+  if(NOT $ENV{JAVA_RUNTIME} STREQUAL "")
     get_filename_component(CMAKE_Java_RUNTIME_INIT $ENV{JAVA_RUNTIME} PROGRAM PROGRAM_ARGS CMAKE_Java_FLAGS_ENV_INIT)
     if(NOT EXISTS ${CMAKE_Java_RUNTIME_INIT})
       message(SEND_ERROR "Could not find compiler set in environment variable JAVA_RUNTIME:\n$ENV{JAVA_RUNTIME}.")
     endif()
   endif()
 
-  if($ENV{JAVA_ARCHIVE} MATCHES ".+")
+  if(NOT $ENV{JAVA_ARCHIVE} STREQUAL "")
     get_filename_component(CMAKE_Java_ARCHIVE_INIT $ENV{JAVA_ARCHIVE} PROGRAM PROGRAM_ARGS CMAKE_Java_FLAGS_ENV_INIT)
     if(NOT EXISTS ${CMAKE_Java_ARCHIVE_INIT})
       message(SEND_ERROR "Could not find compiler set in environment variable JAVA_ARCHIVE:\n$ENV{JAVA_ARCHIVE}.")

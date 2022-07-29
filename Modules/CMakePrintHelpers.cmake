@@ -1,74 +1,59 @@
-#.rst:
-# CMakePrintHelpers
-# -----------------
-#
-# Convenience macros for printing properties and variables, useful e.g. for debugging.
-#
-# ::
-#
-#  CMAKE_PRINT_PROPERTIES([TARGETS target1 ..  targetN]
-#                         [SOURCES source1 .. sourceN]
-#                         [DIRECTORIES dir1 .. dirN]
-#                         [TESTS test1 .. testN]
-#                         [CACHE_ENTRIES entry1 .. entryN]
-#                         PROPERTIES prop1 .. propN )
-#
-# This macro prints the values of the properties of the given targets,
-# source files, directories, tests or cache entries.  Exactly one of the
-# scope keywords must be used.  Example:
-#
-# ::
-#
-#    cmake_print_properties(TARGETS foo bar PROPERTIES LOCATION INTERFACE_INCLUDE_DIRS)
-#
-# This will print the LOCATION and INTERFACE_INCLUDE_DIRS properties for
-# both targets foo and bar.
-#
-#
-#
-# CMAKE_PRINT_VARIABLES(var1 var2 ..  varN)
-#
-# This macro will print the name of each variable followed by its value.
-# Example:
-#
-# ::
-#
-#    cmake_print_variables(CMAKE_C_COMPILER CMAKE_MAJOR_VERSION THIS_ONE_DOES_NOT_EXIST)
-#
-# Gives:
-#
-# ::
-#
-#    -- CMAKE_C_COMPILER="/usr/bin/gcc" ; CMAKE_MAJOR_VERSION="2" ; THIS_ONE_DOES_NOT_EXIST=""
+# Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+# file Copyright.txt or https://cmake.org/licensing for details.
 
-#=============================================================================
-# Copyright 2013 Alexander Neundorf, <neundorf@kde.org>
-#
-# Distributed under the OSI-approved BSD License (the "License");
-# see accompanying file Copyright.txt for details.
-#
-# This software is distributed WITHOUT ANY WARRANTY; without even the
-# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the License for more information.
-#=============================================================================
-# (To distribute this file outside of CMake, substitute the full
-#  License text for the above reference.)
+#[=======================================================================[.rst:
+CMakePrintHelpers
+-----------------
 
-include(CMakeParseArguments)
+Convenience functions for printing properties and variables, useful
+e.g. for debugging.
 
-function(CMAKE_PRINT_VARIABLES)
-   set(msg "")
-   foreach(var ${ARGN})
-      if(msg)
-         set(msg "${msg} ; ")
-      endif()
-      set(msg "${msg}${var}=\"${${var}}\"")
-   endforeach()
-   message(STATUS "${msg}")
+::
+
+  cmake_print_properties([TARGETS target1 ..  targetN]
+                        [SOURCES source1 .. sourceN]
+                        [DIRECTORIES dir1 .. dirN]
+                        [TESTS test1 .. testN]
+                        [CACHE_ENTRIES entry1 .. entryN]
+                        PROPERTIES prop1 .. propN )
+
+This function prints the values of the properties of the given targets,
+source files, directories, tests or cache entries.  Exactly one of the
+scope keywords must be used.  Example::
+
+  cmake_print_properties(TARGETS foo bar PROPERTIES
+                         LOCATION INTERFACE_INCLUDE_DIRECTORIES)
+
+This will print the LOCATION and INTERFACE_INCLUDE_DIRECTORIES properties for
+both targets foo and bar.
+
+::
+
+  cmake_print_variables(var1 var2 ..  varN)
+
+This function will print the name of each variable followed by its value.
+Example::
+
+  cmake_print_variables(CMAKE_C_COMPILER CMAKE_MAJOR_VERSION DOES_NOT_EXIST)
+
+Gives::
+
+  -- CMAKE_C_COMPILER="/usr/bin/gcc" ; CMAKE_MAJOR_VERSION="2" ; DOES_NOT_EXIST=""
+#]=======================================================================]
+
+function(cmake_print_variables)
+  set(msg "")
+  foreach(var ${ARGN})
+    if(msg)
+      string(APPEND msg " ; ")
+    endif()
+    string(APPEND msg "${var}=\"${${var}}\"")
+  endforeach()
+  message(STATUS "${msg}")
 endfunction()
 
 
-function(CMAKE_PRINT_PROPERTIES )
+function(cmake_print_properties)
   set(options )
   set(oneValueArgs )
   set(multiValueArgs TARGETS SOURCES TESTS DIRECTORIES CACHE_ENTRIES PROPERTIES )
@@ -116,7 +101,10 @@ function(CMAKE_PRINT_PROPERTIES )
   if(CPP_CACHE_ENTRIES)
     set(items ${CPP_CACHE_ENTRIES})
     set(mode ${mode} CACHE_ENTRIES)
-    set(keyword CACHE)
+    # This is a workaround for the fact that passing `CACHE` as an argument to
+    # set() causes a cache variable to be set.
+    set(keyword "")
+    string(APPEND keyword CACHE)
   endif()
 
   if(NOT mode)
@@ -137,21 +125,21 @@ function(CMAKE_PRINT_PROPERTIES )
     if(keyword STREQUAL "TARGET")
       if(NOT TARGET ${item})
       set(itemExists FALSE)
-      set(msg "${msg}\n No such TARGET \"${item}\" !\n\n")
+      string(APPEND msg "\n No such TARGET \"${item}\" !\n\n")
       endif()
     endif()
 
     if (itemExists)
-      set(msg "${msg} Properties for ${keyword} ${item}:\n")
+      string(APPEND msg " Properties for ${keyword} ${item}:\n")
       foreach(prop ${CPP_PROPERTIES})
 
         get_property(propertySet ${keyword} ${item} PROPERTY "${prop}" SET)
 
         if(propertySet)
           get_property(property ${keyword} ${item} PROPERTY "${prop}")
-          set(msg "${msg}   ${item}.${prop} = \"${property}\"\n")
+          string(APPEND msg "   ${item}.${prop} = \"${property}\"\n")
         else()
-          set(msg "${msg}   ${item}.${prop} = <NOTFOUND>\n")
+          string(APPEND msg "   ${item}.${prop} = <NOTFOUND>\n")
         endif()
       endforeach()
     endif()

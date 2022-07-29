@@ -1,51 +1,72 @@
-#.rst:
-# TestBigEndian
-# -------------
-#
-# Define macro to determine endian type
-#
-# Check if the system is big endian or little endian
-#
-# ::
-#
-#   TEST_BIG_ENDIAN(VARIABLE)
-#   VARIABLE - variable to store the result to
+# Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+# file Copyright.txt or https://cmake.org/licensing for details.
 
-#=============================================================================
-# Copyright 2002-2009 Kitware, Inc.
-#
-# Distributed under the OSI-approved BSD License (the "License");
-# see accompanying file Copyright.txt for details.
-#
-# This software is distributed WITHOUT ANY WARRANTY; without even the
-# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the License for more information.
-#=============================================================================
-# (To distribute this file outside of CMake, substitute the full
-#  License text for the above reference.)
+#[=======================================================================[.rst:
+TestBigEndian
+-------------
 
-macro(TEST_BIG_ENDIAN VARIABLE)
-  if("HAVE_${VARIABLE}" MATCHES "^HAVE_${VARIABLE}$")
-    message(STATUS "Check if the system is big endian")
-    message(STATUS "Searching 16 bit integer")
+.. deprecated:: 3.20
 
-    include(CheckTypeSize)
+  Supserseded by the :variable:`CMAKE_<LANG>_BYTE_ORDER` variable.
 
-    CHECK_TYPE_SIZE("unsigned short" CMAKE_SIZEOF_UNSIGNED_SHORT)
+Check if the target architecture is big endian or little endian.
+
+.. command:: test_big_endian
+
+  .. code-block:: cmake
+
+    test_big_endian(<var>)
+
+  Stores in variable ``<var>`` either 1 or 0 indicating whether the
+  target architecture is big or little endian.
+
+#]=======================================================================]
+include_guard()
+
+include(CheckTypeSize)
+
+function(TEST_BIG_ENDIAN VARIABLE)
+  if(";${CMAKE_C_BYTE_ORDER};${CMAKE_CXX_BYTE_ORDER};${CMAKE_CUDA_BYTE_ORDER};${CMAKE_OBJC_BYTE_ORDER};${CMAKE_OBJCXX_BYTE_ORDER};" MATCHES ";(BIG_ENDIAN|LITTLE_ENDIAN);")
+    set(order "${CMAKE_MATCH_1}")
+    if(order STREQUAL "BIG_ENDIAN")
+      set("${VARIABLE}" 1 PARENT_SCOPE)
+    else()
+      set("${VARIABLE}" 0 PARENT_SCOPE)
+    endif()
+  else()
+    __TEST_BIG_ENDIAN_LEGACY_IMPL(is_big)
+    set("${VARIABLE}" "${is_big}" PARENT_SCOPE)
+  endif()
+endfunction()
+
+macro(__TEST_BIG_ENDIAN_LEGACY_IMPL VARIABLE)
+  if(NOT DEFINED HAVE_${VARIABLE})
+    message(CHECK_START "Check if the system is big endian")
+    message(CHECK_START "Searching 16 bit integer")
+
+    if(CMAKE_C_COMPILER_LOADED)
+      set(_test_language "C")
+    elseif(CMAKE_CXX_COMPILER_LOADED)
+      set(_test_language "CXX")
+    else()
+      message(FATAL_ERROR "TEST_BIG_ENDIAN needs either C or CXX language enabled")
+    endif()
+
+    CHECK_TYPE_SIZE("unsigned short" CMAKE_SIZEOF_UNSIGNED_SHORT LANGUAGE ${_test_language})
     if(CMAKE_SIZEOF_UNSIGNED_SHORT EQUAL 2)
-      message(STATUS "Using unsigned short")
+      message(CHECK_PASS "Using unsigned short")
       set(CMAKE_16BIT_TYPE "unsigned short")
     else()
-      CHECK_TYPE_SIZE("unsigned int"   CMAKE_SIZEOF_UNSIGNED_INT)
+      CHECK_TYPE_SIZE("unsigned int"   CMAKE_SIZEOF_UNSIGNED_INT LANGUAGE ${_test_language})
       if(CMAKE_SIZEOF_UNSIGNED_INT)
-        message(STATUS "Using unsigned int")
+        message(CHECK_PASS "Using unsigned int")
         set(CMAKE_16BIT_TYPE "unsigned int")
 
       else()
 
-        CHECK_TYPE_SIZE("unsigned long"  CMAKE_SIZEOF_UNSIGNED_LONG)
+        CHECK_TYPE_SIZE("unsigned long"  CMAKE_SIZEOF_UNSIGNED_LONG LANGUAGE ${_test_language})
         if(CMAKE_SIZEOF_UNSIGNED_LONG)
-          message(STATUS "Using unsigned long")
+          message(CHECK_PASS "Using unsigned long")
           set(CMAKE_16BIT_TYPE "unsigned long")
         else()
           message(FATAL_ERROR "no suitable type found")
@@ -55,17 +76,21 @@ macro(TEST_BIG_ENDIAN VARIABLE)
 
     endif()
 
+    if(_test_language STREQUAL "CXX")
+      set(_test_file "${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeTmp/TestEndianess.cpp")
+    else()
+      set(_test_file "${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeTmp/TestEndianess.c")
+    endif()
 
     configure_file("${CMAKE_ROOT}/Modules/TestEndianess.c.in"
-                   "${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeTmp/TestEndianess.c"
+                   ${_test_file}
                    @ONLY)
 
-     file(READ "${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeTmp/TestEndianess.c"
-          TEST_ENDIANESS_FILE_CONTENT)
+     file(READ ${_test_file} TEST_ENDIANESS_FILE_CONTENT)
 
      try_compile(HAVE_${VARIABLE}
       "${CMAKE_BINARY_DIR}"
-      "${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeTmp/TestEndianess.c"
+      ${_test_file}
       OUTPUT_VARIABLE OUTPUT
       COPY_FILE "${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/TestEndianess.bin" )
 
@@ -92,28 +117,27 @@ macro(TEST_BIG_ENDIAN VARIABLE)
 
         if(CMAKE_TEST_ENDIANESS_STRINGS_LE)
           set(${VARIABLE} 0 CACHE INTERNAL "Result of TEST_BIG_ENDIAN" FORCE)
-          message(STATUS "Check if the system is big endian - little endian")
+          message(CHECK_PASS "little endian")
         endif()
 
         if(CMAKE_TEST_ENDIANESS_STRINGS_BE)
           set(${VARIABLE} 1 CACHE INTERNAL "Result of TEST_BIG_ENDIAN" FORCE)
-          message(STATUS "Check if the system is big endian - big endian")
+          message(CHECK_PASS "big endian")
         endif()
 
         if(NOT CMAKE_TEST_ENDIANESS_STRINGS_BE  AND  NOT CMAKE_TEST_ENDIANESS_STRINGS_LE)
+          message(CHECK_FAIL "TEST_BIG_ENDIAN found no result!")
           message(SEND_ERROR "TEST_BIG_ENDIAN found no result!")
         endif()
 
-        file(APPEND ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeError.log
+        file(APPEND ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeOutput.log
           "Determining if the system is big endian passed with the following output:\n${OUTPUT}\nTestEndianess.c:\n${TEST_ENDIANESS_FILE_CONTENT}\n\n")
 
       else()
-        message(STATUS "Check if the system is big endian - failed")
+        message(CHECK_FAIL "failed")
         file(APPEND ${CMAKE_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/CMakeError.log
           "Determining if the system is big endian failed with the following output:\n${OUTPUT}\nTestEndianess.c:\n${TEST_ENDIANESS_FILE_CONTENT}\n\n")
         set(${VARIABLE})
       endif()
   endif()
 endmacro()
-
-

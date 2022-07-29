@@ -1,21 +1,25 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmExportInstallFileGenerator_h
-#define cmExportInstallFileGenerator_h
+#include <iosfwd>
+#include <map>
+#include <set>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "cmExportFileGenerator.h"
+#include "cmStateTypes.h"
 
+class cmFileSet;
+class cmGeneratorTarget;
+class cmGlobalGenerator;
 class cmInstallExportGenerator;
 class cmInstallTargetGenerator;
+class cmTargetExport;
 
 /** \class cmExportInstallFileGenerator
  * \brief Generate a file exporting targets from an install tree.
@@ -31,68 +35,76 @@ class cmInstallTargetGenerator;
  *
  * This is used to implement the INSTALL(EXPORT) command.
  */
-class cmExportInstallFileGenerator: public cmExportFileGenerator
+class cmExportInstallFileGenerator : public cmExportFileGenerator
 {
 public:
   /** Construct with the export installer that will install the
       files.  */
   cmExportInstallFileGenerator(cmInstallExportGenerator* iegen);
 
-  /** Get the per-config file generated for each configuraiton.  This
+  /** Get the per-config file generated for each configuration.  This
       maps from the configuration name to the file temporary location
       for installation.  */
-  std::map<cmStdString, cmStdString> const& GetConfigImportFiles()
-    { return this->ConfigImportFiles; }
+  std::map<std::string, std::string> const& GetConfigImportFiles()
+  {
+    return this->ConfigImportFiles;
+  }
 
   /** Compute the globbing expression used to load per-config import
       files from the main file.  */
   std::string GetConfigImportFileGlob();
+
 protected:
-
   // Implement virtual methods from the superclass.
-  virtual bool GenerateMainFile(std::ostream& os);
-  virtual void GenerateImportTargetsConfig(std::ostream& os,
-                                           const char* config,
-                                           std::string const& suffix,
-                            std::vector<std::string> &missingTargets);
-  virtual void HandleMissingTarget(std::string& link_libs,
-                                   std::vector<std::string>& missingTargets,
-                                   cmMakefile* mf,
-                                   cmTarget* depender,
-                                   cmTarget* dependee);
+  bool GenerateMainFile(std::ostream& os) override;
+  void GenerateImportTargetsConfig(
+    std::ostream& os, const std::string& config, std::string const& suffix,
+    std::vector<std::string>& missingTargets) override;
+  cmStateEnums::TargetType GetExportTargetType(
+    cmTargetExport const* targetExport) const;
+  void HandleMissingTarget(std::string& link_libs,
+                           std::vector<std::string>& missingTargets,
+                           cmGeneratorTarget const* depender,
+                           cmGeneratorTarget* dependee) override;
 
-  virtual void ReplaceInstallPrefix(std::string &input);
+  void ReplaceInstallPrefix(std::string& input) override;
 
-  void ComplainAboutMissingTarget(cmTarget* depender,
-                                  cmTarget* dependee,
-                                  int occurrences);
+  void ComplainAboutMissingTarget(cmGeneratorTarget const* depender,
+                                  cmGeneratorTarget const* dependee,
+                                  std::vector<std::string> const& exportFiles);
 
-  std::vector<std::string> FindNamespaces(cmMakefile* mf,
-                                          const std::string& name);
+  std::pair<std::vector<std::string>, std::string> FindNamespaces(
+    cmGlobalGenerator* gg, const std::string& name);
 
+  /** Generate the relative import prefix.  */
+  virtual void GenerateImportPrefix(std::ostream&);
+
+  /** Generate the relative import prefix.  */
+  virtual void LoadConfigFiles(std::ostream&);
+
+  virtual void CleanupTemporaryVariables(std::ostream&);
 
   /** Generate a per-configuration file for the targets.  */
-  bool GenerateImportFileConfig(const char* config,
-                            std::vector<std::string> &missingTargets);
+  virtual bool GenerateImportFileConfig(
+    const std::string& config, std::vector<std::string>& missingTargets);
 
   /** Fill in properties indicating installed file locations.  */
-  void SetImportLocationProperty(const char* config,
+  void SetImportLocationProperty(const std::string& config,
                                  std::string const& suffix,
                                  cmInstallTargetGenerator* itgen,
                                  ImportPropertyMap& properties,
-                                 std::set<std::string>& importedLocations
-                                );
+                                 std::set<std::string>& importedLocations);
 
-  void ComplainAboutImportPrefix(cmInstallTargetGenerator* itgen);
+  std::string InstallNameDir(cmGeneratorTarget const* target,
+                             const std::string& config) override;
 
-  std::string InstallNameDir(cmTarget* target, const std::string& config);
+  std::string GetFileSetDirectories(cmGeneratorTarget* gte, cmFileSet* fileSet,
+                                    cmTargetExport* te) override;
+  std::string GetFileSetFiles(cmGeneratorTarget* gte, cmFileSet* fileSet,
+                              cmTargetExport* te) override;
 
   cmInstallExportGenerator* IEGen;
 
-  std::string ImportPrefix;
-
   // The import file generated for each configuration.
-  std::map<cmStdString, cmStdString> ConfigImportFiles;
+  std::map<std::string, std::string> ConfigImportFiles;
 };
-
-#endif

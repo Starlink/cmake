@@ -28,23 +28,24 @@ function(help_xcode_depends)
   endif()
 endfunction()
 
-if("${CMAKE_GENERATOR}" MATCHES "Ninja")
-  set(HELP_NINJA 1) # TODO Why is this needed?
-endif()
-
 # The Intel compiler causes the MSVC linker to crash during
 # incremental linking, so avoid the /INCREMENTAL:YES flag.
 if(WIN32 AND "${CMAKE_CXX_COMPILER_ID}" MATCHES "Intel")
   set(_cmake_options "-DCMAKE_EXE_LINKER_FLAGS=")
 endif()
 
-if("${CMAKE_GENERATOR}" MATCHES "Make")
+if("${CMAKE_GENERATOR}" MATCHES "Make|Ninja")
   set(TEST_LINK_DEPENDS ${BuildDepends_BINARY_DIR}/Project/linkdep.txt)
   file(WRITE ${TEST_LINK_DEPENDS} "1")
 endif()
 list(APPEND _cmake_options "-DTEST_LINK_DEPENDS=${TEST_LINK_DEPENDS}")
 
 list(APPEND _cmake_options "-DCMAKE_FORCE_DEPFILES=1")
+
+if(NOT CMAKE_GENERATOR MATCHES "Visual Studio ([^9]|9[0-9])")
+  set(TEST_MULTI3 1)
+  list(APPEND _cmake_options "-DTEST_MULTI3=1")
+endif()
 
 file(MAKE_DIRECTORY ${BuildDepends_BINARY_DIR}/Project)
 message("Creating Project/foo.cxx")
@@ -61,12 +62,26 @@ file(WRITE ${BuildDepends_BINARY_DIR}/Project/zot_macro_dir.hxx
   "static const char* zot_macro_dir = \"zot_macro_dir\";\n")
 file(WRITE ${BuildDepends_BINARY_DIR}/Project/zot_macro_tgt.hxx
   "static const char* zot_macro_tgt = \"zot_macro_tgt\";\n")
+file(WRITE ${BuildDepends_BINARY_DIR}/Project/zot_pch.hxx
+  "#ifndef ZOT_PCH_HXX\n"
+  "#define ZOT_PCH_HXX\n"
+  "static const char* zot_pch = \"zot_pch\";\n"
+  "#endif\n"
+  )
 
 file(WRITE ${BuildDepends_BINARY_DIR}/Project/link_depends_no_shared_lib.h
   "#define link_depends_no_shared_lib_value 1\n")
 file(WRITE ${BuildDepends_BINARY_DIR}/Project/link_depends_no_shared_exe.h
   "#define link_depends_no_shared_exe_value 0\n")
 set(link_depends_no_shared_check_txt ${BuildDepends_BINARY_DIR}/Project/link_depends_no_shared_check.txt)
+
+file(WRITE ${BuildDepends_BINARY_DIR}/Project/object_depends.txt "0\n")
+set(object_depends_check_txt ${BuildDepends_BINARY_DIR}/Project/object_depends_check.txt)
+
+file(WRITE ${BuildDepends_BINARY_DIR}/Project/external.in "external original\n")
+file(WRITE ${BuildDepends_BINARY_DIR}/Project/multi1-in.txt "multi1-in original\n")
+file(WRITE ${BuildDepends_BINARY_DIR}/Project/multi2-stamp.txt "multi2-stamp original\n")
+file(WRITE ${BuildDepends_BINARY_DIR}/Project/multi3-stamp.txt "multi3-stamp original\n")
 
 help_xcode_depends()
 
@@ -146,7 +161,7 @@ execute_process(COMMAND ${zot} OUTPUT_VARIABLE out RESULT_VARIABLE runResult)
 string(REGEX REPLACE "[\r\n]" " " out "${out}")
 message("Run result: ${runResult} Output: \"${out}\"")
 
-set(VALUE_UNCHANGED "[zot] [zot_custom] [zot_macro_dir] [zot_macro_tgt] ")
+set(VALUE_UNCHANGED "[zot] [zot_custom] [zot_macro_dir] [zot_macro_tgt] [zot_pch] ")
 if("${out}" STREQUAL "${VALUE_UNCHANGED}")
   message("Worked!")
 else()
@@ -166,9 +181,62 @@ else()
     "Targets link_depends_no_shared_lib and link_depends_no_shared_exe not both built.")
 endif()
 
+if(EXISTS ${BuildDepends_BINARY_DIR}/Project/external.out)
+  file(STRINGS ${BuildDepends_BINARY_DIR}/Project/external.out external_out)
+  if("${external_out}" STREQUAL "external original")
+    message(STATUS "external.out contains '${external_out}'")
+  else()
+    message(SEND_ERROR "Project did not initially build properly: "
+      "external.out contains '${external_out}'")
+  endif()
+else()
+  message(SEND_ERROR "Project did not initially build properly: "
+    "external.out is missing")
+endif()
+
+if(EXISTS ${BuildDepends_BINARY_DIR}/Project/multi1-out2-copy.txt)
+  file(STRINGS ${BuildDepends_BINARY_DIR}/Project/multi1-out2-copy.txt multi1_out)
+  if("${multi1_out}" STREQUAL "multi1-in original")
+    message(STATUS "multi1-out2-copy.txt contains '${multi1_out}'")
+  else()
+    message(SEND_ERROR "Project did not initially build properly: "
+      "multi1-out2-copy.txt contains '${multi1_out}'")
+  endif()
+else()
+  message(SEND_ERROR "Project did not initially build properly: "
+    "multi1-out2-copy.txt is missing")
+endif()
+
+if(EXISTS ${BuildDepends_BINARY_DIR}/Project/multi2-real.txt)
+  if(${BuildDepends_BINARY_DIR}/Project/multi2-real.txt
+      IS_NEWER_THAN ${BuildDepends_BINARY_DIR}/Project/multi2-stamp.txt)
+    message(STATUS "multi2-real.txt is newer than multi2-stamp.txt")
+  else()
+    message(SEND_ERROR "Project did not initially build properly: "
+      "multi2-real.txt is not newer than multi2-stamp.txt")
+  endif()
+else()
+  message(SEND_ERROR "Project did not initially build properly: "
+    "multi2-real.txt is missing")
+endif()
+
+if(TEST_MULTI3)
+  if(EXISTS ${BuildDepends_BINARY_DIR}/Project/multi3-real.txt)
+    if(${BuildDepends_BINARY_DIR}/Project/multi3-real.txt
+        IS_NEWER_THAN ${BuildDepends_BINARY_DIR}/Project/multi3-stamp.txt)
+      message(STATUS "multi3-real.txt is newer than multi3-stamp.txt")
+    else()
+      message(SEND_ERROR "Project did not initially build properly: "
+        "multi3-real.txt is not newer than multi3-stamp.txt")
+    endif()
+  else()
+    message(SEND_ERROR "Project did not initially build properly: "
+      "multi3-real.txt is missing")
+  endif()
+endif()
+
 message("Waiting 3 seconds...")
-# any additional argument will cause ${bar} to wait forever
-execute_process(COMMAND ${bar} -infinite TIMEOUT 3 OUTPUT_VARIABLE out)
+execute_process(COMMAND ${CMAKE_COMMAND} -E sleep 3)
 
 message("Modifying Project/foo.cxx")
 write_file(${BuildDepends_BINARY_DIR}/Project/foo.cxx
@@ -183,13 +251,26 @@ file(WRITE ${BuildDepends_BINARY_DIR}/Project/zot_macro_dir.hxx
   "static const char* zot_macro_dir = \"zot_macro_dir changed\";\n")
 file(WRITE ${BuildDepends_BINARY_DIR}/Project/zot_macro_tgt.hxx
   "static const char* zot_macro_tgt = \"zot_macro_tgt changed\";\n")
+file(WRITE ${BuildDepends_BINARY_DIR}/Project/zot_pch.hxx
+  "#ifndef ZOT_PCH_HXX\n"
+  "#define ZOT_PCH_HXX\n"
+  "static const char* zot_pch = \"zot_pch changed\";\n"
+  "#endif\n"
+  )
 
 file(WRITE ${BuildDepends_BINARY_DIR}/Project/link_depends_no_shared_lib.h
   "#define link_depends_no_shared_lib_value 0\n")
 
+file(WRITE ${BuildDepends_BINARY_DIR}/Project/object_depends.txt "1\n")
+
 if(TEST_LINK_DEPENDS)
   file(WRITE ${TEST_LINK_DEPENDS} "2")
 endif()
+
+file(WRITE ${BuildDepends_BINARY_DIR}/Project/external.in "external changed\n")
+file(WRITE ${BuildDepends_BINARY_DIR}/Project/multi1-in.txt "multi1-in changed\n")
+file(WRITE ${BuildDepends_BINARY_DIR}/Project/multi2-stamp.txt "multi2-stamp changed\n")
+file(WRITE ${BuildDepends_BINARY_DIR}/Project/multi3-stamp.txt "multi3-stamp changed\n")
 
 help_xcode_depends()
 
@@ -202,7 +283,7 @@ try_compile(RESULT
   OUTPUT_VARIABLE OUTPUT)
 
 # Xcode is in serious need of help here
-if(HELP_XCODE OR HELP_NINJA)
+if(HELP_XCODE)
   try_compile(RESULT
     ${BuildDepends_BINARY_DIR}/Project
     ${BuildDepends_SOURCE_DIR}/Project
@@ -235,9 +316,6 @@ message("Run result: ${runResult} Output: \"${out}\"")
 
 if("${out}" STREQUAL "HEADER_STRING: ninja changed ")
   message("Worked!")
-elseif(CMAKE_GENERATOR STREQUAL "Visual Studio 6")
-  # Tolerate failure because VS 6 does not seem to recompile ninjadep.cpp
-  # when the "dir/header.h" it includes changes.
 else()
   message(SEND_ERROR "Project did not rebuild properly. Output[${out}]\n"
     " expected [HEADER_STRING: ninja changed]")
@@ -260,7 +338,7 @@ string(REGEX REPLACE "[\r\n]" " " out "${out}")
 message("Run result: ${runResult} Output: \"${out}\"")
 
 set(VALUE_CHANGED
-  "[zot changed] [zot_custom changed] [zot_macro_dir changed] [zot_macro_tgt changed] "
+  "[zot changed] [zot_custom changed] [zot_macro_dir changed] [zot_macro_tgt changed] [zot_pch changed] "
   )
 if("${out}" STREQUAL "${VALUE_CHANGED}")
   message("Worked!")
@@ -279,6 +357,39 @@ is not newer than dependency
   ${TEST_LINK_DEPENDS}
 ")
   endif()
+
+  set(linkdep2 ${BuildDepends_BINARY_DIR}/Project/linkdep2${CMAKE_EXECUTABLE_SUFFIX})
+  if(${linkdep2} IS_NEWER_THAN ${TEST_LINK_DEPENDS})
+    message("INTERFACE_LINK_DEPENDS worked")
+  else()
+    message(SEND_ERROR "INTERFACE_LINK_DEPENDS failed.  Executable
+  ${linkdep2}
+is not newer than dependency
+  ${TEST_LINK_DEPENDS}
+")
+  endif()
+
+  set(linkdep3 ${BuildDepends_BINARY_DIR}/Project/linkdep3${CMAKE_EXECUTABLE_SUFFIX})
+  if(${linkdep3} IS_NEWER_THAN ${TEST_LINK_DEPENDS})
+    message("$<LINK_LANGUAGE> in LINK_DEPENDS worked")
+  else()
+    message(SEND_ERROR "$<LINK_LANGUAGE> in LINK_DEPENDS failed.  Executable
+  ${linkdep3}
+is not newer than dependency
+  ${TEST_LINK_DEPENDS}
+")
+  endif()
+
+  set(linkdep4 ${BuildDepends_BINARY_DIR}/Project/linkdep4${CMAKE_EXECUTABLE_SUFFIX})
+  if(${linkdep4} IS_NEWER_THAN ${TEST_LINK_DEPENDS})
+    message("$<LINK_LANGUAGE> in INTERFACE_LINK_DEPENDS worked")
+  else()
+    message(SEND_ERROR "$<LINK_LANGUAGE> in INTERFACE_LINK_DEPENDS failed.  Executable
+  ${linkdep4}
+is not newer than dependency
+  ${TEST_LINK_DEPENDS}
+")
+  endif()
 endif()
 
 if(EXISTS "${link_depends_no_shared_check_txt}")
@@ -293,4 +404,72 @@ if(EXISTS "${link_depends_no_shared_check_txt}")
 else()
   message(SEND_ERROR "Project did not rebuild properly.  "
     "Targets link_depends_no_shared_lib and link_depends_no_shared_exe not both built.")
+endif()
+
+if(EXISTS "${object_depends_check_txt}")
+  file(STRINGS "${object_depends_check_txt}" object_depends_check LIMIT_COUNT 1)
+  if("${object_depends_check}" STREQUAL "1")
+    message(STATUS "object_depends exe is newer than object_depends.txt as expected.")
+  elseif(CMAKE_GENERATOR MATCHES "Visual Studio|Xcode")
+    message(STATUS "Known limitation: OBJECT_DEPENDS does not work on ${CMAKE_GENERATOR}")
+  else()
+    message(SEND_ERROR "Project did not rebuild properly: object_depends exe is not newer than object_depends.txt.")
+  endif()
+else()
+  message(SEND_ERROR "Project did not rebuild properly.  "
+    "object_depends exe and object_depends.txt are not both present.")
+endif()
+
+if(EXISTS ${BuildDepends_BINARY_DIR}/Project/external.out)
+  file(STRINGS ${BuildDepends_BINARY_DIR}/Project/external.out external_out)
+  if("${external_out}" STREQUAL "external changed")
+    message(STATUS "external.out contains '${external_out}'")
+  else()
+    message(SEND_ERROR "Project did not rebuild properly: "
+      "external.out contains '${external_out}'")
+  endif()
+else()
+  message(SEND_ERROR "Project did not rebuild properly: "
+    "external.out is missing")
+endif()
+
+if(EXISTS ${BuildDepends_BINARY_DIR}/Project/multi1-out2-copy.txt)
+  file(STRINGS ${BuildDepends_BINARY_DIR}/Project/multi1-out2-copy.txt multi1_out)
+  if("${multi1_out}" STREQUAL "multi1-in changed")
+    message(STATUS "multi1-out2-copy.txt contains '${multi1_out}'")
+  else()
+    message(SEND_ERROR "Project did not rebuild properly: "
+      "multi1-out2-copy.txt contains '${multi1_out}'")
+  endif()
+else()
+  message(SEND_ERROR "Project did not rebuild properly: "
+    "multi1-out2-copy.txt is missing")
+endif()
+
+if(EXISTS ${BuildDepends_BINARY_DIR}/Project/multi2-real.txt)
+  if(${BuildDepends_BINARY_DIR}/Project/multi2-real.txt
+      IS_NEWER_THAN ${BuildDepends_BINARY_DIR}/Project/multi2-stamp.txt)
+    message(STATUS "multi2-real.txt is newer than multi2-stamp.txt")
+  else()
+    message(SEND_ERROR "Project did not rebuild properly: "
+      "multi2-real.txt is not newer than multi2-stamp.txt")
+  endif()
+else()
+  message(SEND_ERROR "Project did not rebuild properly: "
+    "multi2-real.txt is missing")
+endif()
+
+if(TEST_MULTI3)
+  if(EXISTS ${BuildDepends_BINARY_DIR}/Project/multi3-real.txt)
+    if(${BuildDepends_BINARY_DIR}/Project/multi3-real.txt
+        IS_NEWER_THAN ${BuildDepends_BINARY_DIR}/Project/multi3-stamp.txt)
+      message(STATUS "multi3-real.txt is newer than multi3-stamp.txt")
+    else()
+      message(SEND_ERROR "Project did not rebuild properly: "
+        "multi3-real.txt is not newer than multi3-stamp.txt")
+    endif()
+  else()
+    message(SEND_ERROR "Project did not rebuild properly: "
+      "multi3-real.txt is missing")
+  endif()
 endif()

@@ -1,51 +1,36 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc.
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
+#include <cstring>
+#include <memory>
+#include <ostream>
+#include <string>
 
-#ifndef cmCPackLog_h
-#define cmCPackLog_h
-
-#include "cmObject.h"
-
-#define cmCPack_Log(ctSelf, logType, msg) \
-  do { \
-  cmOStringStream cmCPackLog_msg; \
-  cmCPackLog_msg << msg; \
-  (ctSelf)->Log(logType, __FILE__, __LINE__, cmCPackLog_msg.str().c_str());\
-  } while ( 0 )
-
-#ifdef cerr
-#  undef cerr
-#endif
-#define cerr no_cerr_use_cmCPack_Log
-
-#ifdef cout
-#  undef cout
-#endif
-#define cout no_cout_use_cmCPack_Log
-
+#define cmCPack_Log(ctSelf, logType, msg)                                     \
+  do {                                                                        \
+    std::ostringstream cmCPackLog_msg;                                        \
+    cmCPackLog_msg << msg;                                                    \
+    (ctSelf)->Log(logType, __FILE__, __LINE__, cmCPackLog_msg.str().c_str()); \
+  } while (false)
 
 /** \class cmCPackLog
  * \brief A container for CPack generators
  *
  */
-class cmCPackLog : public cmObject
+class cmCPackLog
 {
 public:
-  cmTypeMacro(cmCPackLog, cmObject);
-
   cmCPackLog();
   ~cmCPackLog();
 
-  enum __log_tags {
+  cmCPackLog(const cmCPackLog&) = delete;
+  cmCPackLog& operator=(const cmCPackLog&) = delete;
+
+  enum __log_tags
+  {
     NOTAG = 0,
     LOG_OUTPUT = 0x1,
     LOG_VERBOSE = 0x2,
@@ -56,19 +41,19 @@ public:
 
   //! Various signatures for logging.
   void Log(const char* file, int line, const char* msg)
-    {
+  {
     this->Log(LOG_OUTPUT, file, line, msg);
-    }
+  }
   void Log(const char* file, int line, const char* msg, size_t length)
-    {
+  {
     this->Log(LOG_OUTPUT, file, line, msg, length);
-    }
+  }
   void Log(int tag, const char* file, int line, const char* msg)
-    {
+  {
     this->Log(tag, file, line, msg, strlen(msg));
-    }
+  }
   void Log(int tag, const char* file, int line, const char* msg,
-    size_t length);
+           size_t length);
 
   //! Set Verbose
   void VerboseOn() { this->SetVerbose(true); }
@@ -102,22 +87,22 @@ public:
   bool SetLogOutputFile(const char* fname);
 
   //! Set the various prefixes for the logging. SetPrefix sets the generic
-  // prefix that overwrittes missing ones.
-  void SetPrefix(std::string pfx) { this->Prefix = pfx; }
-  void SetOutputPrefix(std::string pfx) { this->OutputPrefix = pfx; }
-  void SetVerbosePrefix(std::string pfx) { this->VerbosePrefix = pfx; }
-  void SetDebugPrefix(std::string pfx) { this->DebugPrefix = pfx; }
-  void SetWarningPrefix(std::string pfx) { this->WarningPrefix = pfx; }
-  void SetErrorPrefix(std::string pfx) { this->ErrorPrefix = pfx; }
+  // prefix that overwrites missing ones.
+  void SetPrefix(std::string const& pfx) { this->Prefix = pfx; }
+  void SetOutputPrefix(std::string const& pfx) { this->OutputPrefix = pfx; }
+  void SetVerbosePrefix(std::string const& pfx) { this->VerbosePrefix = pfx; }
+  void SetDebugPrefix(std::string const& pfx) { this->DebugPrefix = pfx; }
+  void SetWarningPrefix(std::string const& pfx) { this->WarningPrefix = pfx; }
+  void SetErrorPrefix(std::string const& pfx) { this->ErrorPrefix = pfx; }
 
 private:
-  bool Verbose;
-  bool Debug;
-  bool Quiet;
+  bool Verbose = false;
+  bool Debug = false;
+  bool Quiet = false;
 
-  bool NewLine;
+  bool NewLine = true;
 
-  int LastTag;
+  int LastTag = cmCPackLog::NOTAG;
 
   std::string Prefix;
   std::string OutputPrefix;
@@ -126,30 +111,29 @@ private:
   std::string WarningPrefix;
   std::string ErrorPrefix;
 
-  std::ostream *DefaultOutput;
-  std::ostream *DefaultError;
+  std::ostream* DefaultOutput = nullptr;
+  std::ostream* DefaultError = nullptr;
 
-  std::string LogOutputFileName;
-  std::ostream *LogOutput;
-  // Do we need to cleanup log output stream
-  bool LogOutputCleanup;
+  std::ostream* LogOutput = nullptr;
+  std::unique_ptr<std::ostream> LogOutputStream;
 };
 
 class cmCPackLogWrite
 {
 public:
   cmCPackLogWrite(const char* data, size_t length)
-    : Data(data), Length(length) {}
+    : Data(data)
+    , Length(length)
+  {
+  }
 
   const char* Data;
-  size_t Length;
+  std::streamsize Length;
 };
 
-inline std::ostream& operator<< (std::ostream& os, const cmCPackLogWrite& c)
+inline std::ostream& operator<<(std::ostream& os, const cmCPackLogWrite& c)
 {
   os.write(c.Data, c.Length);
   os.flush();
   return os;
 }
-
-#endif

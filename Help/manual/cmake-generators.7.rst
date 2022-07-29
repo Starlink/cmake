@@ -3,7 +3,7 @@
 cmake-generators(7)
 *******************
 
-.. only:: html or latex
+.. only:: html
 
    .. contents::
 
@@ -27,12 +27,19 @@ when creating a new build tree.
 CMake Generators
 ================
 
+.. _`Command-Line Build Tool Generators`:
+
 Command-Line Build Tool Generators
 ----------------------------------
 
 These generators support command-line build tools.  In order to use them,
 one must launch CMake from a command-line prompt whose environment is
 already configured for the chosen compiler and build tool.
+
+.. _`Makefile Generators`:
+
+Makefile Generators
+^^^^^^^^^^^^^^^^^^^
 
 .. toctree::
    :maxdepth: 1
@@ -42,9 +49,21 @@ already configured for the chosen compiler and build tool.
    /generator/MinGW Makefiles
    /generator/NMake Makefiles
    /generator/NMake Makefiles JOM
-   /generator/Ninja
    /generator/Unix Makefiles
    /generator/Watcom WMake
+
+.. _`Ninja Generators`:
+
+Ninja Generators
+^^^^^^^^^^^^^^^^
+
+.. toctree::
+   :maxdepth: 1
+
+   /generator/Ninja
+   /generator/Ninja Multi-Config
+
+.. _`IDE Build Tool Generators`:
 
 IDE Build Tool Generators
 -------------------------
@@ -52,6 +71,11 @@ IDE Build Tool Generators
 These generators support Integrated Development Environment (IDE)
 project files.  Since the IDEs configure their own environment
 one may launch CMake from any environment.
+
+.. _`Visual Studio Generators`:
+
+Visual Studio Generators
+^^^^^^^^^^^^^^^^^^^^^^^^
 
 .. toctree::
    :maxdepth: 1
@@ -64,7 +88,21 @@ one may launch CMake from any environment.
    /generator/Visual Studio 10 2010
    /generator/Visual Studio 11 2012
    /generator/Visual Studio 12 2013
+   /generator/Visual Studio 14 2015
+   /generator/Visual Studio 15 2017
+   /generator/Visual Studio 16 2019
+   /generator/Visual Studio 17 2022
+
+Other Generators
+^^^^^^^^^^^^^^^^
+
+.. toctree::
+   :maxdepth: 1
+
+   /generator/Green Hills MULTI
    /generator/Xcode
+
+.. _`Extra Generators`:
 
 Extra Generators
 ================
@@ -81,6 +119,5 @@ The following extra generators are known to CMake.
    /generator/CodeBlocks
    /generator/CodeLite
    /generator/Eclipse CDT4
-   /generator/KDevelop3
    /generator/Kate
    /generator/Sublime Text 2

@@ -3,6 +3,20 @@ set(CMAKE_INCLUDE_CURRENT_DIR_IN_INTERFACE ON)
 
 add_library(headeriface INTERFACE)
 
-file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/iface_header_builddir.h"
-  "#define IFACE_HEADER_BUILDDIR\n"
-)
+add_custom_target(headeriface_gen
+  COMMENT "Generating iface_header_builddir.h"
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    ${CMAKE_CURRENT_SOURCE_DIR}/iface_header_builddir.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/iface_header_builddir.h
+  VERBATIM
+  )
+add_dependencies(headeriface headeriface_gen)
+
+add_custom_command(OUTPUT iface_genheader.h
+  COMMAND ${CMAKE_COMMAND} -E copy
+    ${CMAKE_CURRENT_SOURCE_DIR}/iface_genheader.h.in
+    ${CMAKE_CURRENT_BINARY_DIR}/iface_genheader.h
+  DEPENDS
+    ${CMAKE_CURRENT_SOURCE_DIR}/iface_genheader.h.in
+  VERBATIM)
+add_library(iface_genheader INTERFACE iface_genheader.h)

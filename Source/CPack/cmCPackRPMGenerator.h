@@ -1,18 +1,10 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc.
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-
-#ifndef cmCPackRPMGenerator_h
-#define cmCPackRPMGenerator_h
-
+#include <string>
 
 #include "cmCPackGenerator.h"
 
@@ -33,29 +25,30 @@ public:
    * Construct generator
    */
   cmCPackRPMGenerator();
-  virtual ~cmCPackRPMGenerator();
+  ~cmCPackRPMGenerator() override;
 
   static bool CanGenerate()
-    {
+  {
 #ifdef __APPLE__
     // on MacOS enable CPackRPM iff rpmbuild is found
     std::vector<std::string> locations;
-    locations.push_back("/sw/bin");        // Fink
-    locations.push_back("/opt/local/bin"); // MacPorts
-    return cmSystemTools::FindProgram("rpmbuild") != "" ? true : false;
+    locations.emplace_back("/sw/bin");        // Fink
+    locations.emplace_back("/opt/local/bin"); // MacPorts
+    return !cmSystemTools::FindProgram("rpmbuild").empty();
 #else
     // legacy behavior on other systems
     return true;
 #endif
-    }
+  }
 
 protected:
-  virtual int InitializeInternal();
-  virtual int PackageFiles();
+  int InitializeInternal() override;
+  int PackageFiles() override;
   /**
    * This method factors out the work done in component packaging case.
    */
-  int PackageOnePack(std::string initialToplevel, std::string packageName);
+  int PackageOnePack(std::string const& initialToplevel,
+                     std::string const& packageName);
   /**
    * The method used to package files when component
    * install is used. This will create one
@@ -66,12 +59,11 @@ protected:
    * Special case of component install where all
    * components will be put in a single installer.
    */
-  int PackageComponentsAllInOne();
-  virtual const char* GetOutputExtension() { return ".rpm"; }
-  virtual bool SupportsComponentInstallation() const;
-  virtual std::string GetComponentInstallDirNameSuffix(
-      const std::string& componentName);
+  int PackageComponentsAllInOne(const std::string& compInstDirName);
+  const char* GetOutputExtension() override { return ".rpm"; }
+  bool SupportsComponentInstallation() const override;
+  std::string GetComponentInstallDirNameSuffix(
+    const std::string& componentName) override;
 
+  void AddGeneratedPackageNames();
 };
-
-#endif

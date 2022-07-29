@@ -1,18 +1,19 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmDefinitions_h
-#define cmDefinitions_h
+#include <functional>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
-#include "cmStandardIncludes.h"
+#include <cm/string_view>
+
+#include "cmLinkedTree.h"
+#include "cmString.hxx"
+#include "cmValue.h"
 
 /** \class cmDefinitions
  * \brief Store a scope of variable definitions for CMake language.
@@ -23,64 +24,45 @@
  */
 class cmDefinitions
 {
+  using StackIter = cmLinkedTree<cmDefinitions>::iterator;
+
 public:
-  /** Construct with the given parent scope.  */
-  cmDefinitions(cmDefinitions* parent = 0);
+  // -- Static member functions
 
-  /** Reset object as if newly constructed.  */
-  void Reset(cmDefinitions* parent = 0);
+  static cmValue Get(const std::string& key, StackIter begin, StackIter end);
 
-  /** Returns the parent scope, if any.  */
-  cmDefinitions* GetParent() const { return this->Up; }
+  static void Raise(const std::string& key, StackIter begin, StackIter end);
 
-  /** Get the value associated with a key; null if none.
-      Store the result locally if it came from a parent.  */
-  const char* Get(const char* key);
+  static bool HasKey(const std::string& key, StackIter begin, StackIter end);
 
-  /** Set (or unset if null) a value associated with a key.  */
-  const char* Set(const char* key, const char* value);
+  static std::vector<std::string> ClosureKeys(StackIter begin, StackIter end);
 
-  /** Get the set of all local keys.  */
-  std::set<cmStdString> LocalKeys() const;
+  static cmDefinitions MakeClosure(StackIter begin, StackIter end);
 
-  /** Compute the closure of all defined keys with values.
-      This flattens the scope.  The result has no parent.  */
-  cmDefinitions Closure() const;
+  // -- Member functions
 
-  /** Compute the set of all defined keys.  */
-  std::set<cmStdString> ClosureKeys() const;
+  /** Set a value associated with a key.  */
+  void Set(const std::string& key, cm::string_view value);
+
+  /** Unset a definition.  */
+  void Unset(const std::string& key);
 
 private:
-  // String with existence boolean.
-  struct Def: public cmStdString
+  /** String with existence boolean.  */
+  struct Def
   {
-    Def(): cmStdString(), Exists(false) {}
-    Def(const char* v): cmStdString(v?v:""), Exists(v?true:false) {}
-    Def(Def const& d): cmStdString(d), Exists(d.Exists) {}
-    bool Exists;
+  public:
+    Def() = default;
+    Def(cm::string_view value)
+      : Value(value)
+    {
+    }
+    cm::String Value;
   };
   static Def NoDef;
 
-  // Parent scope, if any.
-  cmDefinitions* Up;
+  std::unordered_map<cm::String, Def> Map;
 
-  // Local definitions, set or unset.
-  typedef std::map<cmStdString, Def> MapType;
-  MapType Map;
-
-  // Internal query and update methods.
-  Def const& GetInternal(const char* key);
-  Def const& SetInternal(const char* key, Def const& def);
-
-  // Implementation of Closure() method.
-  struct ClosureTag {};
-  cmDefinitions(ClosureTag const&, cmDefinitions const* root);
-  void ClosureImpl(std::set<cmStdString>& undefined,
-                   cmDefinitions const* defs);
-
-  // Implementation of ClosureKeys() method.
-  void ClosureKeys(std::set<cmStdString>& defined,
-                   std::set<cmStdString>& undefined) const;
+  static Def const& GetInternal(const std::string& key, StackIter begin,
+                                StackIter end, bool raise);
 };
-
-#endif

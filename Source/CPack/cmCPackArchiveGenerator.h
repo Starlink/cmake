@@ -1,21 +1,16 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc.
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-
-#ifndef cmCPackArchiveGenerator_h
-#define cmCPackArchiveGenerator_h
+#include <iosfwd>
+#include <string>
 
 #include "cmArchiveWrite.h"
 #include "cmCPackGenerator.h"
 
+class cmCPackComponent;
 
 /** \class cmCPackArchiveGenerator
  * \brief A generator base for libarchive generation.
@@ -24,21 +19,36 @@
  *
  */
 class cmCPackArchiveGenerator : public cmCPackGenerator
-  {
+{
 public:
-  cmTypeMacro(cmCPackArchiveGenerator, cmCPackGenerator);
+  using Superclass = cmCPackGenerator;
+
+  static cmCPackGenerator* Create7ZGenerator();
+  static cmCPackGenerator* CreateTBZ2Generator();
+  static cmCPackGenerator* CreateTGZGenerator();
+  static cmCPackGenerator* CreateTXZGenerator();
+  static cmCPackGenerator* CreateTZGenerator();
+  static cmCPackGenerator* CreateTZSTGenerator();
+  static cmCPackGenerator* CreateZIPGenerator();
 
   /**
    * Construct generator
    */
-  cmCPackArchiveGenerator(cmArchiveWrite::Compress, cmArchiveWrite::Type);
-  virtual ~cmCPackArchiveGenerator();
+  cmCPackArchiveGenerator(cmArchiveWrite::Compress t, std::string format,
+                          std::string extension);
+  ~cmCPackArchiveGenerator() override;
   // Used to add a header to the archive
   virtual int GenerateHeader(std::ostream* os);
   // component support
-  virtual bool SupportsComponentInstallation() const;
+  bool SupportsComponentInstallation() const override;
+
+private:
+  // get archive component filename
+  std::string GetArchiveComponentFileName(const std::string& component,
+                                          bool isGroupName);
+
 protected:
-  virtual int InitializeInternal();
+  int InitializeInternal() override;
   /**
    * Add the files belonging to the specified component
    * to the provided (already opened) archive.
@@ -54,7 +64,7 @@ protected:
    * method will call either PackageComponents or
    * PackageComponentsAllInOne.
    */
-  int PackageFiles();
+  int PackageFiles() override;
   /**
    * The method used to package files when component
    * install is used. This will create one
@@ -66,9 +76,19 @@ protected:
    * components will be put in a single installer.
    */
   int PackageComponentsAllInOne();
-  virtual const char* GetOutputExtension() = 0;
-  cmArchiveWrite::Compress Compress;
-  cmArchiveWrite::Type Archive;
-  };
 
-#endif
+private:
+  const char* GetNameOfClass() override { return "cmCPackArchiveGenerator"; }
+
+  const char* GetOutputExtension() override
+  {
+    return this->OutputExtension.c_str();
+  }
+
+  int GetThreadCount() const;
+
+private:
+  cmArchiveWrite::Compress Compress;
+  std::string ArchiveFormat;
+  std::string OutputExtension;
+};

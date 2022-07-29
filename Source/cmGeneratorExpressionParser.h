@@ -1,45 +1,30 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2012 Stephen Kelly <steveire@gmail.com>
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmGeneratorExpressionParser_h
-#define cmGeneratorExpressionParser_h
+#include <memory>
+#include <vector>
 
 #include "cmGeneratorExpressionLexer.h"
 
-#include <set>
-#include <vector>
-
-#include "cmListFileCache.h"
-
-class cmMakefile;
-class cmTarget;
 struct cmGeneratorExpressionEvaluator;
 
-//----------------------------------------------------------------------------
 struct cmGeneratorExpressionParser
 {
-  cmGeneratorExpressionParser(
-                      const std::vector<cmGeneratorExpressionToken> &tokens);
+  cmGeneratorExpressionParser(std::vector<cmGeneratorExpressionToken> tokens);
 
-  void Parse(std::vector<cmGeneratorExpressionEvaluator*> &result);
+  using cmGeneratorExpressionEvaluatorVector =
+    std::vector<std::unique_ptr<cmGeneratorExpressionEvaluator>>;
 
-private:
-  void ParseContent(std::vector<cmGeneratorExpressionEvaluator*> &);
-  void ParseGeneratorExpression(
-                              std::vector<cmGeneratorExpressionEvaluator*> &);
+  void Parse(cmGeneratorExpressionEvaluatorVector& result);
 
 private:
+  void ParseContent(cmGeneratorExpressionEvaluatorVector&);
+  void ParseGeneratorExpression(cmGeneratorExpressionEvaluatorVector&);
+
   std::vector<cmGeneratorExpressionToken>::const_iterator it;
   const std::vector<cmGeneratorExpressionToken> Tokens;
   unsigned int NestingLevel;
 };
-
-#endif

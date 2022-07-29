@@ -1,15 +1,16 @@
 
-cmake_minimum_required(VERSION 2.8.12)
+cmake_minimum_required(VERSION 3.9)
 project(StagingPrefix)
 
 # Wipe out the install tree
 add_custom_command(
   OUTPUT ${CMAKE_BINARY_DIR}/CleanupProject
-  COMMAND ${CMAKE_COMMAND} -E remove_directory ${CMAKE_BINARY_DIR}/ConsumerBuild
-  COMMAND ${CMAKE_COMMAND} -E remove_directory ${CMAKE_BINARY_DIR}/ProducerBuild
-  COMMAND ${CMAKE_COMMAND} -E remove_directory ${CMAKE_BINARY_DIR}/stage
-  COMMAND ${CMAKE_COMMAND} -E remove_directory ${CMAKE_BINARY_DIR}/prefix
-  COMMAND ${CMAKE_COMMAND} -E remove_directory ${CMAKE_BINARY_DIR}/ignored
+  COMMAND ${CMAKE_COMMAND} -E rm -rf
+    ${CMAKE_BINARY_DIR}/ConsumerBuild
+    ${CMAKE_BINARY_DIR}/ProducerBuild
+    ${CMAKE_BINARY_DIR}/stage
+    ${CMAKE_BINARY_DIR}/prefix
+    ${CMAKE_BINARY_DIR}/ignored
   )
 add_custom_target(CleanupTarget ALL DEPENDS ${CMAKE_BINARY_DIR}/CleanupProject)
 set_property(
@@ -17,7 +18,8 @@ set_property(
   PROPERTY SYMBOLIC 1
   )
 
-if(CMAKE_CONFIGURATION_TYPES)
+get_property(_isMultiConfig GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+if(_isMultiConfig)
   set(NESTED_CONFIG_TYPE -C "${CMAKE_CFG_INTDIR}")
 else()
   if(CMAKE_BUILD_TYPE)
@@ -38,6 +40,7 @@ add_custom_command(
     --build-project Producer
     --build-target install
     --build-generator ${CMAKE_GENERATOR}
+    --build-generator-platform "${CMAKE_GENERATOR_PLATFORM}"
     --build-generator-toolset "${CMAKE_GENERATOR_TOOLSET}"
     --build-options
       -DCMAKE_VERBOSE_MAKEFILE=1
@@ -71,6 +74,7 @@ add_custom_command(
    --build-project Consumer
    --build-target install
    --build-generator ${CMAKE_GENERATOR}
+   --build-generator-platform "${CMAKE_GENERATOR_PLATFORM}"
    --build-generator-toolset "${CMAKE_GENERATOR_TOOLSET}"
    --build-options
       "-DCMAKE_FIND_ROOT_PATH=${CMAKE_BINARY_DIR}/ignored"

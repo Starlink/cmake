@@ -1,30 +1,21 @@
-#.rst:
-# FindPHP4
-# --------
-#
-# Find PHP4
-#
-# This module finds if PHP4 is installed and determines where the
-# include files and libraries are.  It also determines what the name of
-# the library is.  This code sets the following variables:
-#
-# ::
-#
-#   PHP4_INCLUDE_PATH       = path to where php.h can be found
-#   PHP4_EXECUTABLE         = full path to the php4 binary
+# Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+# file Copyright.txt or https://cmake.org/licensing for details.
 
-#=============================================================================
-# Copyright 2004-2009 Kitware, Inc.
-#
-# Distributed under the OSI-approved BSD License (the "License");
-# see accompanying file Copyright.txt for details.
-#
-# This software is distributed WITHOUT ANY WARRANTY; without even the
-# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the License for more information.
-#=============================================================================
-# (To distribute this file outside of CMake, substitute the full
-#  License text for the above reference.)
+#[=======================================================================[.rst:
+FindPHP4
+--------
+
+Find PHP4
+
+This module finds if PHP4 is installed and determines where the
+include files and libraries are.  It also determines what the name of
+the library is.  This code sets the following variables:
+
+::
+
+  PHP4_INCLUDE_PATH       = path to where php.h can be found
+  PHP4_EXECUTABLE         = full path to the php4 binary
+#]=======================================================================]
 
 set(PHP4_POSSIBLE_INCLUDE_PATHS
   /usr/include/php4
@@ -58,8 +49,8 @@ mark_as_advanced(
 
 if(APPLE)
 # this is a hack for now
-  set(CMAKE_SHARED_MODULE_CREATE_C_FLAGS
-   "${CMAKE_SHARED_MODULE_CREATE_C_FLAGS} -Wl,-flat_namespace")
+  string(APPEND CMAKE_SHARED_MODULE_CREATE_C_FLAGS
+   " -Wl,-flat_namespace")
   foreach(symbol
     __efree
     __emalloc
@@ -82,8 +73,8 @@ if(APPLE)
     _zend_wrong_param_count
     _zval_used_for_init
     )
-    set(CMAKE_SHARED_MODULE_CREATE_C_FLAGS
-      "${CMAKE_SHARED_MODULE_CREATE_C_FLAGS},-U,${symbol}")
+    string(APPEND CMAKE_SHARED_MODULE_CREATE_C_FLAGS
+      ",-U,${symbol}")
   endforeach()
 endif()
 

@@ -1,67 +1,86 @@
-#.rst:
-# FindJNI
-# -------
-#
-# Find JNI java libraries.
-#
-# This module finds if Java is installed and determines where the
-# include files and libraries are.  It also determines what the name of
-# the library is.  The caller may set variable JAVA_HOME to specify a
-# Java installation prefix explicitly.
-#
-# This module sets the following result variables:
-#
-# ::
-#
-#   JNI_INCLUDE_DIRS      = the include dirs to use
-#   JNI_LIBRARIES         = the libraries to use
-#   JNI_FOUND             = TRUE if JNI headers and libraries were found.
-#   JAVA_AWT_LIBRARY      = the path to the jawt library
-#   JAVA_JVM_LIBRARY      = the path to the jvm library
-#   JAVA_INCLUDE_PATH     = the include path to jni.h
-#   JAVA_INCLUDE_PATH2    = the include path to jni_md.h
-#   JAVA_AWT_INCLUDE_PATH = the include path to jawt.h
+# Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+# file Copyright.txt or https://cmake.org/licensing for details.
 
-#=============================================================================
-# Copyright 2001-2009 Kitware, Inc.
-#
-# Distributed under the OSI-approved BSD License (the "License");
-# see accompanying file Copyright.txt for details.
-#
-# This software is distributed WITHOUT ANY WARRANTY; without even the
-# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the License for more information.
-#=============================================================================
-# (To distribute this file outside of CMake, substitute the full
-#  License text for the above reference.)
+#[=======================================================================[.rst:
+FindJNI
+-------
 
-# Expand {libarch} occurences to java_libarch subdirectory(-ies) and set ${_var}
+Find Java Native Interface (JNI) libraries.
+
+JNI enables Java code running in a Java Virtual Machine (JVM) to call
+and be called by native applications and libraries written in other
+languages such as C, C++.
+
+This module finds if Java is installed and determines where the
+include files and libraries are.  It also determines what the name of
+the library is.  The caller may set variable ``JAVA_HOME`` to specify a
+Java installation prefix explicitly.
+
+Result Variables
+^^^^^^^^^^^^^^^^
+
+This module sets the following result variables:
+
+``JNI_INCLUDE_DIRS``
+  the include dirs to use
+``JNI_LIBRARIES``
+  the libraries to use (JAWT and JVM)
+``JNI_FOUND``
+  TRUE if JNI headers and libraries were found.
+
+Cache Variables
+^^^^^^^^^^^^^^^
+
+The following cache variables are also available to set or use:
+
+``JAVA_AWT_LIBRARY``
+  the path to the Java AWT Native Interface (JAWT) library
+``JAVA_JVM_LIBRARY``
+  the path to the Java Virtual Machine (JVM) library
+``JAVA_INCLUDE_PATH``
+  the include path to jni.h
+``JAVA_INCLUDE_PATH2``
+  the include path to jni_md.h and jniport.h
+``JAVA_AWT_INCLUDE_PATH``
+  the include path to jawt.h
+#]=======================================================================]
+
+# Expand {libarch} occurrences to java_libarch subdirectory(-ies) and set ${_var}
 macro(java_append_library_directories _var)
     # Determine java arch-specific library subdir
     # Mostly based on openjdk/jdk/make/common/shared/Platform.gmk as of openjdk
     # 1.6.0_18 + icedtea patches. However, it would be much better to base the
     # guess on the first part of the GNU config.guess platform triplet.
     if(CMAKE_SYSTEM_PROCESSOR STREQUAL "x86_64")
+      if(CMAKE_LIBRARY_ARCHITECTURE STREQUAL "x86_64-linux-gnux32")
+        set(_java_libarch "x32" "amd64" "i386")
+      else()
         set(_java_libarch "amd64" "i386")
+      endif()
     elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^i.86$")
         set(_java_libarch "i386")
+    elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^aarch64")
+        set(_java_libarch "arm64" "aarch64")
     elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^alpha")
         set(_java_libarch "alpha")
     elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^arm")
         # Subdir is "arm" for both big-endian (arm) and little-endian (armel).
-        set(_java_libarch "arm")
+        set(_java_libarch "arm" "aarch32")
     elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^mips")
         # mips* machines are bi-endian mostly so processor does not tell
-        # endianess of the underlying system.
-        set(_java_libarch "${CMAKE_SYSTEM_PROCESSOR}" "mips" "mipsel" "mipseb")
+        # endianness of the underlying system.
+        set(_java_libarch "${CMAKE_SYSTEM_PROCESSOR}"
+            "mips" "mipsel" "mipseb" "mipsr6" "mipsr6el"
+            "mips64" "mips64el" "mips64r6" "mips64r6el"
+            "mipsn32" "mipsn32el" "mipsn32r6" "mipsn32r6el")
     elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(powerpc|ppc)64le")
-        set(_java_libarch "ppc64le")
+        set(_java_libarch "ppc64" "ppc64le")
     elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(powerpc|ppc)64")
         set(_java_libarch "ppc64" "ppc")
     elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(powerpc|ppc)")
-        set(_java_libarch "ppc")
+        set(_java_libarch "ppc" "ppc64")
     elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^sparc")
-        # Both flavours can run on the same processor
+        # Both flavors can run on the same processor
         set(_java_libarch "${CMAKE_SYSTEM_PROCESSOR}" "sparc" "sparcv9")
     elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(parisc|hppa)")
         set(_java_libarch "parisc" "parisc64")
@@ -88,10 +107,14 @@ macro(java_append_library_directories _var)
         if(_path MATCHES "{libarch}")
             foreach(_libarch ${_java_libarch})
                 string(REPLACE "{libarch}" "${_libarch}" _newpath "${_path}")
-                list(APPEND ${_var} "${_newpath}")
+                if(EXISTS ${_newpath})
+                    list(APPEND ${_var} "${_newpath}")
+                endif()
             endforeach()
         else()
-            list(APPEND ${_var} "${_path}")
+            if(EXISTS ${_path})
+                list(APPEND ${_var} "${_path}")
+            endif()
         endif()
     endforeach()
 endmacro()
@@ -114,43 +137,110 @@ if(_JAVA_HOME)
   JAVA_APPEND_LIBRARY_DIRECTORIES(JAVA_AWT_LIBRARY_DIRECTORIES
     ${_JAVA_HOME}/jre/lib/{libarch}
     ${_JAVA_HOME}/jre/lib
+    ${_JAVA_HOME}/lib/{libarch}
     ${_JAVA_HOME}/lib
     ${_JAVA_HOME}
     )
 endif()
-get_filename_component(java_install_version
-  "[HKEY_LOCAL_MACHINE\\SOFTWARE\\JavaSoft\\Java Development Kit;CurrentVersion]" NAME)
 
-list(APPEND JAVA_AWT_LIBRARY_DIRECTORIES
-  "[HKEY_LOCAL_MACHINE\\SOFTWARE\\JavaSoft\\Java Development Kit\\1.4;JavaHome]/lib"
-  "[HKEY_LOCAL_MACHINE\\SOFTWARE\\JavaSoft\\Java Development Kit\\1.3;JavaHome]/lib"
-  "[HKEY_LOCAL_MACHINE\\SOFTWARE\\JavaSoft\\Java Development Kit\\${java_install_version};JavaHome]/lib"
-  )
-JAVA_APPEND_LIBRARY_DIRECTORIES(JAVA_AWT_LIBRARY_DIRECTORIES
-  /usr/lib
-  /usr/local/lib
-  /usr/lib/jvm/java/lib
-  /usr/lib/java/jre/lib/{libarch}
-  /usr/lib/jvm/jre/lib/{libarch}
-  /usr/local/lib/java/jre/lib/{libarch}
-  /usr/local/share/java/jre/lib/{libarch}
-  /usr/lib/j2sdk1.4-sun/jre/lib/{libarch}
-  /usr/lib/j2sdk1.5-sun/jre/lib/{libarch}
-  /opt/sun-jdk-1.5.0.04/jre/lib/{libarch}
-  /usr/lib/jvm/java-6-sun/jre/lib/{libarch}
-  /usr/lib/jvm/java-1.5.0-sun/jre/lib/{libarch}
-  /usr/lib/jvm/java-6-sun-1.6.0.00/jre/lib/{libarch}       # can this one be removed according to #8821 ? Alex
-  /usr/lib/jvm/java-6-openjdk/jre/lib/{libarch}
-  /usr/lib/jvm/java-1.6.0-openjdk-1.6.0.0/jre/lib/{libarch}        # fedora
+if (WIN32)
+  set (_JNI_HINTS)
+  macro (_JNI_GET_INSTALLED_VERSIONS _KIND)
+    execute_process(COMMAND REG QUERY "HKLM\\SOFTWARE\\JavaSoft\\${_KIND}"
+      RESULT_VARIABLE _JAVA_RESULT
+      OUTPUT_VARIABLE _JAVA_VERSIONS
+      ERROR_QUIET)
+    if (NOT  _JAVA_RESULT)
+      string (REGEX MATCHALL "HKEY_LOCAL_MACHINE\\\\SOFTWARE\\\\JavaSoft\\\\${_KIND}\\\\[0-9._]+" _JNI_VERSIONS "${_JAVA_VERSIONS}")
+      string (REGEX REPLACE "HKEY_LOCAL_MACHINE\\\\SOFTWARE\\\\JavaSoft\\\\${_KIND}\\\\([0-9._]+)" "\\1" _JNI_VERSIONS "${_JNI_VERSIONS}")
+      if (_JNI_VERSIONS)
+        # sort versions. Most recent first
+        list (SORT _JNI_VERSIONS COMPARE NATURAL ORDER DESCENDING)
+        foreach (_JNI_VERSION IN LISTS _JNI_VERSIONS)
+          string(REPLACE "_" "." _JNI_CMAKE_VERSION "${_JNI_VERSION}")
+          if (JNI_FIND_VERSION_EXACT
+              AND NOT _JNI_CMAKE_VERSION MATCHES "^${JNI_FIND_VERSION}")
+            continue()
+          endif()
+          if (DEFINED JNI_FIND_VERSION AND _JNI_CMAKE_VERSION VERSION_LESS JNI_FIND_VERSION)
+            break()
+          endif()
+          list(APPEND _JNI_HINTS "[HKEY_LOCAL_MACHINE\\SOFTWARE\\JavaSoft\\${_KIND}\\${_JNI_VERSION};JavaHome]")
+        endforeach()
+      endif()
+    endif()
+  endmacro()
+
+    # for version 9 and upper
+  _JNI_GET_INSTALLED_VERSIONS("JDK")
+
+  # for versions older than 9
+  _JNI_GET_INSTALLED_VERSIONS("Java Development Kit")
+
+  foreach (_JNI_HINT IN LISTS _JNI_HINTS)
+    list(APPEND JAVA_AWT_LIBRARY_DIRECTORIES "${_JNI_HINT}/lib")
+  endforeach()
+endif()
+
+set(_JNI_JAVA_DIRECTORIES_BASE
+  /usr/lib/jvm/java
+  /usr/lib/java
+  /usr/lib/jvm
+  /usr/local/lib/java
+  /usr/local/share/java
+  /usr/lib/j2sdk1.4-sun
+  /usr/lib/j2sdk1.5-sun
+  /opt/sun-jdk-1.5.0.04
+  /usr/lib/jvm/java-6-sun
+  /usr/lib/jvm/java-1.5.0-sun
+  /usr/lib/jvm/java-6-sun-1.6.0.00       # can this one be removed according to #8821 ? Alex
+  /usr/lib/jvm/java-6-openjdk
+  /usr/lib/jvm/java-1.6.0-openjdk-1.6.0.0        # fedora
   # Debian specific paths for default JVM
-  /usr/lib/jvm/default-java/jre/lib/{libarch}
-  /usr/lib/jvm/default-java/jre/lib
-  /usr/lib/jvm/default-java/lib
+  /usr/lib/jvm/default-java
+  # Arch Linux specific paths for default JVM
+  /usr/lib/jvm/default
+  # Ubuntu specific paths for default JVM
+  /usr/lib/jvm/java-11-openjdk-{libarch}    # Ubuntu 18.04 LTS
+  /usr/lib/jvm/java-8-openjdk-{libarch}     # Ubuntu 15.10
+  /usr/lib/jvm/java-7-openjdk-{libarch}     # Ubuntu 15.10
+  /usr/lib/jvm/java-6-openjdk-{libarch}     # Ubuntu 15.10
   # OpenBSD specific paths for default JVM
-  /usr/local/jdk-1.7.0/jre/lib/{libarch}
-  /usr/local/jre-1.7.0/lib/{libarch}
-  /usr/local/jdk-1.6.0/jre/lib/{libarch}
-  /usr/local/jre-1.6.0/lib/{libarch}
+  /usr/local/jdk-1.7.0
+  /usr/local/jre-1.7.0
+  /usr/local/jdk-1.6.0
+  /usr/local/jre-1.6.0
+  # FreeBSD specific paths for default JVM
+  /usr/local/openjdk15
+  /usr/local/openjdk14
+  /usr/local/openjdk13
+  /usr/local/openjdk12
+  /usr/local/openjdk11
+  /usr/local/openjdk8
+  /usr/local/openjdk7
+  # SuSE specific paths for default JVM
+  /usr/lib64/jvm/java
+  /usr/lib64/jvm/jre
+  )
+
+set(_JNI_JAVA_AWT_LIBRARY_TRIES)
+set(_JNI_JAVA_INCLUDE_TRIES)
+
+foreach(_java_dir IN LISTS _JNI_JAVA_DIRECTORIES_BASE)
+  list(APPEND _JNI_JAVA_AWT_LIBRARY_TRIES
+    ${_java_dir}/jre/lib/{libarch}
+    ${_java_dir}/jre/lib
+    ${_java_dir}/lib/{libarch}
+    ${_java_dir}/lib
+    ${_java_dir}
+  )
+  list(APPEND _JNI_JAVA_INCLUDE_TRIES
+    ${_java_dir}/include
+  )
+endforeach()
+
+JAVA_APPEND_LIBRARY_DIRECTORIES(JAVA_AWT_LIBRARY_DIRECTORIES
+    ${_JNI_JAVA_AWT_LIBRARY_TRIES}
   )
 
 set(JAVA_JVM_LIBRARY_DIRECTORIES)
@@ -159,6 +249,9 @@ foreach(dir ${JAVA_AWT_LIBRARY_DIRECTORIES})
     "${dir}"
     "${dir}/client"
     "${dir}/server"
+    # IBM SDK, Java Technology Edition, specific paths
+    "${dir}/j9vm"
+    "${dir}/default"
     )
 endforeach()
 
@@ -166,28 +259,14 @@ set(JAVA_AWT_INCLUDE_DIRECTORIES)
 if(_JAVA_HOME)
   list(APPEND JAVA_AWT_INCLUDE_DIRECTORIES ${_JAVA_HOME}/include)
 endif()
-list(APPEND JAVA_AWT_INCLUDE_DIRECTORIES
-  "[HKEY_LOCAL_MACHINE\\SOFTWARE\\JavaSoft\\Java Development Kit\\1.4;JavaHome]/include"
-  "[HKEY_LOCAL_MACHINE\\SOFTWARE\\JavaSoft\\Java Development Kit\\1.3;JavaHome]/include"
-  "[HKEY_LOCAL_MACHINE\\SOFTWARE\\JavaSoft\\Java Development Kit\\${java_install_version};JavaHome]/include"
-  /usr/include
-  /usr/local/include
-  /usr/lib/java/include
-  /usr/local/lib/java/include
-  /usr/lib/jvm/java/include
-  /usr/lib/jvm/java-6-sun/include
-  /usr/lib/jvm/java-1.5.0-sun/include
-  /usr/lib/jvm/java-6-sun-1.6.0.00/include       # can this one be removed according to #8821 ? Alex
-  /usr/lib/jvm/java-6-openjdk/include
-  /usr/local/share/java/include
-  /usr/lib/j2sdk1.4-sun/include
-  /usr/lib/j2sdk1.5-sun/include
-  /opt/sun-jdk-1.5.0.04/include
-  # Debian specific path for default JVM
-  /usr/lib/jvm/default-java/include
-  # OpenBSD specific path for default JVM
-  /usr/local/jdk-1.7.0/include
-  /usr/local/jdk-1.6.0/include
+if (WIN32)
+  foreach (_JNI_HINT IN LISTS _JNI_HINTS)
+    list(APPEND JAVA_AWT_INCLUDE_DIRECTORIES "${_JNI_HINT}/include")
+  endforeach()
+endif()
+
+JAVA_APPEND_LIBRARY_DIRECTORIES(JAVA_AWT_INCLUDE_DIRECTORIES
+  ${_JNI_JAVA_INCLUDE_TRIES}
   )
 
 foreach(JAVA_PROG "${JAVA_RUNTIME}" "${JAVA_COMPILE}" "${JAVA_ARCHIVE}")
@@ -258,7 +337,8 @@ find_path(JAVA_INCLUDE_PATH jni.h
   ${JAVA_AWT_INCLUDE_DIRECTORIES}
 )
 
-find_path(JAVA_INCLUDE_PATH2 jni_md.h
+find_path(JAVA_INCLUDE_PATH2 NAMES jni_md.h jniport.h
+  PATHS
   ${JAVA_INCLUDE_PATH}
   ${JAVA_INCLUDE_PATH}/darwin
   ${JAVA_INCLUDE_PATH}/win32
@@ -268,6 +348,7 @@ find_path(JAVA_INCLUDE_PATH2 jni_md.h
   ${JAVA_INCLUDE_PATH}/solaris
   ${JAVA_INCLUDE_PATH}/hp-ux
   ${JAVA_INCLUDE_PATH}/alpha
+  ${JAVA_INCLUDE_PATH}/aix
 )
 
 find_path(JAVA_AWT_INCLUDE_PATH jawt.h
@@ -283,8 +364,11 @@ else()
 endif()
 
 include(${CMAKE_CURRENT_LIST_DIR}/FindPackageHandleStandardArgs.cmake)
-FIND_PACKAGE_HANDLE_STANDARD_ARGS(JNI  DEFAULT_MSG  JAVA_AWT_LIBRARY JAVA_JVM_LIBRARY
-                                                    JAVA_INCLUDE_PATH  JAVA_INCLUDE_PATH2 JAVA_AWT_INCLUDE_PATH)
+FIND_PACKAGE_HANDLE_STANDARD_ARGS(JNI  DEFAULT_MSG  JAVA_AWT_LIBRARY
+                                                    JAVA_JVM_LIBRARY
+                                                    JAVA_INCLUDE_PATH
+                                                    JAVA_INCLUDE_PATH2
+                                                    JAVA_AWT_INCLUDE_PATH)
 
 mark_as_advanced(
   JAVA_AWT_LIBRARY
@@ -304,4 +388,3 @@ set(JNI_INCLUDE_DIRS
   ${JAVA_INCLUDE_PATH2}
   ${JAVA_AWT_INCLUDE_PATH}
 )
-

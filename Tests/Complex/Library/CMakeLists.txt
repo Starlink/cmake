@@ -43,12 +43,12 @@ endif()
 #
 set(SharedLibrarySources sharedFile)
 add_library(CMakeTestLibraryShared SHARED ${SharedLibrarySources})
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DTEST_C_FLAGS")
+string(APPEND CMAKE_C_FLAGS " -DTEST_C_FLAGS")
 add_library(CMakeTestCLibraryShared SHARED testConly.c)
 define_property(
   TARGET PROPERTY FOO
   BRIEF_DOCS "a test property"
-  FULL_DOCS "A simple etst proerty that means nothign and is used for nothing"
+  FULL_DOCS "A simple test property that means nothing and is used for nothing"
   )
 set_target_properties(CMakeTestCLibraryShared PROPERTIES FOO BAR)
 if(NOT BEOS AND NOT WIN32 AND NOT HAIKU)  # No libm on BeOS.
@@ -131,7 +131,7 @@ if("${CMAKE_GENERATOR}" MATCHES "Makefile" AND CMAKE_MAKE_PROGRAM)
 
     # Custom target to try preprocessing invocation.
     add_custom_target(test_preprocess ${MAYBE_ALL}
-      COMMAND ${CMAKE_COMMAND} -E remove CMakeFiles/create_file.dir/create_file.i
+      COMMAND ${CMAKE_COMMAND} -E rm -f CMakeFiles/create_file.dir/create_file.i
       COMMAND ${CMAKE_MAKE_PROGRAM} create_file.i
       COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_SOURCE_DIR}/test_preprocess.cmake
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}

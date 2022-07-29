@@ -25,12 +25,12 @@
  * $FreeBSD: head/lib/libarchive/archive_private.h 201098 2009-12-28 02:58:14Z kientzle $
  */
 
+#ifndef ARCHIVE_PRIVATE_H_INCLUDED
+#define ARCHIVE_PRIVATE_H_INCLUDED
+
 #ifndef __LIBARCHIVE_BUILD
 #error This header is only to be used internally to libarchive.
 #endif
-
-#ifndef ARCHIVE_PRIVATE_H_INCLUDED
-#define	ARCHIVE_PRIVATE_H_INCLUDED
 
 #if HAVE_ICONV_H
 #include <iconv.h>
@@ -44,6 +44,13 @@
 #define	__LA_DEAD	__attribute__((__noreturn__))
 #else
 #define	__LA_DEAD
+#endif
+
+#if defined(__GNUC__) && (__GNUC__ > 2 || \
+			  (__GNUC__ == 2 && __GNUC_MINOR__ >= 7))
+#define	__LA_UNUSED	__attribute__((__unused__))
+#else
+#define	__LA_UNUSED
 #endif
 
 #define	ARCHIVE_WRITE_MAGIC	(0xb0c5c0deU)
@@ -119,6 +126,23 @@ struct archive {
 	unsigned current_codepage; /* Current ACP(ANSI CodePage). */
 	unsigned current_oemcp; /* Current OEMCP(OEM CodePage). */
 	struct archive_string_conv *sconv;
+
+	/*
+	 * Used by archive_read_data() to track blocks and copy
+	 * data to client buffers, filling gaps with zero bytes.
+	 */
+	const char	 *read_data_block;
+	int64_t		  read_data_offset;
+	int64_t		  read_data_output_offset;
+	size_t		  read_data_remaining;
+
+	/*
+	 * Used by formats/filters to determine the amount of data
+	 * requested from a call to archive_read_data(). This is only
+	 * useful when the format/filter has seek support.
+	 */
+	char		  read_data_is_posix_read;
+	size_t		  read_data_requested;
 };
 
 /* Check magic value and state; return(ARCHIVE_FATAL) if it isn't valid. */
@@ -136,8 +160,15 @@ void	__archive_errx(int retvalue, const char *msg) __LA_DEAD;
 
 void	__archive_ensure_cloexec_flag(int fd);
 int	__archive_mktemp(const char *tmpdir);
+#if defined(_WIN32) && !defined(__CYGWIN__)
+int	__archive_mkstemp(wchar_t *template);
+#else
+int	__archive_mkstemp(char *template);
+#endif
 
 int	__archive_clean(struct archive *);
+
+void __archive_reset_read_data(struct archive *);
 
 #define	err_combine(a,b)	((a) < (b) ? (a) : (b))
 

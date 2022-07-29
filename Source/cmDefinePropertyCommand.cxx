@@ -1,136 +1,122 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
-
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
-
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmDefinePropertyCommand.h"
-#include "cmake.h"
 
-bool cmDefinePropertyCommand
-::InitialPass(std::vector<std::string> const& args, cmExecutionStatus &)
+#include <algorithm>
+#include <iterator>
+
+#include <cmext/string_view>
+
+#include "cmArgumentParser.h"
+#include "cmExecutionStatus.h"
+#include "cmMakefile.h"
+#include "cmProperty.h"
+#include "cmRange.h"
+#include "cmState.h"
+#include "cmStringAlgorithms.h"
+
+bool cmDefinePropertyCommand(std::vector<std::string> const& args,
+                             cmExecutionStatus& status)
 {
-  if(args.size() < 1)
-    {
-    this->SetError("called with incorrect number of arguments");
+  if (args.empty()) {
+    status.SetError("called with incorrect number of arguments");
     return false;
-    }
+  }
 
   // Get the scope in which to define the property.
   cmProperty::ScopeType scope;
-  if(args[0] == "GLOBAL")
-    {
+  std::string const& scope_arg = args[0];
+
+  if (scope_arg == "GLOBAL") {
     scope = cmProperty::GLOBAL;
-    }
-  else if(args[0] == "DIRECTORY")
-    {
+  } else if (scope_arg == "DIRECTORY") {
     scope = cmProperty::DIRECTORY;
-    }
-  else if(args[0] == "TARGET")
-    {
+  } else if (scope_arg == "TARGET") {
     scope = cmProperty::TARGET;
-    }
-  else if(args[0] == "SOURCE")
-    {
+  } else if (scope_arg == "SOURCE") {
     scope = cmProperty::SOURCE_FILE;
-    }
-  else if(args[0] == "TEST")
-    {
+  } else if (scope_arg == "TEST") {
     scope = cmProperty::TEST;
-    }
-  else if(args[0] == "VARIABLE")
-    {
+  } else if (scope_arg == "VARIABLE") {
     scope = cmProperty::VARIABLE;
-    }
-  else if (args[0] == "CACHED_VARIABLE")
-    {
+  } else if (scope_arg == "CACHED_VARIABLE") {
     scope = cmProperty::CACHED_VARIABLE;
-    }
-  else
-    {
-    cmOStringStream e;
-    e << "given invalid scope " << args[0] << ".  "
-      << "Valid scopes are "
-      << "GLOBAL, DIRECTORY, TARGET, SOURCE, "
-      << "TEST, VARIABLE, CACHED_VARIABLE.";
-    this->SetError(e.str().c_str());
+  } else {
+    status.SetError(cmStrCat("given invalid scope ", scope_arg,
+                             ".  Valid scopes are GLOBAL, DIRECTORY, TARGET, "
+                             "SOURCE, TEST, VARIABLE, CACHED_VARIABLE."));
     return false;
-    }
+  }
 
   // Parse remaining arguments.
   bool inherited = false;
-  enum Doing { DoingNone, DoingProperty, DoingBrief, DoingFull };
-  Doing doing = DoingNone;
-  for(unsigned int i=1; i < args.size(); ++i)
-    {
-    if(args[i] == "PROPERTY")
-      {
-      doing = DoingProperty;
-      }
-    else if(args[i] == "BRIEF_DOCS")
-      {
-      doing = DoingBrief;
-      }
-    else if(args[i] == "FULL_DOCS")
-      {
-      doing = DoingFull;
-      }
-    else if(args[i] == "INHERITED")
-      {
-      doing = DoingNone;
-      inherited = true;
-      }
-    else if(doing == DoingProperty)
-      {
-      doing = DoingNone;
-      this->PropertyName = args[i];
-      }
-    else if(doing == DoingBrief)
-      {
-      this->BriefDocs += args[i];
-      }
-    else if(doing == DoingFull)
-      {
-      this->FullDocs += args[i];
-      }
-    else
-      {
-      cmOStringStream e;
-      e << "given invalid argument \"" << args[i] << "\".";
-      this->SetError(e.str().c_str());
-      return false;
-      }
-    }
+  std::string PropertyName;
+  std::vector<std::string> BriefDocs;
+  std::vector<std::string> FullDocs;
+  std::string initializeFromVariable;
+
+  cmArgumentParser<void> parser;
+  parser.Bind("PROPERTY"_s, PropertyName);
+  parser.Bind("BRIEF_DOCS"_s, BriefDocs);
+  parser.Bind("FULL_DOCS"_s, FullDocs);
+  parser.Bind("INHERITED"_s, inherited);
+  parser.Bind("INITIALIZE_FROM_VARIABLE"_s, initializeFromVariable);
+  std::vector<std::string> invalidArgs;
+
+  parser.Parse(cmMakeRange(args).advance(1), &invalidArgs);
+  if (!invalidArgs.empty()) {
+    status.SetError(
+      cmStrCat("given invalid argument \"", invalidArgs.front(), "\"."));
+    return false;
+  }
 
   // Make sure a property name was found.
-  if(this->PropertyName.empty())
-    {
-    this->SetError("not given a PROPERTY <name> argument.");
+  if (PropertyName.empty()) {
+    status.SetError("not given a PROPERTY <name> argument.");
     return false;
+  }
+
+  if (!initializeFromVariable.empty()) {
+    // Make sure property scope is TARGET.
+    if (scope != cmProperty::TARGET) {
+      status.SetError(
+        "Scope must be TARGET if INITIALIZE_FROM_VARIABLE is specified");
+      return false;
     }
 
-  // Make sure documentation was given.
-  if(this->BriefDocs.empty())
-    {
-    this->SetError("not given a BRIEF_DOCS <brief-doc> argument.");
-    return false;
+    // Make sure the variable has the property name as a suffix.
+    if (!cmHasSuffix(initializeFromVariable, PropertyName)) {
+      status.SetError(cmStrCat("Variable name \"", initializeFromVariable,
+                               "\" does not end with property name \"",
+                               PropertyName, "\""));
+      return false;
     }
-  if(this->FullDocs.empty())
-    {
-    this->SetError("not given a FULL_DOCS <full-doc> argument.");
-    return false;
+    if (PropertyName.find('_') == std::string::npos) {
+      status.SetError(cmStrCat("Property name \"", PropertyName,
+                               "\" defined with INITIALIZE_FROM_VARIABLE does "
+                               "not contain underscore"));
+      return false;
     }
+
+    // Make sure the variable is not reserved.
+    static constexpr const char* reservedPrefixes[] = {
+      "CMAKE_",
+      "_CMAKE_",
+    };
+    if (std::any_of(std::begin(reservedPrefixes), std::end(reservedPrefixes),
+                    [&initializeFromVariable](const char* prefix) {
+                      return cmHasPrefix(initializeFromVariable, prefix);
+                    })) {
+      status.SetError(cmStrCat("variable name \"", initializeFromVariable,
+                               "\" is reserved"));
+      return false;
+    }
+  }
 
   // Actually define the property.
-  this->Makefile->GetCMakeInstance()->DefineProperty
-    (this->PropertyName.c_str(), scope,
-     this->BriefDocs.c_str(), this->FullDocs.c_str(), inherited);
+  status.GetMakefile().GetState()->DefineProperty(
+    PropertyName, scope, cmJoin(BriefDocs, ""), cmJoin(FullDocs, ""),
+    inherited, initializeFromVariable);
 
   return true;
 }
-

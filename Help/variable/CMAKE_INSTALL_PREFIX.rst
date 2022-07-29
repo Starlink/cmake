@@ -1,29 +1,35 @@
 CMAKE_INSTALL_PREFIX
 --------------------
 
-Install directory used by install.
+Install directory used by :command:`install`.
 
-If "make install" is invoked or INSTALL is built, this directory is
+If ``make install`` is invoked or ``INSTALL`` is built, this directory is
 prepended onto all install directories.  This variable defaults to
-/usr/local on UNIX and c:/Program Files on Windows.
+``/usr/local`` on UNIX and ``c:/Program Files/${PROJECT_NAME}`` on Windows.
+See :variable:`CMAKE_INSTALL_PREFIX_INITIALIZED_TO_DEFAULT` for how a
+project might choose its own default.
 
-On UNIX one can use the DESTDIR mechanism in order to relocate the
-whole installation.  DESTDIR means DESTination DIRectory.  It is
-commonly used by makefile users in order to install software at
-non-default location.  It is usually invoked like this:
+On UNIX one can use the ``DESTDIR`` mechanism in order to relocate the
+whole installation to a staging area.  See the :envvar:`DESTDIR` environment
+variable for more information.
 
-::
+The installation prefix is also added to :variable:`CMAKE_SYSTEM_PREFIX_PATH`
+so that :command:`find_package`, :command:`find_program`,
+:command:`find_library`, :command:`find_path`, and :command:`find_file`
+will search the prefix for other software. This behavior can be disabled by
+setting the :variable:`CMAKE_FIND_NO_INSTALL_PREFIX` to ``TRUE`` before the
+first :command:`project` invocation.
 
- make DESTDIR=/home/john install
+.. note::
 
-which will install the concerned software using the installation
-prefix, e.g.  "/usr/local" prepended with the DESTDIR value which
-finally gives "/home/john/usr/local".
+  Use the :module:`GNUInstallDirs` module to provide GNU-style
+  options for the layout of directories within the installation.
 
-WARNING: DESTDIR may not be used on Windows because installation
-prefix usually contains a drive letter like in "C:/Program Files"
-which cannot be prepended with some other prefix.
+The ``CMAKE_INSTALL_PREFIX`` may be defined when configuring a build tree
+to set its installation prefix.  Or, when using the :manual:`cmake(1)`
+command-line tool's ``--install`` mode, one may specify a different prefix
+using the ``--prefix`` option:
 
-The installation prefix is also added to CMAKE_SYSTEM_PREFIX_PATH so
-that find_package, find_program, find_library, find_path, and
-find_file will search the prefix for other software.
+.. code-block:: shell
+
+  cmake --install . --prefix /my/install/prefix

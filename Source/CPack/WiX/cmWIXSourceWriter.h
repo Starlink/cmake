@@ -1,23 +1,13 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2012 Kitware, Inc.
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
-
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-
-#ifndef cmWIXSourceWriter_h
-#define cmWIXSourceWriter_h
-
-#include <vector>
 #include <string>
-#include <cmsys/FStream.hxx>
+#include <vector>
 
-#include <CPack/cmCPackLog.h>
+#include "cmsys/FStream.hxx"
+
+#include "cmCPackLog.h"
 
 /** \class cmWIXSourceWriter
  * \brief Helper class to generate XML WiX source files
@@ -25,25 +15,44 @@
 class cmWIXSourceWriter
 {
 public:
-  cmWIXSourceWriter(cmCPackLog* logger,
-    const std::string& filename, bool isIncludeFile = false);
+  enum GuidType
+  {
+    WIX_GENERATED_GUID,
+    CMAKE_GENERATED_GUID
+  };
+
+  enum RootElementType
+  {
+    WIX_ELEMENT_ROOT,
+    INCLUDE_ELEMENT_ROOT
+  };
+
+  cmWIXSourceWriter(cmCPackLog* logger, std::string const& filename,
+                    GuidType componentGuidType,
+                    RootElementType rootElementType = WIX_ELEMENT_ROOT);
 
   ~cmWIXSourceWriter();
 
-  void BeginElement(const std::string& name);
+  void BeginElement(std::string const& name);
 
-  void EndElement(const std::string& name);
+  void EndElement(std::string const& name);
 
-  void AddProcessingInstruction(
-    const std::string& target, const std::string& content);
+  void AddTextNode(std::string const& text);
 
-  void AddAttribute(
-    const std::string& key, const std::string& value);
+  void AddProcessingInstruction(std::string const& target,
+                                std::string const& content);
 
-  void AddAttributeUnlessEmpty(
-    const std::string& key, const std::string& value);
+  void AddAttribute(std::string const& key, std::string const& value);
 
-  static std::string WindowsCodepageToUtf8(const std::string& value);
+  void AddAttributeUnlessEmpty(std::string const& key,
+                               std::string const& value);
+
+  std::string CreateGuidFromComponentId(std::string const& componentId);
+
+  static std::string EscapeAttributeValue(std::string const& value);
+
+protected:
+  cmCPackLog* Logger;
 
 private:
   enum State
@@ -56,10 +65,6 @@ private:
 
   void Indent(size_t count);
 
-  static std::string EscapeAttributeValue(const std::string& value);
-
-  cmCPackLog* Logger;
-
   cmsys::ofstream File;
 
   State State;
@@ -67,6 +72,6 @@ private:
   std::vector<std::string> Elements;
 
   std::string SourceFilename;
-};
 
-#endif
+  GuidType ComponentGuidType;
+};

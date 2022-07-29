@@ -1,42 +1,41 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
-
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
-
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmAddCustomTargetCommand.h"
 
+#include <utility>
+
+#include <cm/memory>
+
+#include "cmCustomCommand.h"
+#include "cmCustomCommandLines.h"
+#include "cmExecutionStatus.h"
 #include "cmGeneratorExpression.h"
 #include "cmGlobalGenerator.h"
+#include "cmMakefile.h"
+#include "cmMessageType.h"
+#include "cmStateTypes.h"
+#include "cmStringAlgorithms.h"
+#include "cmSystemTools.h"
+#include "cmTarget.h"
 
-// cmAddCustomTargetCommand
-bool cmAddCustomTargetCommand
-::InitialPass(std::vector<std::string> const& args,
-              cmExecutionStatus&)
+bool cmAddCustomTargetCommand(std::vector<std::string> const& args,
+                              cmExecutionStatus& status)
 {
-  if(args.size() < 1 )
-    {
-    this->SetError("called with incorrect number of arguments");
+  if (args.empty()) {
+    status.SetError("called with incorrect number of arguments");
     return false;
-    }
+  }
 
-  std::string targetName = args[0];
+  cmMakefile& mf = status.GetMakefile();
+  std::string const& targetName = args[0];
 
   // Check the target name.
-  if(targetName.find_first_of("/\\") != targetName.npos)
-    {
-    cmOStringStream e;
-    e << "called with invalid target name \"" << targetName
-      << "\".  Target names may not contain a slash.  "
-      << "Use ADD_CUSTOM_COMMAND to generate files.";
-    this->SetError(e.str().c_str());
+  if (targetName.find_first_of("/\\") != std::string::npos) {
+    status.SetError(cmStrCat("called with invalid target name \"", targetName,
+                             "\".  Target names may not contain a slash.  "
+                             "Use ADD_CUSTOM_COMMAND to generate files."));
     return false;
-    }
+  }
 
   // Accumulate one command line at a time.
   cmCustomCommandLine currentLine;
@@ -46,187 +45,186 @@ bool cmAddCustomTargetCommand
 
   // Accumulate dependencies.
   std::vector<std::string> depends;
+  std::vector<std::string> byproducts;
   std::string working_directory;
   bool verbatim = false;
+  bool uses_terminal = false;
+  bool command_expand_lists = false;
   std::string comment_buffer;
-  const char* comment = 0;
+  const char* comment = nullptr;
   std::vector<std::string> sources;
+  std::string job_pool;
 
   // Keep track of parser state.
-  enum tdoing {
+  enum tdoing
+  {
     doing_command,
     doing_depends,
+    doing_byproducts,
     doing_working_directory,
     doing_comment,
     doing_source,
-    doing_verbatim
+    doing_job_pool,
+    doing_nothing
   };
   tdoing doing = doing_command;
 
   // Look for the ALL option.
   bool excludeFromAll = true;
   unsigned int start = 1;
-  if(args.size() > 1)
-    {
-    if(args[1] == "ALL")
-      {
+  if (args.size() > 1) {
+    if (args[1] == "ALL") {
       excludeFromAll = false;
       start = 2;
-      }
     }
+  }
 
   // Parse the rest of the arguments.
-  for(unsigned int j = start; j < args.size(); ++j)
-    {
+  for (unsigned int j = start; j < args.size(); ++j) {
     std::string const& copy = args[j];
 
-    if(copy == "DEPENDS")
-      {
+    if (copy == "DEPENDS") {
       doing = doing_depends;
-      }
-    else if(copy == "WORKING_DIRECTORY")
-      {
+    } else if (copy == "BYPRODUCTS") {
+      doing = doing_byproducts;
+    } else if (copy == "WORKING_DIRECTORY") {
       doing = doing_working_directory;
-      }
-    else if(copy == "VERBATIM")
-      {
-      doing = doing_verbatim;
+    } else if (copy == "VERBATIM") {
+      doing = doing_nothing;
       verbatim = true;
-      }
-    else if (copy == "COMMENT")
-      {
+    } else if (copy == "USES_TERMINAL") {
+      doing = doing_nothing;
+      uses_terminal = true;
+    } else if (copy == "COMMAND_EXPAND_LISTS") {
+      doing = doing_nothing;
+      command_expand_lists = true;
+    } else if (copy == "COMMENT") {
       doing = doing_comment;
-      }
-    else if(copy == "COMMAND")
-      {
+    } else if (copy == "JOB_POOL") {
+      doing = doing_job_pool;
+    } else if (copy == "COMMAND") {
       doing = doing_command;
 
       // Save the current command before starting the next command.
-      if(!currentLine.empty())
-        {
+      if (!currentLine.empty()) {
         commandLines.push_back(currentLine);
         currentLine.clear();
-        }
       }
-    else if(copy == "SOURCES")
-      {
+    } else if (copy == "SOURCES") {
       doing = doing_source;
-      }
-    else
-      {
-      switch (doing)
-        {
+    } else {
+      switch (doing) {
         case doing_working_directory:
           working_directory = copy;
           break;
         case doing_command:
           currentLine.push_back(copy);
           break;
-        case doing_depends:
-          {
+        case doing_byproducts: {
+          std::string filename;
+          if (!cmSystemTools::FileIsFullPath(copy) &&
+              cmGeneratorExpression::Find(copy) != 0) {
+            filename = cmStrCat(mf.GetCurrentBinaryDirectory(), '/');
+          }
+          filename += copy;
+          cmSystemTools::ConvertToUnixSlashes(filename);
+          if (cmSystemTools::FileIsFullPath(filename)) {
+            filename = cmSystemTools::CollapseFullPath(filename);
+          }
+          byproducts.push_back(filename);
+        } break;
+        case doing_depends: {
           std::string dep = copy;
           cmSystemTools::ConvertToUnixSlashes(dep);
-          depends.push_back(dep);
-          }
+          depends.push_back(std::move(dep));
+        } break;
+        case doing_comment:
+          comment_buffer = copy;
+          comment = comment_buffer.c_str();
           break;
-         case doing_comment:
-           comment_buffer = copy;
-           comment = comment_buffer.c_str();
-           break;
         case doing_source:
           sources.push_back(copy);
           break;
+        case doing_job_pool:
+          job_pool = copy;
+          break;
         default:
-          this->SetError("Wrong syntax. Unknown type of argument.");
+          status.SetError("Wrong syntax. Unknown type of argument.");
           return false;
-        }
       }
     }
+  }
 
   std::string::size_type pos = targetName.find_first_of("#<>");
-  if(pos != targetName.npos)
-    {
-    cmOStringStream msg;
-    msg << "called with target name containing a \"" << targetName[pos]
-        << "\".  This character is not allowed.";
-    this->SetError(msg.str().c_str());
+  if (pos != std::string::npos) {
+    status.SetError(cmStrCat("called with target name containing a \"",
+                             targetName[pos],
+                             "\".  This character is not allowed."));
     return false;
-    }
+  }
 
   // Some requirements on custom target names already exist
   // and have been checked at this point.
   // The following restrictions overlap but depend on policy CMP0037.
   bool nameOk = cmGeneratorExpression::IsValidTargetName(targetName) &&
     !cmGlobalGenerator::IsReservedTarget(targetName);
-  if (nameOk)
-    {
-    nameOk = targetName.find(":") == std::string::npos;
-    }
-  if (!nameOk)
-    {
-    cmake::MessageType messageType = cmake::AUTHOR_WARNING;
-    cmOStringStream e;
-    bool issueMessage = false;
-    switch(this->Makefile->GetPolicyStatus(cmPolicies::CMP0037))
-      {
-      case cmPolicies::WARN:
-        e << (this->Makefile->GetPolicies()
-          ->GetPolicyWarning(cmPolicies::CMP0037)) << "\n";
-        issueMessage = true;
-      case cmPolicies::OLD:
-        break;
-      case cmPolicies::NEW:
-      case cmPolicies::REQUIRED_IF_USED:
-      case cmPolicies::REQUIRED_ALWAYS:
-        issueMessage = true;
-        messageType = cmake::FATAL_ERROR;
-      }
-    if (issueMessage)
-      {
-      e << "The target name \"" << targetName <<
-          "\" is reserved or not valid for certain "
-          "CMake features, such as generator expressions, and may result "
-          "in undefined behavior.";
-      this->Makefile->IssueMessage(messageType, e.str().c_str());
-
-      if (messageType == cmake::FATAL_ERROR)
-        {
-        return false;
-        }
-      }
-    }
+  if (nameOk) {
+    nameOk = targetName.find(':') == std::string::npos;
+  }
+  if (!nameOk && !mf.CheckCMP0037(targetName, cmStateEnums::UTILITY)) {
+    return false;
+  }
 
   // Store the last command line finished.
-  if(!currentLine.empty())
-    {
+  if (!currentLine.empty()) {
     commandLines.push_back(currentLine);
     currentLine.clear();
-    }
+  }
 
   // Enforce name uniqueness.
   {
-  std::string msg;
-  if(!this->Makefile->EnforceUniqueName(targetName, msg, true))
-    {
-    this->SetError(msg.c_str());
-    return false;
+    std::string msg;
+    if (!mf.EnforceUniqueName(targetName, msg, true)) {
+      status.SetError(msg);
+      return false;
     }
   }
 
-  // Convert working directory to a full path.
-  if(!working_directory.empty())
-    {
-    const char* build_dir = this->Makefile->GetCurrentOutputDirectory();
-    working_directory =
-      cmSystemTools::CollapseFullPath(working_directory.c_str(), build_dir);
-    }
+  if (commandLines.empty() && !byproducts.empty()) {
+    mf.IssueMessage(MessageType::FATAL_ERROR,
+                    "BYPRODUCTS may not be specified without any COMMAND");
+    return true;
+  }
+  if (commandLines.empty() && uses_terminal) {
+    mf.IssueMessage(MessageType::FATAL_ERROR,
+                    "USES_TERMINAL may not be specified without any COMMAND");
+    return true;
+  }
+  if (commandLines.empty() && command_expand_lists) {
+    mf.IssueMessage(
+      MessageType::FATAL_ERROR,
+      "COMMAND_EXPAND_LISTS may not be specified without any COMMAND");
+    return true;
+  }
+
+  if (uses_terminal && !job_pool.empty()) {
+    status.SetError("JOB_POOL is shadowed by USES_TERMINAL.");
+    return false;
+  }
 
   // Add the utility target to the makefile.
-  bool escapeOldStyle = !verbatim;
+  auto cc = cm::make_unique<cmCustomCommand>();
+  cc->SetWorkingDirectory(working_directory.c_str());
+  cc->SetByproducts(byproducts);
+  cc->SetDepends(depends);
+  cc->SetCommandLines(commandLines);
+  cc->SetEscapeOldStyle(!verbatim);
+  cc->SetComment(comment);
+  cc->SetUsesTerminal(uses_terminal);
+  cc->SetCommandExpandLists(command_expand_lists);
+  cc->SetJobPool(job_pool);
   cmTarget* target =
-    this->Makefile->AddUtilityCommand(targetName.c_str(), excludeFromAll,
-                                      working_directory.c_str(), depends,
-                                      commandLines, escapeOldStyle, comment);
+    mf.AddUtilityCommand(targetName, excludeFromAll, std::move(cc));
 
   // Add additional user-specified source files to the target.
   target->AddSources(sources);

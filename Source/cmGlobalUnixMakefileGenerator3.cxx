@@ -1,25 +1,35 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
-
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
-
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmGlobalUnixMakefileGenerator3.h"
-#include "cmLocalUnixMakefileGenerator3.h"
-#include "cmMakefileTargetGenerator.h"
-#include "cmMakefile.h"
-#include "cmake.h"
-#include "cmGeneratedFileStream.h"
-#include "cmSourceFile.h"
-#include "cmTarget.h"
-#include "cmGeneratorTarget.h"
 
-cmGlobalUnixMakefileGenerator3::cmGlobalUnixMakefileGenerator3()
+#include <algorithm>
+#include <functional>
+#include <sstream>
+#include <utility>
+
+#include <cm/memory>
+#include <cmext/algorithm>
+#include <cmext/memory>
+
+#include "cmDocumentationEntry.h"
+#include "cmGeneratedFileStream.h"
+#include "cmGeneratorTarget.h"
+#include "cmGlobalGenerator.h"
+#include "cmLocalGenerator.h"
+#include "cmLocalUnixMakefileGenerator3.h"
+#include "cmMakefile.h"
+#include "cmMakefileTargetGenerator.h"
+#include "cmOutputConverter.h"
+#include "cmState.h"
+#include "cmStateTypes.h"
+#include "cmStringAlgorithms.h"
+#include "cmSystemTools.h"
+#include "cmTargetDepend.h"
+#include "cmValue.h"
+#include "cmake.h"
+
+cmGlobalUnixMakefileGenerator3::cmGlobalUnixMakefileGenerator3(cmake* cm)
+  : cmGlobalCommonGenerator(cm)
 {
   // This type of makefile always requires unix style paths
   this->ForceUnixPaths = true;
@@ -31,110 +41,57 @@ cmGlobalUnixMakefileGenerator3::cmGlobalUnixMakefileGenerator3()
 #else
   this->UseLinkScript = true;
 #endif
-  this->CommandDatabase = NULL;
+
+  this->IncludeDirective = "include";
+  this->LineContinueDirective = "\\\n";
+  this->DefineWindowsNULL = false;
+  this->PassMakeflags = false;
+  this->UnixCD = true;
 }
 
-void cmGlobalUnixMakefileGenerator3
-::EnableLanguage(std::vector<std::string>const& languages,
-                 cmMakefile *mf,
-                 bool optional)
+cmGlobalUnixMakefileGenerator3::~cmGlobalUnixMakefileGenerator3() = default;
+
+void cmGlobalUnixMakefileGenerator3::EnableLanguage(
+  std::vector<std::string> const& languages, cmMakefile* mf, bool optional)
 {
   this->cmGlobalGenerator::EnableLanguage(languages, mf, optional);
-  for(std::vector<std::string>::const_iterator l = languages.begin();
-      l != languages.end(); ++l)
-    {
-    if(*l == "NONE")
-      {
+  for (std::string const& language : languages) {
+    if (language == "NONE") {
       continue;
-      }
-    this->ResolveLanguageCompiler(*l, mf, optional);
     }
+    this->ResolveLanguageCompiler(language, mf, optional);
+  }
 }
 
-///! Create a local generator appropriate to this Global Generator
-cmLocalGenerator *cmGlobalUnixMakefileGenerator3::CreateLocalGenerator()
+//! Create a local generator appropriate to this Global Generator
+std::unique_ptr<cmLocalGenerator>
+cmGlobalUnixMakefileGenerator3::CreateLocalGenerator(cmMakefile* mf)
 {
-  cmLocalGenerator* lg = new cmLocalUnixMakefileGenerator3;
-  lg->SetGlobalGenerator(this);
-  return lg;
+  return std::unique_ptr<cmLocalGenerator>(
+    cm::make_unique<cmLocalUnixMakefileGenerator3>(this, mf));
 }
 
-//----------------------------------------------------------------------------
-void cmGlobalUnixMakefileGenerator3
-::GetDocumentation(cmDocumentationEntry& entry)
+void cmGlobalUnixMakefileGenerator3::GetDocumentation(
+  cmDocumentationEntry& entry)
 {
   entry.Name = cmGlobalUnixMakefileGenerator3::GetActualName();
   entry.Brief = "Generates standard UNIX makefiles.";
 }
 
-//----------------------------------------------------------------------------
-std::string cmGlobalUnixMakefileGenerator3::GetEditCacheCommand() const
+void cmGlobalUnixMakefileGenerator3::ComputeTargetObjectDirectory(
+  cmGeneratorTarget* gt) const
 {
-  // If generating for an extra IDE, the edit_cache target cannot
-  // launch a terminal-interactive tool, so always use cmake-gui.
-  if(this->GetExtraGeneratorName())
-    {
-    return cmSystemTools::GetCMakeGUICommand();
-    }
-
-  // Use an internal cache entry to track the latest dialog used
-  // to edit the cache, and use that for the edit_cache target.
-  cmake* cm = this->GetCMakeInstance();
-  std::string editCacheCommand = cm->GetCMakeEditCommand();
-  if(!cm->GetCacheDefinition("CMAKE_EDIT_COMMAND") ||
-     !editCacheCommand.empty())
-    {
-    if(editCacheCommand.empty())
-      {
-      editCacheCommand = cmSystemTools::GetCMakeCursesCommand();
-      }
-    if(editCacheCommand.empty())
-      {
-      editCacheCommand = cmSystemTools::GetCMakeGUICommand();
-      }
-    if(!editCacheCommand.empty())
-      {
-      cm->AddCacheEntry
-        ("CMAKE_EDIT_COMMAND", editCacheCommand.c_str(),
-         "Path to cache edit program executable.", cmCacheManager::INTERNAL);
-      }
-    }
-  const char* edit_cmd = cm->GetCacheDefinition("CMAKE_EDIT_COMMAND");
-  return edit_cmd? edit_cmd : "";
+  // Compute full path to object file directory for this target.
+  std::string dir =
+    cmStrCat(gt->LocalGenerator->GetCurrentBinaryDirectory(), '/',
+             gt->LocalGenerator->GetTargetDirectory(gt), '/');
+  gt->ObjectDirectory = dir;
 }
 
-//----------------------------------------------------------------------------
-void
-cmGlobalUnixMakefileGenerator3
-::ComputeTargetObjects(cmGeneratorTarget* gt) const
+bool cmGlobalUnixMakefileGenerator3::CanEscapeOctothorpe() const
 {
-  cmTarget* target = gt->Target;
-  cmLocalUnixMakefileGenerator3* lg =
-    static_cast<cmLocalUnixMakefileGenerator3*>(gt->LocalGenerator);
-
-  // Compute full path to object file directory for this target.
-  std::string dir_max;
-  dir_max += gt->Makefile->GetCurrentOutputDirectory();
-  dir_max += "/";
-  dir_max += gt->LocalGenerator->GetTargetDirectory(*target);
-  dir_max += "/";
-  gt->ObjectDirectory = dir_max;
-
-  std::vector<cmSourceFile*> objectSources;
-  gt->GetObjectSources(objectSources);
-  // Compute the name of each object file.
-  for(std::vector<cmSourceFile*>::iterator
-        si = objectSources.begin();
-      si != objectSources.end(); ++si)
-    {
-    cmSourceFile* sf = *si;
-    bool hasSourceExtension = true;
-    std::string objectName = gt->LocalGenerator
-      ->GetObjectFileNameWithoutTarget(*sf, dir_max,
-                                       &hasSourceExtension);
-    gt->AddObject(sf, objectName);
-    lg->AddLocalObjectFile(target, sf, objectName, hasSourceExtension);
-    }
+  // Make tools that use UNIX-style '/' paths also support '\' escaping.
+  return this->ForceUnixPaths;
 }
 
 void cmGlobalUnixMakefileGenerator3::Configure()
@@ -152,72 +109,62 @@ void cmGlobalUnixMakefileGenerator3::Generate()
 
   // initialize progress
   unsigned long total = 0;
-  for(ProgressMapType::const_iterator pmi = this->ProgressMap.begin();
-      pmi != this->ProgressMap.end(); ++pmi)
-    {
-    total += pmi->second.NumberOfActions;
-    }
+  for (auto const& pmi : this->ProgressMap) {
+    total += pmi.second.NumberOfActions;
+  }
 
-  // write each target's progress.make this loop is done twice. Bascially the
+  // write each target's progress.make this loop is done twice. Basically the
   // Generate pass counts all the actions, the first loop below determines
   // how many actions have progress updates for each target and writes to
-  // corrrect variable values for everything except the all targets. The
+  // correct variable values for everything except the all targets. The
   // second loop actually writes out correct values for the all targets as
   // well. This is because the all targets require more information that is
   // computed in the first loop.
   unsigned long current = 0;
-  for(ProgressMapType::iterator pmi = this->ProgressMap.begin();
-      pmi != this->ProgressMap.end(); ++pmi)
-    {
-    pmi->second.WriteProgressVariables(total, current);
-    }
-  for(unsigned int i = 0; i < this->LocalGenerators.size(); ++i)
-    {
-    cmLocalUnixMakefileGenerator3 *lg =
-      static_cast<cmLocalUnixMakefileGenerator3 *>(this->LocalGenerators[i]);
-    std::string markFileName = lg->GetMakefile()->GetStartOutputDirectory();
-    markFileName += "/";
-    markFileName += cmake::GetCMakeFilesDirectory();
-    markFileName += "/progress.marks";
-    cmGeneratedFileStream markFile(markFileName.c_str());
-    markFile << this->CountProgressMarksInAll(lg) << "\n";
-    }
+  for (auto& pmi : this->ProgressMap) {
+    pmi.second.WriteProgressVariables(total, current);
+  }
+  for (const auto& lg : this->LocalGenerators) {
+    std::string markFileName =
+      cmStrCat(lg->GetCurrentBinaryDirectory(), "/CMakeFiles/progress.marks");
+    cmGeneratedFileStream markFile(markFileName);
+    markFile << this->CountProgressMarksInAll(*lg) << "\n";
+  }
 
   // write the main makefile
   this->WriteMainMakefile2();
   this->WriteMainCMakefile();
 
-  if (this->CommandDatabase != NULL) {
-    *this->CommandDatabase << std::endl << "]";
-    delete this->CommandDatabase;
-    this->CommandDatabase = NULL;
+  if (this->CommandDatabase) {
+    *this->CommandDatabase << "\n]";
+    this->CommandDatabase.reset();
   }
 }
 
 void cmGlobalUnixMakefileGenerator3::AddCXXCompileCommand(
-    const std::string &sourceFile, const std::string &workingDirectory,
-    const std::string &compileCommand) {
-  if (this->CommandDatabase == NULL)
-    {
+  const std::string& sourceFile, const std::string& workingDirectory,
+  const std::string& compileCommand)
+{
+  if (!this->CommandDatabase) {
     std::string commandDatabaseName =
-      std::string(this->GetCMakeInstance()->GetHomeOutputDirectory())
-      + "/compile_commands.json";
+      this->GetCMakeInstance()->GetHomeOutputDirectory() +
+      "/compile_commands.json";
     this->CommandDatabase =
-      new cmGeneratedFileStream(commandDatabaseName.c_str());
-    *this->CommandDatabase << "[" << std::endl;
-    } else {
-    *this->CommandDatabase << "," << std::endl;
-    }
-  *this->CommandDatabase << "{" << std::endl
-      << "  \"directory\": \""
-      << cmGlobalGenerator::EscapeJSON(workingDirectory) << "\","
-      << std::endl
-      << "  \"command\": \"" <<
-      cmGlobalGenerator::EscapeJSON(compileCommand) << "\","
-      << std::endl
-      << "  \"file\": \"" <<
-      cmGlobalGenerator::EscapeJSON(sourceFile) << "\""
-      << std::endl << "}";
+      cm::make_unique<cmGeneratedFileStream>(commandDatabaseName);
+    *this->CommandDatabase << "[\n";
+  } else {
+    *this->CommandDatabase << ",\n";
+  }
+  *this->CommandDatabase << "{\n"
+                         << R"(  "directory": ")"
+                         << cmGlobalGenerator::EscapeJSON(workingDirectory)
+                         << "\",\n"
+                         << R"(  "command": ")"
+                         << cmGlobalGenerator::EscapeJSON(compileCommand)
+                         << "\",\n"
+                         << R"(  "file": ")"
+                         << cmGlobalGenerator::EscapeJSON(sourceFile)
+                         << "\"\n}";
 }
 
 void cmGlobalUnixMakefileGenerator3::WriteMainMakefile2()
@@ -226,896 +173,781 @@ void cmGlobalUnixMakefileGenerator3::WriteMainMakefile2()
   // because the check-build-system step compares the makefile time to
   // see if the build system must be regenerated.
   std::string makefileName =
-    this->GetCMakeInstance()->GetHomeOutputDirectory();
-  makefileName += cmake::GetCMakeFilesDirectory();
-  makefileName += "/Makefile2";
-  cmGeneratedFileStream makefileStream(makefileName.c_str());
-  if(!makefileStream)
-    {
+    cmStrCat(this->GetCMakeInstance()->GetHomeOutputDirectory(),
+             "/CMakeFiles/Makefile2");
+  cmGeneratedFileStream makefileStream(makefileName, false,
+                                       this->GetMakefileEncoding());
+  if (!makefileStream) {
     return;
-    }
+  }
 
   // get a local generator for some useful methods
-  cmLocalUnixMakefileGenerator3 *lg =
-    static_cast<cmLocalUnixMakefileGenerator3 *>(this->LocalGenerators[0]);
+  auto& lg = cm::static_reference_cast<cmLocalUnixMakefileGenerator3>(
+    this->LocalGenerators[0]);
 
   // Write the do not edit header.
-  lg->WriteDisclaimer(makefileStream);
+  lg.WriteDisclaimer(makefileStream);
 
   // Write the main entry point target.  This must be the VERY first
   // target so that make with no arguments will run it.
   // Just depend on the all target to drive the build.
   std::vector<std::string> depends;
   std::vector<std::string> no_commands;
-  depends.push_back("all");
+  depends.emplace_back("all");
 
   // Write the rule.
-  lg->WriteMakeRule(makefileStream,
-                    "Default target executed when no arguments are "
-                    "given to make.",
-                    "default_target",
-                    depends,
-                    no_commands, true);
+  lg.WriteMakeRule(makefileStream,
+                   "Default target executed when no arguments are "
+                   "given to make.",
+                   "default_target", depends, no_commands, true);
 
   depends.clear();
 
   // The all and preinstall rules might never have any dependencies
   // added to them.
-  if(this->EmptyRuleHackDepends != "")
-    {
+  if (!this->EmptyRuleHackDepends.empty()) {
     depends.push_back(this->EmptyRuleHackDepends);
-    }
-
-  // Write and empty all:
-  lg->WriteMakeRule(makefileStream,
-                    "The main recursive all target", "all",
-                    depends, no_commands, true);
-
-  // Write an empty preinstall:
-  lg->WriteMakeRule(makefileStream,
-                    "The main recursive preinstall target", "preinstall",
-                    depends, no_commands, true);
+  }
 
   // Write out the "special" stuff
-  lg->WriteSpecialTargetsTop(makefileStream);
+  lg.WriteSpecialTargetsTop(makefileStream);
 
-  // write the target convenience rules
-  unsigned int i;
-  for (i = 0; i < this->LocalGenerators.size(); ++i)
-    {
-    lg =
-      static_cast<cmLocalUnixMakefileGenerator3 *>(this->LocalGenerators[i]);
-    this->WriteConvenienceRules2(makefileStream,lg);
-    }
+  // Write the directory level rules.
+  for (auto const& it : this->ComputeDirectoryTargets()) {
+    this->WriteDirectoryRules2(makefileStream, it.second);
+  }
 
-  lg = static_cast<cmLocalUnixMakefileGenerator3 *>(this->LocalGenerators[0]);
-  lg->WriteSpecialTargetsBottom(makefileStream);
+  // Write the target convenience rules
+  for (const auto& localGen : this->LocalGenerators) {
+    this->WriteConvenienceRules2(
+      makefileStream,
+      cm::static_reference_cast<cmLocalUnixMakefileGenerator3>(localGen));
+  }
+
+  // Write special bottom targets
+  lg.WriteSpecialTargetsBottom(makefileStream);
 }
 
-
-//----------------------------------------------------------------------------
 void cmGlobalUnixMakefileGenerator3::WriteMainCMakefile()
 {
+  if (this->GlobalSettingIsOn("CMAKE_SUPPRESS_REGENERATION")) {
+    return;
+  }
+
   // Open the output file.  This should not be copy-if-different
   // because the check-build-system step compares the makefile time to
   // see if the build system must be regenerated.
   std::string cmakefileName =
-    this->GetCMakeInstance()->GetHomeOutputDirectory();
-  cmakefileName += cmake::GetCMakeFilesDirectory();
-  cmakefileName += "/Makefile.cmake";
-  cmGeneratedFileStream cmakefileStream(cmakefileName.c_str());
-  if(!cmakefileStream)
-    {
+    cmStrCat(this->GetCMakeInstance()->GetHomeOutputDirectory(),
+             "/CMakeFiles/Makefile.cmake");
+  cmGeneratedFileStream cmakefileStream(cmakefileName);
+  if (!cmakefileStream) {
     return;
-    }
+  }
 
   std::string makefileName =
-    this->GetCMakeInstance()->GetHomeOutputDirectory();
-  makefileName += "/Makefile";
+    cmStrCat(this->GetCMakeInstance()->GetHomeOutputDirectory(), "/Makefile");
 
-  // get a local generator for some useful methods
-  cmLocalUnixMakefileGenerator3 *lg =
-    static_cast<cmLocalUnixMakefileGenerator3 *>(this->LocalGenerators[0]);
+  {
+    // get a local generator for some useful methods
+    auto& lg = cm::static_reference_cast<cmLocalUnixMakefileGenerator3>(
+      this->LocalGenerators[0]);
 
-  // Write the do not edit header.
-  lg->WriteDisclaimer(cmakefileStream);
+    // Write the do not edit header.
+    lg.WriteDisclaimer(cmakefileStream);
+  }
 
   // Save the generator name
-  cmakefileStream
-    << "# The generator used is:\n"
-    << "set(CMAKE_DEPENDS_GENERATOR \"" << this->GetName() << "\")\n\n";
+  cmakefileStream << "# The generator used is:\n"
+                  << "set(CMAKE_DEPENDS_GENERATOR \"" << this->GetName()
+                  << "\")\n\n";
 
   // for each cmMakefile get its list of dependencies
   std::vector<std::string> lfiles;
-  for (unsigned int i = 0; i < this->LocalGenerators.size(); ++i)
-    {
-    lg =
-      static_cast<cmLocalUnixMakefileGenerator3 *>(this->LocalGenerators[i]);
-
+  for (const auto& localGen : this->LocalGenerators) {
     // Get the list of files contributing to this generation step.
-    lfiles.insert(lfiles.end(),lg->GetMakefile()->GetListFiles().begin(),
-                  lg->GetMakefile()->GetListFiles().end());
-    }
+    cm::append(lfiles, localGen->GetMakefile()->GetListFiles());
+  }
+
+  cmake* cm = this->GetCMakeInstance();
+  if (cm->DoWriteGlobVerifyTarget()) {
+    lfiles.push_back(cm->GetGlobVerifyScript());
+    lfiles.push_back(cm->GetGlobVerifyStamp());
+  }
+
   // Sort the list and remove duplicates.
   std::sort(lfiles.begin(), lfiles.end(), std::less<std::string>());
 #if !defined(__VMS) // The Compaq STL on VMS crashes, so accept duplicates.
-  std::vector<std::string>::iterator new_end =
-    std::unique(lfiles.begin(),lfiles.end());
+  auto new_end = std::unique(lfiles.begin(), lfiles.end());
   lfiles.erase(new_end, lfiles.end());
 #endif
 
-  // reset lg to the first makefile
-  lg = static_cast<cmLocalUnixMakefileGenerator3 *>(this->LocalGenerators[0]);
-
-  // Build the path to the cache file.
-  std::string cache = this->GetCMakeInstance()->GetHomeOutputDirectory();
-  cache += "/CMakeCache.txt";
-
-  // Save the list to the cmake file.
-  cmakefileStream
-    << "# The top level Makefile was generated from the following files:\n"
-    << "set(CMAKE_MAKEFILE_DEPENDS\n"
-    << "  \""
-    << lg->Convert(cache.c_str(),
-                   cmLocalGenerator::START_OUTPUT).c_str() << "\"\n";
-  for(std::vector<std::string>::const_iterator i = lfiles.begin();
-      i !=  lfiles.end(); ++i)
-    {
-    cmakefileStream
-      << "  \""
-      << lg->Convert(i->c_str(), cmLocalGenerator::START_OUTPUT).c_str()
-      << "\"\n";
-    }
-  cmakefileStream
-    << "  )\n\n";
-
-  // Build the path to the cache check file.
-  std::string check = this->GetCMakeInstance()->GetHomeOutputDirectory();
-  check += cmake::GetCMakeFilesDirectory();
-  check += "/cmake.check_cache";
-
-  // Set the corresponding makefile in the cmake file.
-  cmakefileStream
-    << "# The corresponding makefile is:\n"
-    << "set(CMAKE_MAKEFILE_OUTPUTS\n"
-    << "  \""
-    << lg->Convert(makefileName.c_str(),
-                   cmLocalGenerator::START_OUTPUT).c_str() << "\"\n"
-    << "  \""
-    << lg->Convert(check.c_str(),
-                   cmLocalGenerator::START_OUTPUT).c_str() << "\"\n";
-  cmakefileStream << "  )\n\n";
-
-  // CMake must rerun if a byproduct is missing.
   {
-  cmakefileStream
-    << "# Byproducts of CMake generate step:\n"
-    << "set(CMAKE_MAKEFILE_PRODUCTS\n";
-  const std::vector<std::string>& outfiles =
-    lg->GetMakefile()->GetOutputFiles();
-  for(std::vector<std::string>::const_iterator k = outfiles.begin();
-      k != outfiles.end(); ++k)
-    {
-    cmakefileStream << "  \"" <<
-      lg->Convert(k->c_str(),cmLocalGenerator::HOME_OUTPUT).c_str()
-                    << "\"\n";
-    }
+    // reset lg to the first makefile
+    const auto& lg = cm::static_reference_cast<cmLocalUnixMakefileGenerator3>(
+      this->LocalGenerators[0]);
 
-  // add in all the directory information files
-  std::string tmpStr;
-  for (unsigned int i = 0; i < this->LocalGenerators.size(); ++i)
-    {
-    lg =
-      static_cast<cmLocalUnixMakefileGenerator3 *>(this->LocalGenerators[i]);
-    tmpStr = lg->GetMakefile()->GetStartOutputDirectory();
-    tmpStr += cmake::GetCMakeFilesDirectory();
-    tmpStr += "/CMakeDirectoryInformation.cmake";
-    cmakefileStream << "  \"" <<
-      lg->Convert(tmpStr.c_str(),cmLocalGenerator::HOME_OUTPUT).c_str()
-                    << "\"\n";
+    // Save the list to the cmake file.
+    cmakefileStream
+      << "# The top level Makefile was generated from the following files:\n"
+      << "set(CMAKE_MAKEFILE_DEPENDS\n"
+      << "  \"CMakeCache.txt\"\n";
+    for (std::string const& f : lfiles) {
+      cmakefileStream << "  \"" << lg.MaybeRelativeToCurBinDir(f) << "\"\n";
     }
-  cmakefileStream << "  )\n\n";
+    cmakefileStream << "  )\n\n";
+
+    // Build the path to the cache check file.
+    std::string check =
+      cmStrCat(this->GetCMakeInstance()->GetHomeOutputDirectory(),
+               "/CMakeFiles/cmake.check_cache");
+
+    // Set the corresponding makefile in the cmake file.
+    cmakefileStream << "# The corresponding makefile is:\n"
+                    << "set(CMAKE_MAKEFILE_OUTPUTS\n"
+                    << "  \"" << lg.MaybeRelativeToCurBinDir(makefileName)
+                    << "\"\n"
+                    << "  \"" << lg.MaybeRelativeToCurBinDir(check) << "\"\n";
+    cmakefileStream << "  )\n\n";
+
+    // CMake must rerun if a byproduct is missing.
+    cmakefileStream << "# Byproducts of CMake generate step:\n"
+                    << "set(CMAKE_MAKEFILE_PRODUCTS\n";
+
+    // add in any byproducts and all the directory information files
+    std::string tmpStr;
+    for (const auto& localGen : this->LocalGenerators) {
+      for (std::string const& outfile :
+           localGen->GetMakefile()->GetOutputFiles()) {
+        cmakefileStream << "  \"" << lg.MaybeRelativeToTopBinDir(outfile)
+                        << "\"\n";
+      }
+      tmpStr = cmStrCat(localGen->GetCurrentBinaryDirectory(),
+                        "/CMakeFiles/CMakeDirectoryInformation.cmake");
+      cmakefileStream << "  \"" << localGen->MaybeRelativeToTopBinDir(tmpStr)
+                      << "\"\n";
+    }
+    cmakefileStream << "  )\n\n";
   }
 
   this->WriteMainCMakefileLanguageRules(cmakefileStream,
                                         this->LocalGenerators);
 }
 
-void cmGlobalUnixMakefileGenerator3
-::WriteMainCMakefileLanguageRules(cmGeneratedFileStream& cmakefileStream,
-                                  std::vector<cmLocalGenerator *> &lGenerators
-                                  )
+void cmGlobalUnixMakefileGenerator3::WriteMainCMakefileLanguageRules(
+  cmGeneratedFileStream& cmakefileStream,
+  std::vector<std::unique_ptr<cmLocalGenerator>>& lGenerators)
 {
-  cmLocalUnixMakefileGenerator3 *lg;
-
   // now list all the target info files
-  cmakefileStream
-    << "# Dependency information for all targets:\n";
-  cmakefileStream
-    << "set(CMAKE_DEPEND_INFO_FILES\n";
-  for (unsigned int i = 0; i < lGenerators.size(); ++i)
-    {
-    lg = static_cast<cmLocalUnixMakefileGenerator3 *>(lGenerators[i]);
+  cmakefileStream << "# Dependency information for all targets:\n";
+  cmakefileStream << "set(CMAKE_DEPEND_INFO_FILES\n";
+  for (const auto& lGenerator : lGenerators) {
+    const auto& lg =
+      cm::static_reference_cast<cmLocalUnixMakefileGenerator3>(lGenerator);
     // for all of out targets
-    for (cmTargets::iterator l = lg->GetMakefile()->GetTargets().begin();
-         l != lg->GetMakefile()->GetTargets().end(); l++)
-      {
-      if((l->second.GetType() == cmTarget::EXECUTABLE) ||
-         (l->second.GetType() == cmTarget::STATIC_LIBRARY) ||
-         (l->second.GetType() == cmTarget::SHARED_LIBRARY) ||
-         (l->second.GetType() == cmTarget::MODULE_LIBRARY) ||
-         (l->second.GetType() == cmTarget::OBJECT_LIBRARY) ||
-         (l->second.GetType() == cmTarget::UTILITY))
-        {
-        std::string tname = lg->GetRelativeTargetDirectory(l->second);
-        tname += "/DependInfo.cmake";
+    for (const auto& tgt : lg.GetGeneratorTargets()) {
+      if (tgt->IsInBuildSystem() &&
+          tgt->GetType() != cmStateEnums::GLOBAL_TARGET) {
+        std::string tname = cmStrCat(lg.GetRelativeTargetDirectory(tgt.get()),
+                                     "/DependInfo.cmake");
         cmSystemTools::ConvertToUnixSlashes(tname);
-        cmakefileStream << "  \"" << tname.c_str() << "\"\n";
-        }
+        cmakefileStream << "  \"" << tname << "\"\n";
       }
     }
+  }
   cmakefileStream << "  )\n";
 }
 
-//----------------------------------------------------------------------------
-void
-cmGlobalUnixMakefileGenerator3
-::WriteDirectoryRule2(std::ostream& ruleFileStream,
-                      cmLocalUnixMakefileGenerator3* lg,
-                      const char* pass, bool check_all,
-                      bool check_relink)
+void cmGlobalUnixMakefileGenerator3::WriteDirectoryRule2(
+  std::ostream& ruleFileStream, DirectoryTarget const& dt, const char* pass,
+  bool check_all, bool check_relink, std::vector<std::string> const& commands)
 {
-  // Get the relative path to the subdirectory from the top.
-  std::string makeTarget = lg->GetMakefile()->GetStartOutputDirectory();
-  makeTarget += "/";
-  makeTarget += pass;
+  auto* lg = static_cast<cmLocalUnixMakefileGenerator3*>(dt.LG);
+  std::string makeTarget =
+    cmStrCat(lg->GetCurrentBinaryDirectory(), '/', pass);
 
   // The directory-level rule should depend on the target-level rules
   // for all targets in the directory.
   std::vector<std::string> depends;
-  cmGeneratorTargetsType targets = lg->GetMakefile()->GetGeneratorTargets();
-  for(cmGeneratorTargetsType::iterator l = targets.begin();
-      l != targets.end(); ++l)
-    {
-    if((l->second->GetType() == cmTarget::EXECUTABLE) ||
-       (l->second->GetType() == cmTarget::STATIC_LIBRARY) ||
-       (l->second->GetType() == cmTarget::SHARED_LIBRARY) ||
-       (l->second->GetType() == cmTarget::MODULE_LIBRARY) ||
-       (l->second->GetType() == cmTarget::OBJECT_LIBRARY) ||
-       (l->second->GetType() == cmTarget::UTILITY))
-      {
-      if(l->second->Target->IsImported())
-        {
-        continue;
-        }
-      // Add this to the list of depends rules in this directory.
-      if((!check_all || !l->second->GetPropertyAsBool("EXCLUDE_FROM_ALL")) &&
-         (!check_relink ||
-          l->second->Target
-                   ->NeedRelinkBeforeInstall(lg->ConfigurationName.c_str())))
-        {
-        std::string tname = lg->GetRelativeTargetDirectory(*l->second->Target);
-        tname += "/";
-        tname += pass;
-        depends.push_back(tname);
-        }
-      }
+  for (DirectoryTarget::Target const& t : dt.Targets) {
+    // Add this to the list of depends rules in this directory.
+    if ((!check_all || t.ExcludedFromAllInConfigs.empty()) &&
+        (!check_relink ||
+         t.GT->NeedRelinkBeforeInstall(lg->GetConfigName()))) {
+      // The target may be from a different directory; use its local gen.
+      auto const* tlg = static_cast<cmLocalUnixMakefileGenerator3 const*>(
+        t.GT->GetLocalGenerator());
+      std::string tname =
+        cmStrCat(tlg->GetRelativeTargetDirectory(t.GT), '/', pass);
+      depends.push_back(std::move(tname));
     }
+  }
 
   // The directory-level rule should depend on the directory-level
   // rules of the subdirectories.
-  for(std::vector<cmLocalGenerator*>::iterator sdi =
-        lg->GetChildren().begin(); sdi != lg->GetChildren().end(); ++sdi)
-    {
-    cmLocalUnixMakefileGenerator3* slg =
-      static_cast<cmLocalUnixMakefileGenerator3*>(*sdi);
-    std::string subdir = slg->GetMakefile()->GetStartOutputDirectory();
-    subdir += "/";
-    subdir += pass;
-    depends.push_back(subdir);
+  for (DirectoryTarget::Dir const& d : dt.Children) {
+    if (check_all && d.ExcludeFromAll) {
+      continue;
     }
+    std::string subdir = cmStrCat(d.Path, '/', pass);
+    depends.push_back(std::move(subdir));
+  }
 
   // Work-around for makes that drop rules that have no dependencies
   // or commands.
-  if(depends.empty() && this->EmptyRuleHackDepends != "")
-    {
+  if (depends.empty() && !this->EmptyRuleHackDepends.empty()) {
     depends.push_back(this->EmptyRuleHackDepends);
-    }
+  }
 
   // Write the rule.
-  std::string doc = "Convenience name for \"";
-  doc += pass;
-  doc += "\" pass in the directory.";
-  std::vector<std::string> no_commands;
-  lg->WriteMakeRule(ruleFileStream, doc.c_str(),
-                    makeTarget.c_str(), depends, no_commands, true);
+  std::string doc;
+  if (lg->IsRootMakefile()) {
+    doc = cmStrCat("The main recursive \"", pass, "\" target.");
+  } else {
+    doc = cmStrCat("Recursive \"", pass, "\" directory target.");
+  }
+  lg->WriteMakeRule(ruleFileStream, doc.c_str(), makeTarget, depends, commands,
+                    true);
 }
 
-//----------------------------------------------------------------------------
-void
-cmGlobalUnixMakefileGenerator3
-::WriteDirectoryRules2(std::ostream& ruleFileStream,
-                       cmLocalUnixMakefileGenerator3* lg)
+void cmGlobalUnixMakefileGenerator3::WriteDirectoryRules2(
+  std::ostream& ruleFileStream, DirectoryTarget const& dt)
 {
-  // Only subdirectories need these rules.
-  if(!lg->GetParent())
-    {
-    return;
-    }
-
+  auto* lg = static_cast<cmLocalUnixMakefileGenerator3*>(dt.LG);
   // Begin the directory-level rules section.
-  std::string dir = lg->GetMakefile()->GetStartOutputDirectory();
-  dir = lg->Convert(dir.c_str(), cmLocalGenerator::HOME_OUTPUT,
-                    cmLocalGenerator::MAKEFILE);
-  lg->WriteDivider(ruleFileStream);
-  ruleFileStream
-    << "# Directory level rules for directory "
-    << dir << "\n\n";
+  {
+    std::string dir = cmSystemTools::ConvertToOutputPath(
+      lg->MaybeRelativeToTopBinDir(lg->GetCurrentBinaryDirectory()));
+    lg->WriteDivider(ruleFileStream);
+    if (lg->IsRootMakefile()) {
+      ruleFileStream << "# Directory level rules for the build root directory";
+    } else {
+      ruleFileStream << "# Directory level rules for directory " << dir;
+    }
+    ruleFileStream << "\n\n";
+  }
 
   // Write directory-level rules for "all".
-  this->WriteDirectoryRule2(ruleFileStream, lg, "all", true, false);
-
-  // Write directory-level rules for "clean".
-  this->WriteDirectoryRule2(ruleFileStream, lg, "clean", false, false);
+  this->WriteDirectoryRule2(ruleFileStream, dt, "all", true, false);
 
   // Write directory-level rules for "preinstall".
-  this->WriteDirectoryRule2(ruleFileStream, lg, "preinstall", true, true);
+  this->WriteDirectoryRule2(ruleFileStream, dt, "preinstall", true, true);
+
+  // Write directory-level rules for "clean".
+  {
+    std::vector<std::string> cmds;
+    lg->AppendDirectoryCleanCommand(cmds);
+    this->WriteDirectoryRule2(ruleFileStream, dt, "clean", false, false, cmds);
+  }
 }
 
-//----------------------------------------------------------------------------
-void cmGlobalUnixMakefileGenerator3
-::GenerateBuildCommand(std::vector<std::string>& makeCommand,
-                       const char* makeProgram,
-                       const char* /*projectName*/,
-                       const char* /*projectDir*/,
-                       const char* targetName,
-                       const char* /*config*/,
-                       bool fast,
-                       std::vector<std::string> const& makeOptions)
+namespace {
+std::string ConvertToMakefilePathForUnix(std::string const& path)
 {
-  makeCommand.push_back(
-    this->SelectMakeProgram(makeProgram)
-    );
-
-  // Since we have full control over the invocation of nmake, let us
-  // make it quiet.
-  if ( strcmp(this->GetName(), "NMake Makefiles") == 0 )
-    {
-    makeCommand.push_back("/NOLOGO");
+  std::string result;
+  result.reserve(path.size());
+  for (char c : path) {
+    switch (c) {
+      case '=':
+        // We provide 'EQUALS = =' to encode '=' in a non-assignment case.
+        result.append("$(EQUALS)");
+        break;
+      case '$':
+        result.append("$$");
+        break;
+      case '\\':
+      case ' ':
+      case '#':
+        result.push_back('\\');
+        CM_FALLTHROUGH;
+      default:
+        result.push_back(c);
+        break;
     }
-  makeCommand.insert(makeCommand.end(),
-                     makeOptions.begin(), makeOptions.end());
-  if ( targetName && strlen(targetName))
-    {
-    cmLocalUnixMakefileGenerator3 *lg;
-    if (this->LocalGenerators.size())
-      {
-      lg = static_cast<cmLocalUnixMakefileGenerator3 *>
-        (this->LocalGenerators[0]);
-      }
-    else
-      {
-      lg = static_cast<cmLocalUnixMakefileGenerator3 *>
-        (this->CreateLocalGenerator());
-      // set the Start directories
-      lg->GetMakefile()->SetStartDirectory
-        (this->CMakeInstance->GetStartDirectory());
-      lg->GetMakefile()->SetStartOutputDirectory
-        (this->CMakeInstance->GetStartOutputDirectory());
-      lg->GetMakefile()->MakeStartDirectoriesCurrent();
-      }
-
-    std::string tname = targetName;
-    if(fast)
-      {
-      tname += "/fast";
-      }
-    tname = lg->Convert(tname.c_str(),cmLocalGenerator::HOME_OUTPUT);
-    cmSystemTools::ConvertToOutputSlashes(tname);
-    makeCommand.push_back(tname);
-    if (!this->LocalGenerators.size())
-      {
-      delete lg;
-      }
-    }
+  }
+  return result;
 }
 
-//----------------------------------------------------------------------------
-void
-cmGlobalUnixMakefileGenerator3
-::WriteConvenienceRules(std::ostream& ruleFileStream,
-                        std::set<cmStdString> &emitted)
+#if defined(_WIN32) && !defined(__CYGWIN__)
+std::string ConvertToMakefilePathForWindows(std::string const& path)
+{
+  bool const quote = path.find_first_of(" #") != std::string::npos;
+  std::string result;
+  result.reserve(path.size() + (quote ? 2 : 0));
+  if (quote) {
+    result.push_back('"');
+  }
+  for (char c : path) {
+    switch (c) {
+      case '=':
+        // We provide 'EQUALS = =' to encode '=' in a non-assignment case.
+        result.append("$(EQUALS)");
+        break;
+      case '$':
+        result.append("$$");
+        break;
+      case '/':
+        result.push_back('\\');
+        break;
+      default:
+        result.push_back(c);
+        break;
+    }
+  }
+  if (quote) {
+    result.push_back('"');
+  }
+  return result;
+}
+#endif
+}
+
+std::string cmGlobalUnixMakefileGenerator3::ConvertToMakefilePath(
+  std::string const& path) const
+{
+#if defined(_WIN32) && !defined(__CYGWIN__)
+  if (!this->ForceUnixPaths) {
+    return ConvertToMakefilePathForWindows(path);
+  }
+#endif
+  return ConvertToMakefilePathForUnix(path);
+}
+
+std::vector<cmGlobalGenerator::GeneratedMakeCommand>
+cmGlobalUnixMakefileGenerator3::GenerateBuildCommand(
+  const std::string& makeProgram, const std::string& /*projectName*/,
+  const std::string& /*projectDir*/,
+  std::vector<std::string> const& targetNames, const std::string& /*config*/,
+  int jobs, bool verbose, const cmBuildOptions& buildOptions,
+  std::vector<std::string> const& makeOptions)
+{
+  GeneratedMakeCommand makeCommand;
+
+  // Make it possible to set verbosity also from command line
+  if (verbose) {
+    makeCommand.Add(cmSystemTools::GetCMakeCommand());
+    makeCommand.Add("-E");
+    makeCommand.Add("env");
+    makeCommand.Add("VERBOSE=1");
+  }
+  makeCommand.Add(this->SelectMakeProgram(makeProgram));
+
+  // Explicitly tell the make tool to use the Makefile written by
+  // cmLocalUnixMakefileGenerator3::WriteLocalMakefile
+  makeCommand.Add("-f");
+  makeCommand.Add("Makefile");
+
+  if (jobs != cmake::NO_BUILD_PARALLEL_LEVEL) {
+    if (jobs == cmake::DEFAULT_BUILD_PARALLEL_LEVEL) {
+      makeCommand.Add("-j");
+    } else {
+      makeCommand.Add("-j" + std::to_string(jobs));
+    }
+  }
+
+  makeCommand.Add(makeOptions.begin(), makeOptions.end());
+  for (auto tname : targetNames) {
+    if (!tname.empty()) {
+      if (buildOptions.Fast) {
+        tname += "/fast";
+      }
+      cmSystemTools::ConvertToOutputSlashes(tname);
+      makeCommand.Add(std::move(tname));
+    }
+  }
+  return { std::move(makeCommand) };
+}
+
+void cmGlobalUnixMakefileGenerator3::WriteConvenienceRules(
+  std::ostream& ruleFileStream, std::set<std::string>& emitted)
 {
   std::vector<std::string> depends;
   std::vector<std::string> commands;
 
-  depends.push_back("cmake_check_build_system");
+  bool regenerate = !this->GlobalSettingIsOn("CMAKE_SUPPRESS_REGENERATION");
+  if (regenerate) {
+    depends.emplace_back("cmake_check_build_system");
+  }
 
   // write the target convenience rules
-  unsigned int i;
-  cmLocalUnixMakefileGenerator3 *lg;
-  for (i = 0; i < this->LocalGenerators.size(); ++i)
-    {
-    lg = static_cast<cmLocalUnixMakefileGenerator3 *>
-      (this->LocalGenerators[i]);
+  for (const auto& localGen : this->LocalGenerators) {
+    auto& lg =
+      cm::static_reference_cast<cmLocalUnixMakefileGenerator3>(localGen);
     // for each target Generate the rule files for each target.
-    cmGeneratorTargetsType targets = lg->GetMakefile()->GetGeneratorTargets();
-    for(cmGeneratorTargetsType::iterator t = targets.begin();
-        t != targets.end(); ++t)
-      {
-      if(t->second->Target->IsImported())
-        {
-        continue;
-        }
+    for (const auto& gtarget : lg.GetGeneratorTargets()) {
       // Don't emit the same rule twice (e.g. two targets with the same
       // simple name)
-      if(t->second->GetName() &&
-         strlen(t->second->GetName()) &&
-         emitted.insert(t->second->GetName()).second &&
-         // Handle user targets here.  Global targets are handled in
-         // the local generator on a per-directory basis.
-         ((t->second->GetType() == cmTarget::EXECUTABLE) ||
-          (t->second->GetType() == cmTarget::STATIC_LIBRARY) ||
-          (t->second->GetType() == cmTarget::SHARED_LIBRARY) ||
-          (t->second->GetType() == cmTarget::MODULE_LIBRARY) ||
-          (t->second->GetType() == cmTarget::OBJECT_LIBRARY) ||
-          (t->second->GetType() == cmTarget::UTILITY)))
-        {
+      std::string name = gtarget->GetName();
+      if (!name.empty() && emitted.insert(name).second &&
+          // Handle user targets here.  Global targets are handled in
+          // the local generator on a per-directory basis.
+          (gtarget->IsInBuildSystem() &&
+           gtarget->GetType() != cmStateEnums::GLOBAL_TARGET)) {
         // Add a rule to build the target by name.
-        lg->WriteDivider(ruleFileStream);
-        ruleFileStream
-          << "# Target rules for targets named "
-          << t->second->GetName() << "\n\n";
+        lg.WriteDivider(ruleFileStream);
+        ruleFileStream << "# Target rules for targets named " << name
+                       << "\n\n";
 
         // Write the rule.
         commands.clear();
-        std::string tmp = cmake::GetCMakeFilesDirectoryPostSlash();
-        tmp += "Makefile2";
-        commands.push_back(lg->GetRecursiveMakeCall
-                            (tmp.c_str(),t->second->GetName()));
+        std::string tmp = "CMakeFiles/Makefile2";
+        commands.push_back(lg.GetRecursiveMakeCall(tmp, name));
         depends.clear();
-        depends.push_back("cmake_check_build_system");
-        lg->WriteMakeRule(ruleFileStream,
-                          "Build rule for target.",
-                          t->second->GetName(), depends, commands,
-                          true);
+        if (regenerate) {
+          depends.emplace_back("cmake_check_build_system");
+        }
+        lg.WriteMakeRule(ruleFileStream, "Build rule for target.", name,
+                         depends, commands, true);
 
         // Add a fast rule to build the target
-        std::string localName =
-                          lg->GetRelativeTargetDirectory(*t->second->Target);
+        std::string localName = lg.GetRelativeTargetDirectory(gtarget.get());
         std::string makefileName;
-        makefileName = localName;
-        makefileName += "/build.make";
+        makefileName = cmStrCat(localName, "/build.make");
         depends.clear();
         commands.clear();
-        std::string makeTargetName = localName;
-        makeTargetName += "/build";
-        localName = t->second->GetName();
-        localName += "/fast";
-        commands.push_back(lg->GetRecursiveMakeCall
-                            (makefileName.c_str(), makeTargetName.c_str()));
-        lg->WriteMakeRule(ruleFileStream, "fast build rule for target.",
-                          localName.c_str(), depends, commands, true);
+        std::string makeTargetName = cmStrCat(localName, "/build");
+        localName = cmStrCat(name, "/fast");
+        commands.push_back(
+          lg.GetRecursiveMakeCall(makefileName, makeTargetName));
+        lg.WriteMakeRule(ruleFileStream, "fast build rule for target.",
+                         localName, depends, commands, true);
 
         // Add a local name for the rule to relink the target before
         // installation.
-        if(t->second->Target
-                    ->NeedRelinkBeforeInstall(lg->ConfigurationName.c_str()))
-          {
-          makeTargetName = lg->GetRelativeTargetDirectory(*t->second->Target);
-          makeTargetName += "/preinstall";
-          localName = t->second->GetName();
-          localName += "/preinstall";
+        if (gtarget->NeedRelinkBeforeInstall(lg.GetConfigName())) {
+          makeTargetName = cmStrCat(
+            lg.GetRelativeTargetDirectory(gtarget.get()), "/preinstall");
+          localName = cmStrCat(name, "/preinstall");
           depends.clear();
           commands.clear();
-          commands.push_back(lg->GetRecursiveMakeCall
-                             (makefileName.c_str(), makeTargetName.c_str()));
-          lg->WriteMakeRule(ruleFileStream,
-                            "Manual pre-install relink rule for target.",
-                            localName.c_str(), depends, commands, true);
-          }
+          commands.push_back(
+            lg.GetRecursiveMakeCall(makefileName, makeTargetName));
+          lg.WriteMakeRule(ruleFileStream,
+                           "Manual pre-install relink rule for target.",
+                           localName, depends, commands, true);
         }
       }
     }
+  }
 }
 
-
-//----------------------------------------------------------------------------
-void
-cmGlobalUnixMakefileGenerator3
-::WriteConvenienceRules2(std::ostream& ruleFileStream,
-                         cmLocalUnixMakefileGenerator3 *lg)
+void cmGlobalUnixMakefileGenerator3::WriteConvenienceRules2(
+  std::ostream& ruleFileStream, cmLocalUnixMakefileGenerator3& lg)
 {
   std::vector<std::string> depends;
   std::vector<std::string> commands;
   std::string localName;
   std::string makeTargetName;
 
-
-  // write the directory level rules for this local gen
-  this->WriteDirectoryRules2(ruleFileStream,lg);
-
-  depends.push_back("cmake_check_build_system");
+  bool regenerate = !this->GlobalSettingIsOn("CMAKE_SUPPRESS_REGENERATION");
+  if (regenerate) {
+    depends.emplace_back("cmake_check_build_system");
+  }
 
   // for each target Generate the rule files for each target.
-  cmGeneratorTargetsType targets = lg->GetMakefile()->GetGeneratorTargets();
-  for(cmGeneratorTargetsType::iterator t = targets.begin();
-      t != targets.end(); ++t)
-    {
-    if(t->second->Target->IsImported())
-      {
-      continue;
-      }
-    if (t->second->GetName()
-     && strlen(t->second->GetName())
-     && ((t->second->GetType() == cmTarget::EXECUTABLE)
-        || (t->second->GetType() == cmTarget::STATIC_LIBRARY)
-        || (t->second->GetType() == cmTarget::SHARED_LIBRARY)
-        || (t->second->GetType() == cmTarget::MODULE_LIBRARY)
-        || (t->second->GetType() == cmTarget::OBJECT_LIBRARY)
-        || (t->second->GetType() == cmTarget::UTILITY)))
-      {
+  for (const auto& gtarget : lg.GetGeneratorTargets()) {
+    std::string name = gtarget->GetName();
+    if (!name.empty() &&
+        (gtarget->IsInBuildSystem() &&
+         gtarget->GetType() != cmStateEnums::GLOBAL_TARGET)) {
       std::string makefileName;
       // Add a rule to build the target by name.
-      localName = lg->GetRelativeTargetDirectory(*t->second->Target);
-      makefileName = localName;
-      makefileName += "/build.make";
+      localName = lg.GetRelativeTargetDirectory(gtarget.get());
+      makefileName = cmStrCat(localName, "/build.make");
 
-      bool needRequiresStep = this->NeedRequiresStep(*t->second->Target);
-
-      lg->WriteDivider(ruleFileStream);
-      ruleFileStream
-        << "# Target rules for target "
-        << localName << "\n\n";
+      lg.WriteDivider(ruleFileStream);
+      ruleFileStream << "# Target rules for target " << localName << "\n\n";
 
       commands.clear();
-      makeTargetName = localName;
-      makeTargetName += "/depend";
-      commands.push_back(lg->GetRecursiveMakeCall
-                         (makefileName.c_str(),makeTargetName.c_str()));
+      makeTargetName = cmStrCat(localName, "/depend");
+      commands.push_back(
+        lg.GetRecursiveMakeCall(makefileName, makeTargetName));
 
-      // add requires if we need it for this generator
-      if (needRequiresStep)
-        {
-        makeTargetName = localName;
-        makeTargetName += "/requires";
-        commands.push_back(lg->GetRecursiveMakeCall
-                          (makefileName.c_str(),makeTargetName.c_str()));
-        }
-      makeTargetName = localName;
-      makeTargetName += "/build";
-      commands.push_back(lg->GetRecursiveMakeCall
-                         (makefileName.c_str(),makeTargetName.c_str()));
+      makeTargetName = cmStrCat(localName, "/build");
+      commands.push_back(
+        lg.GetRecursiveMakeCall(makefileName, makeTargetName));
 
       // Write the rule.
       localName += "/all";
       depends.clear();
 
-      std::string progressDir =
-        lg->GetMakefile()->GetHomeOutputDirectory();
-      progressDir += cmake::GetCMakeFilesDirectory();
-        {
-        cmOStringStream progCmd;
-        progCmd << "$(CMAKE_COMMAND) -E cmake_progress_report ";
-        // all target counts
-        progCmd << lg->Convert(progressDir.c_str(),
-                                cmLocalGenerator::FULL,
-                                cmLocalGenerator::SHELL);
-        progCmd << " ";
-        std::vector<unsigned long>& progFiles =
-          this->ProgressMap[t->second->Target].Marks;
-        for (std::vector<unsigned long>::iterator i = progFiles.begin();
-              i != progFiles.end(); ++i)
-          {
-          progCmd << " " << *i;
-          }
-        commands.push_back(progCmd.str());
+      cmLocalUnixMakefileGenerator3::EchoProgress progress;
+      progress.Dir = cmStrCat(lg.GetBinaryDirectory(), "/CMakeFiles");
+      {
+        std::ostringstream progressArg;
+        const char* sep = "";
+        for (unsigned long progFile : this->ProgressMap[gtarget.get()].Marks) {
+          progressArg << sep << progFile;
+          sep = ",";
         }
-      progressDir = "Built target ";
-      progressDir += t->second->GetName();
-      lg->AppendEcho(commands,progressDir.c_str());
+        progress.Arg = progressArg.str();
+      }
 
-      this->AppendGlobalTargetDepends(depends,*t->second->Target);
-      lg->WriteMakeRule(ruleFileStream, "All Build rule for target.",
-                        localName.c_str(), depends, commands, true);
+      bool targetMessages = true;
+      if (cmValue tgtMsg =
+            this->GetCMakeInstance()->GetState()->GetGlobalProperty(
+              "TARGET_MESSAGES")) {
+        targetMessages = cmIsOn(*tgtMsg);
+      }
 
-      // add the all/all dependency
-      if(!this->IsExcluded(this->LocalGenerators[0], *t->second->Target))
-        {
-        depends.clear();
-        depends.push_back(localName);
-        commands.clear();
-        lg->WriteMakeRule(ruleFileStream, "Include target in all.",
-                          "all", depends, commands, true);
-        }
+      if (targetMessages) {
+        lg.AppendEcho(commands, "Built target " + name,
+                      cmLocalUnixMakefileGenerator3::EchoNormal, &progress);
+      }
+
+      this->AppendGlobalTargetDepends(depends, gtarget.get());
+      lg.WriteMakeRule(ruleFileStream, "All Build rule for target.", localName,
+                       depends, commands, true);
 
       // Write the rule.
       commands.clear();
-      progressDir = lg->GetMakefile()->GetHomeOutputDirectory();
-      progressDir += cmake::GetCMakeFilesDirectory();
 
       {
-      // TODO: Convert the total progress count to a make variable.
-      cmOStringStream progCmd;
-      progCmd << "$(CMAKE_COMMAND) -E cmake_progress_start ";
-      // # in target
-      progCmd << lg->Convert(progressDir.c_str(),
-                              cmLocalGenerator::FULL,
-                              cmLocalGenerator::SHELL);
-      //
-      std::set<cmTarget const*> emitted;
-      progCmd << " "
-              << this->CountProgressMarksInTarget(t->second->Target, emitted);
-      commands.push_back(progCmd.str());
+        // TODO: Convert the total progress count to a make variable.
+        std::ostringstream progCmd;
+        progCmd << "$(CMAKE_COMMAND) -E cmake_progress_start ";
+        // # in target
+        progCmd << lg.ConvertToOutputFormat(progress.Dir,
+                                            cmOutputConverter::SHELL);
+        //
+        std::set<cmGeneratorTarget const*> emitted;
+        progCmd << " "
+                << this->CountProgressMarksInTarget(gtarget.get(), emitted);
+        commands.push_back(progCmd.str());
       }
-      std::string tmp = cmake::GetCMakeFilesDirectoryPostSlash();
-      tmp += "Makefile2";
-      commands.push_back(lg->GetRecursiveMakeCall
-                          (tmp.c_str(),localName.c_str()));
+      std::string tmp = "CMakeFiles/Makefile2";
+      commands.push_back(lg.GetRecursiveMakeCall(tmp, localName));
       {
-      cmOStringStream progCmd;
-      progCmd << "$(CMAKE_COMMAND) -E cmake_progress_start "; // # 0
-      progCmd << lg->Convert(progressDir.c_str(),
-                              cmLocalGenerator::FULL,
-                              cmLocalGenerator::SHELL);
-      progCmd << " 0";
-      commands.push_back(progCmd.str());
+        std::ostringstream progCmd;
+        progCmd << "$(CMAKE_COMMAND) -E cmake_progress_start "; // # 0
+        progCmd << lg.ConvertToOutputFormat(progress.Dir,
+                                            cmOutputConverter::SHELL);
+        progCmd << " 0";
+        commands.push_back(progCmd.str());
       }
       depends.clear();
-      depends.push_back("cmake_check_build_system");
-      localName = lg->GetRelativeTargetDirectory(*t->second->Target);
-      localName += "/rule";
-      lg->WriteMakeRule(ruleFileStream,
-                        "Build rule for subdir invocation for target.",
-                        localName.c_str(), depends, commands, true);
+      if (regenerate) {
+        depends.emplace_back("cmake_check_build_system");
+      }
+      localName =
+        cmStrCat(lg.GetRelativeTargetDirectory(gtarget.get()), "/rule");
+      lg.WriteMakeRule(ruleFileStream,
+                       "Build rule for subdir invocation for target.",
+                       localName, depends, commands, true);
 
       // Add a target with the canonical name (no prefix, suffix or path).
       commands.clear();
       depends.clear();
       depends.push_back(localName);
-      lg->WriteMakeRule(ruleFileStream, "Convenience name for target.",
-                        t->second->GetName(), depends, commands, true);
+      lg.WriteMakeRule(ruleFileStream, "Convenience name for target.", name,
+                       depends, commands, true);
 
       // Add rules to prepare the target for installation.
-      if(t->second->Target
-                  ->NeedRelinkBeforeInstall(lg->ConfigurationName.c_str()))
-        {
-        localName = lg->GetRelativeTargetDirectory(*t->second->Target);
-        localName += "/preinstall";
+      if (gtarget->NeedRelinkBeforeInstall(lg.GetConfigName())) {
+        localName = cmStrCat(lg.GetRelativeTargetDirectory(gtarget.get()),
+                             "/preinstall");
         depends.clear();
         commands.clear();
-        commands.push_back(lg->GetRecursiveMakeCall
-                            (makefileName.c_str(), localName.c_str()));
-        lg->WriteMakeRule(ruleFileStream,
-                          "Pre-install relink rule for target.",
-                          localName.c_str(), depends, commands, true);
-
-        if(!this->IsExcluded(this->LocalGenerators[0], *t->second->Target))
-          {
-          depends.clear();
-          depends.push_back(localName);
-          commands.clear();
-          lg->WriteMakeRule(ruleFileStream, "Prepare target for install.",
-                            "preinstall", depends, commands, true);
-          }
-        }
+        commands.push_back(lg.GetRecursiveMakeCall(makefileName, localName));
+        lg.WriteMakeRule(ruleFileStream, "Pre-install relink rule for target.",
+                         localName, depends, commands, true);
+      }
 
       // add the clean rule
-      localName = lg->GetRelativeTargetDirectory(*t->second->Target);
-      makeTargetName = localName;
-      makeTargetName += "/clean";
+      localName = lg.GetRelativeTargetDirectory(gtarget.get());
+      makeTargetName = cmStrCat(localName, "/clean");
       depends.clear();
       commands.clear();
-      commands.push_back(lg->GetRecursiveMakeCall
-                          (makefileName.c_str(), makeTargetName.c_str()));
-      lg->WriteMakeRule(ruleFileStream, "clean rule for target.",
-                        makeTargetName.c_str(), depends, commands, true);
+      commands.push_back(
+        lg.GetRecursiveMakeCall(makefileName, makeTargetName));
+      lg.WriteMakeRule(ruleFileStream, "clean rule for target.",
+                       makeTargetName, depends, commands, true);
       commands.clear();
-      depends.push_back(makeTargetName);
-      lg->WriteMakeRule(ruleFileStream, "clean rule for target.",
-                        "clean", depends, commands, true);
-      }
     }
+  }
 }
 
-//----------------------------------------------------------------------------
-size_t
-cmGlobalUnixMakefileGenerator3
-::CountProgressMarksInTarget(cmTarget const* target,
-                             std::set<cmTarget const*>& emitted)
+// Build a map that contains the set of targets used by each local
+// generator directory level.
+void cmGlobalUnixMakefileGenerator3::InitializeProgressMarks()
 {
-  size_t count = 0;
-  if(emitted.insert(target).second)
-    {
-    count = this->ProgressMap[target].Marks.size();
-    TargetDependSet const& depends = this->GetTargetDirectDepends(*target);
-    for(TargetDependSet::const_iterator di = depends.begin();
-        di != depends.end(); ++di)
-      {
-      if ((*di)->GetType() == cmTarget::INTERFACE_LIBRARY)
-        {
+  this->DirectoryTargetsMap.clear();
+  // Loop over all targets in all local generators.
+  for (const auto& lg : this->LocalGenerators) {
+    for (const auto& gt : lg->GetGeneratorTargets()) {
+      cmLocalGenerator* tlg = gt->GetLocalGenerator();
+
+      if (!gt->IsInBuildSystem() || this->IsExcluded(lg.get(), gt.get())) {
         continue;
+      }
+
+      cmStateSnapshot csnp = lg->GetStateSnapshot();
+      cmStateSnapshot tsnp = tlg->GetStateSnapshot();
+
+      // Consider the directory containing the target and all its
+      // parents until something excludes the target.
+      for (; csnp.IsValid() && !this->IsExcluded(csnp, tsnp);
+           csnp = csnp.GetBuildsystemDirectoryParent()) {
+        // This local generator includes the target.
+        std::set<cmGeneratorTarget const*>& targetSet =
+          this->DirectoryTargetsMap[csnp];
+        targetSet.insert(gt.get());
+
+        // Add dependencies of the included target.  An excluded
+        // target may still be included if it is a dependency of a
+        // non-excluded target.
+        for (cmTargetDepend const& tgtdep :
+             this->GetTargetDirectDepends(gt.get())) {
+          targetSet.insert(tgtdep);
         }
-      count += this->CountProgressMarksInTarget(*di, emitted);
       }
     }
-  return count;
+  }
 }
 
-//----------------------------------------------------------------------------
-size_t
-cmGlobalUnixMakefileGenerator3
-::CountProgressMarksInAll(cmLocalUnixMakefileGenerator3* lg)
+size_t cmGlobalUnixMakefileGenerator3::CountProgressMarksInTarget(
+  cmGeneratorTarget const* target, std::set<cmGeneratorTarget const*>& emitted)
 {
   size_t count = 0;
-  std::set<cmTarget const*> emitted;
-  std::set<cmTarget const*> const& targets
-                                        = this->LocalGeneratorToTargetMap[lg];
-  for(std::set<cmTarget const*>::const_iterator t = targets.begin();
-      t != targets.end(); ++t)
-    {
-    count += this->CountProgressMarksInTarget(*t, emitted);
+  if (emitted.insert(target).second) {
+    count = this->ProgressMap[target].Marks.size();
+    for (cmTargetDepend const& depend : this->GetTargetDirectDepends(target)) {
+      if (!depend->IsInBuildSystem()) {
+        continue;
+      }
+      count += this->CountProgressMarksInTarget(depend, emitted);
     }
+  }
   return count;
 }
 
-//----------------------------------------------------------------------------
-void
-cmGlobalUnixMakefileGenerator3::RecordTargetProgress(
+size_t cmGlobalUnixMakefileGenerator3::CountProgressMarksInAll(
+  const cmLocalGenerator& lg)
+{
+  size_t count = 0;
+  std::set<cmGeneratorTarget const*> emitted;
+  for (cmGeneratorTarget const* target :
+       this->DirectoryTargetsMap[lg.GetStateSnapshot()]) {
+    count += this->CountProgressMarksInTarget(target, emitted);
+  }
+  return count;
+}
+
+void cmGlobalUnixMakefileGenerator3::RecordTargetProgress(
   cmMakefileTargetGenerator* tg)
 {
-  TargetProgress& tp = this->ProgressMap[tg->GetTarget()];
+  TargetProgress& tp = this->ProgressMap[tg->GetGeneratorTarget()];
   tp.NumberOfActions = tg->GetNumberOfProgressActions();
   tp.VariableFile = tg->GetProgressFileNameFull();
 }
 
-//----------------------------------------------------------------------------
-bool
-cmGlobalUnixMakefileGenerator3::ProgressMapCompare
-::operator()(cmTarget const* l, cmTarget const* r) const
+void cmGlobalUnixMakefileGenerator3::TargetProgress::WriteProgressVariables(
+  unsigned long total, unsigned long& current)
 {
-  // Order by target name.
-  if(int c = strcmp(l->GetName(), r->GetName()))
-    {
-    return c < 0;
-    }
-  // Order duplicate targets by binary directory.
-  return strcmp(l->GetMakefile()->GetCurrentOutputDirectory(),
-                r->GetMakefile()->GetCurrentOutputDirectory()) < 0;
-}
-
-//----------------------------------------------------------------------------
-void
-cmGlobalUnixMakefileGenerator3::TargetProgress
-::WriteProgressVariables(unsigned long total, unsigned long &current)
-{
-  cmGeneratedFileStream fout(this->VariableFile.c_str());
-  for(unsigned long i = 1; i <= this->NumberOfActions; ++i)
-    {
+  cmGeneratedFileStream fout(this->VariableFile);
+  for (unsigned long i = 1; i <= this->NumberOfActions; ++i) {
     fout << "CMAKE_PROGRESS_" << i << " = ";
-    if (total <= 100)
-      {
+    if (total <= 100) {
       unsigned long num = i + current;
       fout << num;
       this->Marks.push_back(num);
-      }
-    else if (((i+current)*100)/total > ((i-1+current)*100)/total)
-      {
-      unsigned long num = ((i+current)*100)/total;
+    } else if (((i + current) * 100) / total >
+               ((i - 1 + current) * 100) / total) {
+      unsigned long num = ((i + current) * 100) / total;
       fout << num;
       this->Marks.push_back(num);
-      }
-    fout << "\n";
     }
+    fout << "\n";
+  }
   fout << "\n";
   current += this->NumberOfActions;
 }
 
-//----------------------------------------------------------------------------
-void
-cmGlobalUnixMakefileGenerator3
-::AppendGlobalTargetDepends(std::vector<std::string>& depends,
-                            cmTarget& target)
+void cmGlobalUnixMakefileGenerator3::AppendGlobalTargetDepends(
+  std::vector<std::string>& depends, cmGeneratorTarget* target)
 {
-  TargetDependSet const& depends_set = this->GetTargetDirectDepends(target);
-  for(TargetDependSet::const_iterator i = depends_set.begin();
-      i != depends_set.end(); ++i)
-    {
+  for (cmTargetDepend const& i : this->GetTargetDirectDepends(target)) {
     // Create the target-level dependency.
-    cmTarget const* dep = *i;
-    if (dep->GetType() == cmTarget::INTERFACE_LIBRARY)
-      {
+    cmGeneratorTarget const* dep = i;
+    if (!dep->IsInBuildSystem()) {
       continue;
-      }
-    cmLocalUnixMakefileGenerator3* lg3 =
-      static_cast<cmLocalUnixMakefileGenerator3*>
-      (dep->GetMakefile()->GetLocalGenerator());
-    std::string tgtName = lg3->GetRelativeTargetDirectory(*dep);
-    tgtName += "/all";
-    depends.push_back(tgtName);
     }
+    cmLocalUnixMakefileGenerator3* lg3 =
+      static_cast<cmLocalUnixMakefileGenerator3*>(dep->GetLocalGenerator());
+    std::string tgtName = cmStrCat(
+      lg3->GetRelativeTargetDirectory(const_cast<cmGeneratorTarget*>(dep)),
+      "/all");
+    depends.push_back(tgtName);
+  }
 }
 
-//----------------------------------------------------------------------------
-void cmGlobalUnixMakefileGenerator3::WriteHelpRule
-(std::ostream& ruleFileStream, cmLocalUnixMakefileGenerator3 *lg)
+void cmGlobalUnixMakefileGenerator3::WriteHelpRule(
+  std::ostream& ruleFileStream, cmLocalUnixMakefileGenerator3* lg)
 {
   // add the help target
   std::string path;
   std::vector<std::string> no_depends;
   std::vector<std::string> commands;
-  lg->AppendEcho(commands,"The following are some of the valid targets "
+  lg->AppendEcho(commands,
+                 "The following are some of the valid targets "
                  "for this Makefile:");
-  lg->AppendEcho(commands,"... all (the default if no target is provided)");
-  lg->AppendEcho(commands,"... clean");
-  lg->AppendEcho(commands,"... depend");
+  lg->AppendEcho(commands, "... all (the default if no target is provided)");
+  lg->AppendEcho(commands, "... clean");
+  if (!this->GlobalSettingIsOn("CMAKE_SUPPRESS_REGENERATION")) {
+    lg->AppendEcho(commands, "... depend");
+  }
 
   // Keep track of targets already listed.
-  std::set<cmStdString> emittedTargets;
+  std::set<std::string> emittedTargets;
+  std::set<std::string> utility_targets;
+  std::set<std::string> globals_targets;
+  std::set<std::string> project_targets;
 
   // for each local generator
-  unsigned int i;
-  cmLocalUnixMakefileGenerator3 *lg2;
-  for (i = 0; i < this->LocalGenerators.size(); ++i)
-    {
-    lg2 =
-      static_cast<cmLocalUnixMakefileGenerator3 *>(this->LocalGenerators[i]);
+  for (const auto& localGen : this->LocalGenerators) {
+    const auto& lg2 =
+      cm::static_reference_cast<cmLocalUnixMakefileGenerator3>(localGen);
     // for the passed in makefile or if this is the top Makefile wripte out
     // the targets
-    if (lg2 == lg || !lg->GetParent())
-      {
+    if (&lg2 == lg || lg->IsRootMakefile()) {
       // for each target Generate the rule files for each target.
-      cmTargets& targets = lg2->GetMakefile()->GetTargets();
-      for(cmTargets::iterator t = targets.begin(); t != targets.end(); ++t)
-        {
-        if((t->second.GetType() == cmTarget::EXECUTABLE) ||
-           (t->second.GetType() == cmTarget::STATIC_LIBRARY) ||
-           (t->second.GetType() == cmTarget::SHARED_LIBRARY) ||
-           (t->second.GetType() == cmTarget::MODULE_LIBRARY) ||
-           (t->second.GetType() == cmTarget::OBJECT_LIBRARY) ||
-           (t->second.GetType() == cmTarget::GLOBAL_TARGET) ||
-           (t->second.GetType() == cmTarget::UTILITY))
-          {
-          if(emittedTargets.insert(t->second.GetName()).second)
-            {
-            path = "... ";
-            path += t->second.GetName();
-            lg->AppendEcho(commands,path.c_str());
-            }
-          }
+      for (const auto& target : lg2.GetGeneratorTargets()) {
+        cmStateEnums::TargetType type = target->GetType();
+        if ((type == cmStateEnums::EXECUTABLE) ||
+            (type == cmStateEnums::STATIC_LIBRARY) ||
+            (type == cmStateEnums::SHARED_LIBRARY) ||
+            (type == cmStateEnums::MODULE_LIBRARY) ||
+            (type == cmStateEnums::OBJECT_LIBRARY) ||
+            (type == cmStateEnums::INTERFACE_LIBRARY &&
+             target->IsInBuildSystem())) {
+          project_targets.insert(target->GetName());
+        } else if (type == cmStateEnums::GLOBAL_TARGET) {
+          globals_targets.insert(target->GetName());
+        } else if (type == cmStateEnums::UTILITY) {
+          utility_targets.insert(target->GetName());
         }
       }
     }
-  std::vector<cmStdString> const& localHelp = lg->GetLocalHelp();
-  for(std::vector<cmStdString>::const_iterator o = localHelp.begin();
-      o != localHelp.end(); ++o)
-    {
-    path = "... ";
-    path += *o;
-    lg->AppendEcho(commands, path.c_str());
-    }
-  lg->WriteMakeRule(ruleFileStream, "Help Target",
-                    "help",
-                    no_depends, commands, true);
+  }
+
+  for (std::string const& name : globals_targets) {
+    path = cmStrCat("... ", name);
+    lg->AppendEcho(commands, path);
+  }
+  for (std::string const& name : utility_targets) {
+    path = cmStrCat("... ", name);
+    lg->AppendEcho(commands, path);
+  }
+  for (std::string const& name : project_targets) {
+    path = cmStrCat("... ", name);
+    lg->AppendEcho(commands, path);
+  }
+
+  for (std::string const& o : lg->GetLocalHelp()) {
+    path = cmStrCat("... ", o);
+    lg->AppendEcho(commands, path);
+  }
+  lg->WriteMakeRule(ruleFileStream, "Help Target", "help", no_depends,
+                    commands, true);
   ruleFileStream << "\n\n";
-}
-
-
-bool cmGlobalUnixMakefileGenerator3
-::NeedRequiresStep(cmTarget const& target)
-{
-  std::set<cmStdString> languages;
-  target.GetLanguages(languages);
-  for(std::set<cmStdString>::const_iterator l = languages.begin();
-      l != languages.end(); ++l)
-    {
-    std::string var = "CMAKE_NEEDS_REQUIRES_STEP_";
-    var += *l;
-    var += "_FLAG";
-    if(target.GetMakefile()->GetDefinition(var.c_str()))
-      {
-      return true;
-      }
-    }
-  return false;
 }

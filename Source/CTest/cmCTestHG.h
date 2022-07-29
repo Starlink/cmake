@@ -1,47 +1,43 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc.
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmCTestHG_h
-#define cmCTestHG_h
+#include <iosfwd>
+#include <string>
 
 #include "cmCTestGlobalVC.h"
+
+class cmCTest;
 
 /** \class cmCTestHG
  * \brief Interaction with Mercurial command-line tool
  *
  */
-class cmCTestHG: public cmCTestGlobalVC
+class cmCTestHG : public cmCTestGlobalVC
 {
 public:
   /** Construct with a CTest instance and update log stream.  */
   cmCTestHG(cmCTest* ctest, std::ostream& log);
 
-  virtual ~cmCTestHG();
+  ~cmCTestHG() override;
 
 private:
   std::string GetWorkingRevision();
-  virtual void NoteOldRevision();
-  virtual void NoteNewRevision();
-  virtual bool UpdateImpl();
+  bool NoteOldRevision() override;
+  bool NoteNewRevision() override;
+  bool UpdateImpl() override;
 
-  void LoadRevisions();
-  void LoadModifications();
+  bool LoadRevisions() override;
+  bool LoadModifications() override;
 
   // Parsing helper classes.
   class IdentifyParser;
-  class StatusParser;
   class LogParser;
-  friend class IdentifyParser;
-  friend class StatusParser;
-  friend class LogParser;
-};
+  class StatusParser;
 
-#endif
+  friend class IdentifyParser;
+  friend class LogParser;
+  friend class StatusParser;
+};

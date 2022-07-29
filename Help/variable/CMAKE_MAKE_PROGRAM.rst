@@ -8,31 +8,33 @@ name if it is expected to be in the ``PATH``.
 The tool selected depends on the :variable:`CMAKE_GENERATOR` used
 to configure the project:
 
-* The Makefile generators set this to ``make``, ``gmake``, or
-  a generator-specific tool (e.g. ``nmake`` for "NMake Makefiles").
+* The :ref:`Makefile Generators` set this to ``make``, ``gmake``, or
+  a generator-specific tool (e.g. ``nmake`` for :generator:`NMake Makefiles`).
 
   These generators store ``CMAKE_MAKE_PROGRAM`` in the CMake cache
   so that it may be edited by the user.
 
-* The Ninja generator sets this to ``ninja``.
+* The :generator:`Ninja` generator sets this to ``ninja``.
 
   This generator stores ``CMAKE_MAKE_PROGRAM`` in the CMake cache
   so that it may be edited by the user.
 
-* The Xcode generator sets this to ``xcodebuild`` (or possibly an
-  otherwise undocumented ``cmakexbuild`` wrapper implementing some
-  workarounds).
+* The :generator:`Xcode` generator sets this to ``xcodebuild``.
 
-  This generator stores ``CMAKE_MAKE_PROGRAM`` in the CMake cache
-  so that it may be edited by the user.
+  This generator prefers to lookup the build tool at build time
+  rather than to store ``CMAKE_MAKE_PROGRAM`` in the CMake cache
+  ahead of time.  This is because ``xcodebuild`` is easy to find.
 
-* The Visual Studio generators set this to the full path to
-  ``MSBuild.exe`` (VS >= 10), ``devenv.com`` (VS 7,8,9),
-  ``VCExpress.exe`` (VS Express 8,9), or ``msdev.exe`` (VS 6).
+  For compatibility with versions of CMake prior to 3.2, if
+  a user or project explicitly adds ``CMAKE_MAKE_PROGRAM`` to
+  the CMake cache then CMake will use the specified value.
+
+* The :ref:`Visual Studio Generators` set this to the full path to
+  ``MSBuild.exe`` (VS >= 10), ``devenv.com`` (VS 7,8,9), or
+  ``VCExpress.exe`` (VS Express 8,9).
   (See also variables
-  :variable:`CMAKE_VS_MSBUILD_COMMAND`,
-  :variable:`CMAKE_VS_DEVENV_COMMAND`, and
-  :variable:`CMAKE_VS_MSDEV_COMMAND`.)
+  :variable:`CMAKE_VS_MSBUILD_COMMAND` and
+  :variable:`CMAKE_VS_DEVENV_COMMAND`.
 
   These generators prefer to lookup the build tool at build time
   rather than to store ``CMAKE_MAKE_PROGRAM`` in the CMake cache
@@ -48,6 +50,13 @@ to configure the project:
   a user or project explicitly adds ``CMAKE_MAKE_PROGRAM`` to
   the CMake cache then CMake will use the specified value if
   possible.
+
+* The :generator:`Green Hills MULTI` generator sets this to the full
+  path to ``gbuild.exe(Windows)`` or ``gbuild(Linux)`` based upon
+  the toolset being used.
+
+  Once the generator has initialized a particular value for this
+  variable, changing the value has undefined behavior.
 
 The ``CMAKE_MAKE_PROGRAM`` variable is set for use by project code.
 The value is also used by the :manual:`cmake(1)` ``--build`` and

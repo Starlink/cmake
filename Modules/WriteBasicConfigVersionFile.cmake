@@ -1,36 +1,29 @@
-#.rst:
-# WriteBasicConfigVersionFile
-# ---------------------------
-#
-#
-#
-# ::
-#
-#   WRITE_BASIC_CONFIG_VERSION_FILE( filename [VERSION major.minor.patch] COMPATIBILITY (AnyNewerVersion|SameMajorVersion) )
-#
-#
-#
-# Deprecated, see WRITE_BASIC_PACKAGE_VERSION_FILE(), it is identical.
+# Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+# file Copyright.txt or https://cmake.org/licensing for details.
 
-#=============================================================================
-# Copyright 2008-2011 Alexander Neundorf, <neundorf@kde.org>
-# Copyright 2004-2009 Kitware, Inc.
-#
-# Distributed under the OSI-approved BSD License (the "License");
-# see accompanying file Copyright.txt for details.
-#
-# This software is distributed WITHOUT ANY WARRANTY; without even the
-# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the License for more information.
-#=============================================================================
-# (To distribute this file outside of CMake, substitute the full
-#  License text for the above reference.)
+#[=======================================================================[.rst:
+WriteBasicConfigVersionFile
+---------------------------
 
-include(CMakeParseArguments)
+.. deprecated:: 3.0
+
+  Use the identical command :command:`write_basic_package_version_file()`
+  from module :module:`CMakePackageConfigHelpers`.
+
+::
+
+  WRITE_BASIC_CONFIG_VERSION_FILE( filename
+    [VERSION major.minor.patch]
+    COMPATIBILITY (AnyNewerVersion|SameMajorVersion|SameMinorVersion|ExactVersion)
+    [ARCH_INDEPENDENT]
+    )
+
+
+#]=======================================================================]
 
 function(WRITE_BASIC_CONFIG_VERSION_FILE _filename)
 
-  set(options )
+  set(options ARCH_INDEPENDENT )
   set(oneValueArgs VERSION COMPATIBILITY )
   set(multiValueArgs )
 

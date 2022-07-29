@@ -29,13 +29,7 @@
 /****************************************************************************
  *   Author: Juergen Pfeifer <juergen.pfeifer@gmx.net> 1995,1997            *
  ****************************************************************************/
-#if defined(__hpux)
- #define _XOPEN_SOURCE_EXTENDED
-#endif
 #include "form.priv.h"
-#if defined(__hpux)
- #undef _XOPEN_SOURCE_EXTENDED
-#endif
 
 /* AIX seems to define this */
 #undef lines
@@ -357,12 +351,7 @@ static void Buffer_To_Window(const FIELD  * field, WINDOW * win)
 
   assert(win && field);
 
-#if defined(__LSB_VERSION__)
   getmaxyx(win, height, width);
-#else
-  width  = getmaxx(win);
-  height = getmaxy(win);
-#endif
 
   for(row=0, pBuffer=field->buf; 
       row < height; 
@@ -394,17 +383,13 @@ static void Window_To_Buffer(WINDOW * win, FIELD  * field)
   int pad;
   int len = 0;
   char *p;
-  int row, height;
+  int row, height, width;
   
   assert(win && field && field->buf );
 
   pad = field->pad;
   p = field->buf;
-#if defined(__LSB_VERSION__)
-  { int width; getmaxyx(win, height, width); }
-#else
-  height = getmaxy(win);
-#endif
+  getmaxyx(win, height, width);
 
   for(row=0; (row < height) && (row < field->drows); row++ )
     {
@@ -1691,7 +1676,7 @@ static int VSC_Generic(FORM *form, int lines)
 |   
 |   Description   :  Performs the generic vertical scrolling routines. 
 |                    This has to check for a multi-line field and to set
-|                    the _NEWTOP flag if scrolling really occured.
+|                    the _NEWTOP flag if scrolling really occurred.
 |
 |   Return Values :  Propagated error code from low-level driver calls
 +--------------------------------------------------------------------------*/
@@ -2174,7 +2159,7 @@ static int Wrapping_Not_Necessary_Or_Wrapping_Ok(FORM * form)
 |   
 |   Description   :  Generic routine for field editing requests. The driver
 |                    routines are only called for editable fields, the
-|                    _WINDOW_MODIFIED flag is set if editing occured.
+|                    _WINDOW_MODIFIED flag is set if editing occurred.
 |                    This is somewhat special due to the overload semantics
 |                    of the NEW_LINE and DEL_PREV requests.
 |
@@ -2998,7 +2983,7 @@ INLINE static FIELD *Right_Neighbour_Field(FIELD * field)
 |   Function      :  static FIELD *Upper_Neighbour_Field(FIELD * field)
 |   
 |   Description   :  Because of the row-major nature of sorting the fields,
-|                    its more difficult to define whats the upper neighbour
+|                    its more difficult to define what's the upper neighbour
 |                    field really means. We define that it must be on a
 |                    'previous' line (cyclic order!) and is the rightmost
 |                    field laying on the left side of the given field. If
@@ -3045,7 +3030,7 @@ static FIELD *Upper_Neighbour_Field(FIELD * field)
 |   Function      :  static FIELD *Down_Neighbour_Field(FIELD * field)
 |   
 |   Description   :  Because of the row-major nature of sorting the fields,
-|                    its more difficult to define whats the down neighbour
+|                    its more difficult to define what's the down neighbour
 |                    field really means. We define that it must be on a
 |                    'next' line (cyclic order!) and is the leftmost
 |                    field laying on the right side of the given field. If

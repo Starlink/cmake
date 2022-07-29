@@ -1,71 +1,93 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
-
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
-
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmOptionCommand.h"
 
-// cmOptionCommand
-bool cmOptionCommand
-::InitialPass(std::vector<std::string> const& args, cmExecutionStatus &)
-{
-  bool argError = false;
-  if(args.size() < 2)
-    {
-    argError = true;
-    }
-  // for VTK 4.0 we have to support the option command with more than 3
-  // arguments if CMAKE_MINIMUM_REQUIRED_VERSION is not defined, if
-  // CMAKE_MINIMUM_REQUIRED_VERSION is defined, then we can have stricter
-  // checking.
-  if(this->Makefile->GetDefinition("CMAKE_MINIMUM_REQUIRED_VERSION"))
-    {
-    if(args.size() > 3)
-      {
-      argError = true;
-      }
-    }
-  if(argError)
-    {
-    std::string m = "called with incorrect number of arguments: ";
-    for(size_t i =0; i < args.size(); ++i)
-      {
-      m += args[i];
-      m += " ";
-      }
-    this->SetError(m.c_str());
-    return false;
-    }
+#include "cmExecutionStatus.h"
+#include "cmMakefile.h"
+#include "cmMessageType.h"
+#include "cmPolicies.h"
+#include "cmState.h"
+#include "cmStateSnapshot.h"
+#include "cmStateTypes.h"
+#include "cmStringAlgorithms.h"
+#include "cmValue.h"
 
-  std::string initialValue = "Off";
-  // Now check and see if the value has been stored in the cache
-  // already, if so use that value and don't look for the program
-  cmCacheManager::CacheIterator it =
-    this->Makefile->GetCacheManager()->GetCacheIterator(args[0].c_str());
-  if(!it.IsAtEnd())
-    {
-    if ( it.GetType() != cmCacheManager::UNINITIALIZED )
-      {
-      it.SetProperty("HELPSTRING", args[1].c_str());
-      return true;
-      }
-    if ( it.GetValue() )
-      {
-      initialValue = it.GetValue();
-      }
+// cmOptionCommand
+bool cmOptionCommand(std::vector<std::string> const& args,
+                     cmExecutionStatus& status)
+{
+  const bool argError = (args.size() < 2) || (args.size() > 3);
+  if (argError) {
+    std::string m = cmStrCat("called with incorrect number of arguments: ",
+                             cmJoin(args, " "));
+    status.SetError(m);
+    return false;
+  }
+
+  // Determine the state of the option policy
+  bool checkAndWarn = false;
+  {
+    auto policyStatus =
+      status.GetMakefile().GetPolicyStatus(cmPolicies::CMP0077);
+    const auto& existsBeforeSet =
+      status.GetMakefile().GetStateSnapshot().GetDefinition(args[0]);
+    switch (policyStatus) {
+      case cmPolicies::WARN:
+        checkAndWarn = (existsBeforeSet != nullptr);
+        CM_FALLTHROUGH;
+      case cmPolicies::OLD:
+        // OLD behavior does not warn.
+        break;
+      case cmPolicies::REQUIRED_ALWAYS:
+      case cmPolicies::REQUIRED_IF_USED:
+      case cmPolicies::NEW: {
+        // See if a local variable with this name already exists.
+        // If so we ignore the option command.
+        if (existsBeforeSet) {
+          return true;
+        }
+      } break;
     }
-  if(args.size() == 3)
-    {
+  }
+
+  // See if a cache variable with this name already exists
+  // If so just make sure the doc state is correct
+  cmState* state = status.GetMakefile().GetState();
+  cmValue existingValue = state->GetCacheEntryValue(args[0]);
+  if (existingValue &&
+      (state->GetCacheEntryType(args[0]) != cmStateEnums::UNINITIALIZED)) {
+    state->SetCacheEntryProperty(args[0], "HELPSTRING", args[1]);
+    return true;
+  }
+
+  // Nothing in the cache so add it
+  std::string initialValue = existingValue ? *existingValue : "Off";
+  if (args.size() == 3) {
     initialValue = args[2];
+  }
+  bool init = cmIsOn(initialValue);
+  status.GetMakefile().AddCacheDefinition(args[0], init ? "ON" : "OFF",
+                                          args[1].c_str(), cmStateEnums::BOOL);
+  if (status.GetMakefile().GetPolicyStatus(cmPolicies::CMP0077) !=
+        cmPolicies::NEW &&
+      status.GetMakefile().GetPolicyStatus(cmPolicies::CMP0126) ==
+        cmPolicies::NEW) {
+    // if there was a definition then remove it
+    status.GetMakefile().GetStateSnapshot().RemoveDefinition(args[0]);
+  }
+
+  if (checkAndWarn) {
+    const auto& existsAfterSet =
+      status.GetMakefile().GetStateSnapshot().GetDefinition(args[0]);
+    if (!existsAfterSet) {
+      status.GetMakefile().IssueMessage(
+        MessageType::AUTHOR_WARNING,
+        cmStrCat(cmPolicies::GetPolicyWarning(cmPolicies::CMP0077),
+                 "\n"
+                 "For compatibility with older versions of CMake, option "
+                 "is clearing the normal variable '",
+                 args[0], "'."));
     }
-  bool init = cmSystemTools::IsOn(initialValue.c_str());
-  this->Makefile->AddCacheDefinition(args[0].c_str(), init? "ON":"OFF",
-                                     args[1].c_str(), cmCacheManager::BOOL);
+  }
   return true;
 }

@@ -1,33 +1,45 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmInstallScriptGenerator_h
-#define cmInstallScriptGenerator_h
+#include <iosfwd>
+#include <string>
 
 #include "cmInstallGenerator.h"
+#include "cmListFileCache.h"
+#include "cmScriptGenerator.h"
+
+class cmLocalGenerator;
 
 /** \class cmInstallScriptGenerator
  * \brief Generate target installation rules.
  */
-class cmInstallScriptGenerator: public cmInstallGenerator
+class cmInstallScriptGenerator : public cmInstallGenerator
 {
 public:
-  cmInstallScriptGenerator(const char* script, bool code,
-    const char* component);
-  virtual ~cmInstallScriptGenerator();
+  cmInstallScriptGenerator(
+    std::string script, bool code, std::string const& component,
+    bool exclude_from_all, bool all_components,
+    cmListFileBacktrace backtrace = cmListFileBacktrace());
+  ~cmInstallScriptGenerator() override;
+
+  bool Compute(cmLocalGenerator* lg) override;
+
+  bool IsCode() const { return this->Code; }
+
+  std::string GetScript(std::string const& config) const;
 
 protected:
-  virtual void GenerateScript(std::ostream& os);
-  std::string Script;
-  bool Code;
-};
+  void GenerateScriptActions(std::ostream& os, Indent indent) override;
+  void GenerateScriptForConfig(std::ostream& os, const std::string& config,
+                               Indent indent) override;
+  void AddScriptInstallRule(std::ostream& os, Indent indent,
+                            std::string const& script) const;
 
-#endif
+  std::string const Script;
+  bool const Code;
+  cmLocalGenerator* LocalGenerator;
+  bool AllowGenex;
+};

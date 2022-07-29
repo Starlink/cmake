@@ -9,10 +9,13 @@ function(run_child)
     ERROR_STRIP_TRAILING_WHITESPACE
     )
   if(FAILED)
-    string(REGEX REPLACE "\n" "\n  " OUTPUT "${OUTPUT}")
+    string(REPLACE "\n" "\n  " OUTPUT "${OUTPUT}")
     message(FATAL_ERROR "Child failed (${FAILED}), output is\n  ${OUTPUT}\n"
       "Command = [${ARGN}]\n")
   endif()
+
+  # Pass output back up to the parent scope for possible further inspection.
+  set(OUTPUT "${OUTPUT}" PARENT_SCOPE)
 endfunction()
 
 #-----------------------------------------------------------------------------
@@ -81,9 +84,9 @@ function(check_updates build)
   set(MSG "")
   if(MISSING)
     # List the missing entries
-    set(MSG "${MSG}Update.xml is missing expected entries:\n")
+    string(APPEND MSG "Update.xml is missing expected entries:\n")
     foreach(f ${MISSING})
-      set(MSG "${MSG}  ${f}\n")
+      string(APPEND MSG "  ${f}\n")
     endforeach()
   else()
     # Success
@@ -93,9 +96,9 @@ function(check_updates build)
   # Report the result
   if(EXTRA)
     # List the extra entries
-    set(MSG "${MSG}Update.xml has extra unexpected entries:\n")
+    string(APPEND MSG "Update.xml has extra unexpected entries:\n")
     foreach(f ${EXTRA})
-      set(MSG "${MSG}  ${f}\n")
+      string(APPEND MSG "  ${f}\n")
     endforeach()
   else()
     # Success
@@ -108,10 +111,10 @@ function(check_updates build)
       ${TOP}/${build}/Testing/Temporary/LastUpdate*.log)
     if(UPDATE_LOG_FILE)
       file(READ ${UPDATE_LOG_FILE} UPDATE_LOG LIMIT ${max_update_xml_size})
-      string(REGEX REPLACE "\n" "\n  " UPDATE_LOG "${UPDATE_LOG}")
-      set(MSG "${MSG}Update log:\n  ${UPDATE_LOG}")
+      string(REPLACE "\n" "\n  " UPDATE_LOG "${UPDATE_LOG}")
+      string(APPEND MSG "Update log:\n  ${UPDATE_LOG}")
     else()
-      set(MSG "${MSG}No update log found!")
+      string(APPEND MSG "No update log found!")
     endif()
 
     # Display the error message
@@ -127,7 +130,6 @@ function(create_content dir)
   # An example CTest project configuration file.
   file(WRITE ${TOP}/${dir}/CTestConfig.cmake
     "# CTest Configuration File
-set(CTEST_PROJECT_NAME TestProject)
 set(CTEST_NIGHTLY_START_TIME \"21:00:00 EDT\")
 ")
 
@@ -179,6 +181,14 @@ endfunction()
 #-----------------------------------------------------------------------------
 # Function to write the dashboard test script.
 function(create_dashboard_script bin_dir custom_text)
+  if (NOT ctest_update_check)
+    set(ctest_update_check [[
+if(ret LESS 0)
+  message(FATAL_ERROR "ctest_update failed with ${ret}")
+endif()
+]])
+  endif()
+
   # Write the dashboard script.
   file(WRITE ${TOP}/${bin_dir}.cmake
     "# CTest Dashboard Script
@@ -190,8 +200,8 @@ set(CTEST_BINARY_DIRECTORY \${CTEST_DASHBOARD_ROOT}/${bin_dir})
 ${custom_text}
 # Start a dashboard and run the update step
 ctest_start(Experimental)
-ctest_update(SOURCE \${CTEST_SOURCE_DIRECTORY})
-")
+ctest_update(SOURCE \${CTEST_SOURCE_DIRECTORY} RETURN_VALUE ret ${ctest_update_args})
+${ctest_update_check}")
 endfunction()
 
 #-----------------------------------------------------------------------------
@@ -219,6 +229,54 @@ function(run_dashboard_command_line bin_dir)
 endfunction()
 
 #-----------------------------------------------------------------------------
+# Function to find the Update.xml file and make sure
+# it only has the Revision in it and no updates
+function(check_no_update bin_dir)
+  set(PATTERN ${TOP}/${bin_dir}/Testing/*/Update.xml)
+  file(GLOB UPDATE_XML_FILE RELATIVE ${TOP} ${PATTERN})
+  string(REGEX REPLACE "//Update.xml$" "/Update.xml"
+    UPDATE_XML_FILE "${UPDATE_XML_FILE}")
+  message(" found ${UPDATE_XML_FILE}")
+  set(rev_regex "Revision|PriorRevision")
+  file(STRINGS ${TOP}/${UPDATE_XML_FILE} UPDATE_XML_REVISIONS
+    REGEX "^\t<(${rev_regex})>[^<\n]+</(${rev_regex})>$"
+    )
+  set(found_revisons FALSE)
+  foreach(r IN LISTS UPDATE_XML_REVISIONS)
+    if("${r}" MATCHES "PriorRevision")
+      message(FATAL_ERROR "Found PriorRevision in no update test")
+    endif()
+    if("${r}" MATCHES "<Revision>")
+      set(found_revisons TRUE)
+    endif()
+  endforeach()
+  if(found_revisons)
+    message(" found <Revision> in no update test")
+  else()
+    message(FATAL_ERROR " missing <Revision> in no update test")
+  endif()
+endfunction()
+
+#-----------------------------------------------------------------------------
+# Function to find the Update.xml file and make sure
+# it only has the UpdateReturnStatus failure message and no updates.
+function(check_fail_update bin_dir)
+  set(PATTERN ${TOP}/${bin_dir}/Testing/*/Update.xml)
+  file(GLOB UPDATE_XML_FILE RELATIVE ${TOP} ${PATTERN})
+  string(REGEX REPLACE "//Update.xml$" "/Update.xml"
+    UPDATE_XML_FILE "${UPDATE_XML_FILE}")
+  message(" found ${UPDATE_XML_FILE}")
+  file(STRINGS ${TOP}/${UPDATE_XML_FILE} UPDATE_XML_STATUS
+    REGEX "^\t<UpdateReturnStatus>[^<\n]+"
+    )
+  if(UPDATE_XML_STATUS MATCHES "Update command failed")
+    message(" correctly found 'Update command failed'")
+  else()
+    message(FATAL_ERROR " missing 'Update command failed'")
+  endif()
+endfunction()
+
+#-----------------------------------------------------------------------------
 # Function to run the dashboard through a script
 function(run_dashboard_script bin_dir)
   run_child(
@@ -228,13 +286,22 @@ function(run_dashboard_script bin_dir)
 
   # Verify the updates reported by CTest.
   list(APPEND UPDATE_MAYBE Updated{subdir} Updated{CTestConfig.cmake})
-  check_updates(${bin_dir}
-    Updated{foo.txt}
-    Updated{bar.txt}
-    Updated{zot.txt}
-    Updated{subdir/foo.txt}
-    Updated{subdir/bar.txt}
-    )
+  if(NO_UPDATE)
+    check_no_update(${bin_dir})
+  elseif(FAIL_UPDATE)
+    check_fail_update(${bin_dir})
+  else()
+    check_updates(${bin_dir}
+      Updated{foo.txt}
+      Updated{bar.txt}
+      Updated{zot.txt}
+      Updated{subdir/foo.txt}
+      Updated{subdir/bar.txt}
+      )
+  endif()
+
+  # Pass console output up to the parent, in case they'd like to inspect it.
+  set(OUTPUT "${OUTPUT}" PARENT_SCOPE)
 endfunction()
 
 #-----------------------------------------------------------------------------

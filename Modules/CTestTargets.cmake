@@ -1,19 +1,9 @@
+# Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+# file Copyright.txt or https://cmake.org/licensing for details.
 
-#=============================================================================
-# Copyright 2005-2009 Kitware, Inc.
-#
-# Distributed under the OSI-approved BSD License (the "License");
-# see accompanying file Copyright.txt for details.
-#
-# This software is distributed WITHOUT ANY WARRANTY; without even the
-# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the License for more information.
-#=============================================================================
-# (To distribute this file outside of CMake, substitute the full
-#  License text for the above reference.)
 
 if(NOT RUN_FROM_CTEST_OR_DART)
-  message(FATAL_ERROR "Do not incldue CTestTargets.cmake directly")
+  message(FATAL_ERROR "Do not include CTestTargets.cmake directly")
 endif()
 
 if(NOT PROJECT_BINARY_DIR)
@@ -48,7 +38,8 @@ endif()
 #
 
 set(__conf_types "")
-if(CMAKE_CONFIGURATION_TYPES)
+get_property(_isMultiConfig GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+if(_isMultiConfig)
   # We need to pass the configuration type on the test command line.
   set(__conf_types -C "${CMAKE_CFG_INTDIR}")
 endif()
@@ -67,6 +58,7 @@ if(NOT _CTEST_TARGETS_ADDED)
   foreach(mode Experimental Nightly Continuous NightlyMemoryCheck)
     add_custom_target(${mode}
       ${CMAKE_CTEST_COMMAND} ${__conf_types} -D ${mode}
+      USES_TERMINAL
       )
     set_property(TARGET ${mode} PROPERTY RULE_LAUNCH_CUSTOM "")
     set_property(TARGET ${mode} PROPERTY FOLDER "CTestDashboardTargets")
@@ -82,6 +74,7 @@ if(NOT _CTEST_TARGETS_ADDED)
           )
         add_custom_target(${mode}${testtype}
           ${CMAKE_CTEST_COMMAND} ${__conf_types} -D ${mode}${testtype}
+          USES_TERMINAL
           )
         set_property(TARGET ${mode}${testtype} PROPERTY RULE_LAUNCH_CUSTOM "")
         set_property(TARGET ${mode}${testtype} PROPERTY FOLDER "CTestDashboardTargets")
@@ -94,6 +87,7 @@ if(NOT _CTEST_TARGETS_ADDED)
   if(CTEST_TEST_TARGET_ALIAS)
     add_custom_target(${CTEST_TEST_TARGET_ALIAS}
       ${CMAKE_CTEST_COMMAND} ${__conf_types}
+      USES_TERMINAL
       )
   endif()
 endif()

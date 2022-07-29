@@ -1,34 +1,27 @@
-#.rst:
-# FindPerl
-# --------
-#
-# Find perl
-#
-# this module looks for Perl
-#
-# ::
-#
-#   PERL_EXECUTABLE     - the full path to perl
-#   PERL_FOUND          - If false, don't attempt to use perl.
-#   PERL_VERSION_STRING - version of perl found (since CMake 2.8.8)
+# Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+# file Copyright.txt or https://cmake.org/licensing for details.
 
-#=============================================================================
-# Copyright 2001-2009 Kitware, Inc.
-#
-# Distributed under the OSI-approved BSD License (the "License");
-# see accompanying file Copyright.txt for details.
-#
-# This software is distributed WITHOUT ANY WARRANTY; without even the
-# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the License for more information.
-#=============================================================================
-# (To distribute this file outside of CMake, substitute the full
-#  License text for the above reference.)
+#[=======================================================================[.rst:
+FindPerl
+--------
+
+Find perl
+
+this module looks for Perl
+
+::
+
+  PERL_EXECUTABLE     - the full path to perl
+  PERL_FOUND          - If false, don't attempt to use perl.
+  PERL_VERSION_STRING - version of perl found (since CMake 2.8.8)
+#]=======================================================================]
 
 include(${CMAKE_CURRENT_LIST_DIR}/FindCygwin.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/FindMsys.cmake)
 
 set(PERL_POSSIBLE_BIN_PATHS
   ${CYGWIN_INSTALL_PATH}/bin
+  ${MSYS_INSTALL_PATH}/usr/bin
   )
 
 if(WIN32)
@@ -38,6 +31,7 @@ if(WIN32)
     NAME)
   set(PERL_POSSIBLE_BIN_PATHS ${PERL_POSSIBLE_BIN_PATHS}
     "C:/Perl/bin"
+    "C:/Strawberry/perl/bin"
     [HKEY_LOCAL_MACHINE\\SOFTWARE\\ActiveState\\ActivePerl\\${ActivePerl_CurrentVersion}]/bin
     )
 endif()
@@ -70,9 +64,9 @@ if(PERL_EXECUTABLE)
       OUTPUT_STRIP_TRAILING_WHITESPACE
     )
     if(NOT PERL_VERSION_RESULT_VARIABLE AND PERL_VERSION_OUTPUT_VARIABLE MATCHES "This is perl.*[ \\(]v([0-9\\._]+)[ \\)]")
-      string(REGEX REPLACE ".*This is perl.*[ \\(]v([0-9\\._]+)[ \\)].*" "\\1" PERL_VERSION_STRING ${PERL_VERSION_OUTPUT_VARIABLE})
+      set(PERL_VERSION_STRING "${CMAKE_MATCH_1}")
     elseif(NOT PERL_VERSION_RESULT_VARIABLE AND PERL_VERSION_OUTPUT_VARIABLE MATCHES "This is perl, version ([0-9\\._]+) +")
-      string(REGEX REPLACE ".*This is perl, version ([0-9\\._]+) +.*" "\\1" PERL_VERSION_STRING ${PERL_VERSION_OUTPUT_VARIABLE})
+      set(PERL_VERSION_STRING "${CMAKE_MATCH_1}")
     endif()
   endif()
 endif()
@@ -80,11 +74,16 @@ endif()
 # Deprecated settings for compatibility with CMake1.4
 set(PERL ${PERL_EXECUTABLE})
 
-# handle the QUIETLY and REQUIRED arguments and set PERL_FOUND to TRUE if
-# all listed variables are TRUE
 include(${CMAKE_CURRENT_LIST_DIR}/FindPackageHandleStandardArgs.cmake)
+if (CMAKE_FIND_PACKAGE_NAME STREQUAL "PerlLibs")
+  # FindPerlLibs include()'s this module. It's an old pattern, but rather than
+  # trying to suppress this from outside the module (which is then sensitive to
+  # the contents, detect the case in this module and suppress it explicitly.
+  set(FPHSA_NAME_MISMATCHED 1)
+endif ()
 FIND_PACKAGE_HANDLE_STANDARD_ARGS(Perl
                                   REQUIRED_VARS PERL_EXECUTABLE
                                   VERSION_VAR PERL_VERSION_STRING)
+unset(FPHSA_NAME_MISMATCHED)
 
 mark_as_advanced(PERL_EXECUTABLE)

@@ -1,24 +1,23 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmLocalVisualStudioGenerator_h
-#define cmLocalVisualStudioGenerator_h
+#include <map>
+#include <memory>
+#include <string>
 
+#include "cmGlobalVisualStudioGenerator.h"
 #include "cmLocalGenerator.h"
+#include "cmVsProjectType.h"
 
-#include <cmsys/auto_ptr.hxx>
-
-class cmSourceFile;
-class cmSourceGroup;
 class cmCustomCommand;
+class cmCustomCommandGenerator;
+class cmGeneratorTarget;
+class cmGlobalGenerator;
+class cmMakefile;
+class cmSourceFile;
 
 /** \class cmLocalVisualStudioGenerator
  * \brief Base class for Visual Studio generators.
@@ -29,47 +28,32 @@ class cmCustomCommand;
 class cmLocalVisualStudioGenerator : public cmLocalGenerator
 {
 public:
-  /** Known versions of Visual Studio.  */
-  enum VSVersion
-  {
-    VS6 = 60,
-    VS7 = 70,
-    VS71 = 71,
-    VS8 = 80,
-    VS9 = 90,
-    VS10 = 100,
-    VS11 = 110,
-    VS12 = 120
-  };
-
-  cmLocalVisualStudioGenerator(VSVersion v);
+  cmLocalVisualStudioGenerator(cmGlobalGenerator* gg, cmMakefile* mf);
   virtual ~cmLocalVisualStudioGenerator();
 
-  /** Construct a script from the given list of command lines.  */
-  std::string ConstructScript(cmCustomCommand const& cc,
-                              const char* configName,
-                              const char* newline = "\n");
+  std::string ConstructScript(cmCustomCommandGenerator const& ccg,
+                              const std::string& newline = "\n");
+  std::string FinishConstructScript(VsProjectType projectType,
+                                    const std::string& newline = "\n");
 
   /** Label to which to jump in a batch file after a failed step in a
       sequence of custom commands. */
   const char* GetReportErrorLabel() const;
 
-  /** Version of Visual Studio.  */
-  VSVersion GetVersion() const { return this->Version; }
+  cmGlobalVisualStudioGenerator::VSVersion GetVersion() const;
 
-  virtual std::string ComputeLongestObjectDirectory(cmTarget&) const = 0;
+  virtual std::string ComputeLongestObjectDirectory(
+    cmGeneratorTarget const*) const = 0;
 
-  virtual void AddCMakeListsRules() = 0;
+  void ComputeObjectFilenames(
+    std::map<cmSourceFile const*, std::string>& mapping,
+    cmGeneratorTarget const* = 0) override;
 
 protected:
   virtual const char* ReportErrorLabel() const;
   virtual bool CustomCommandUseLocal() const { return false; }
 
   /** Construct a custom command to make exe import lib dir.  */
-  cmsys::auto_ptr<cmCustomCommand>
-  MaybeCreateImplibDir(cmTarget& target, const char* config, bool isFortran);
-
-  VSVersion Version;
+  std::unique_ptr<cmCustomCommand> MaybeCreateImplibDir(
+    cmGeneratorTarget* target, const std::string& config, bool isFortran);
 };
-
-#endif

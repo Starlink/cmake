@@ -1,41 +1,31 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc.
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
+#include <iosfwd>
 
-#ifndef cmCPackSTGZGenerator_h
-#define cmCPackSTGZGenerator_h
-
-
-#include "cmCPackTGZGenerator.h"
+#include "cmCPackArchiveGenerator.h"
+#include "cmCPackGenerator.h"
 
 /** \class cmCPackSTGZGenerator
  * \brief A generator for Self extractable TGZ files
  *
  */
-class cmCPackSTGZGenerator : public cmCPackTGZGenerator
+class cmCPackSTGZGenerator : public cmCPackArchiveGenerator
 {
 public:
-  cmCPackTypeMacro(cmCPackSTGZGenerator, cmCPackTGZGenerator);
+  cmCPackTypeMacro(cmCPackSTGZGenerator, cmCPackArchiveGenerator);
 
   /**
    * Construct generator
    */
   cmCPackSTGZGenerator();
-  virtual ~cmCPackSTGZGenerator();
+  ~cmCPackSTGZGenerator() override;
 
 protected:
-  int PackageFiles();
-  virtual int InitializeInternal();
-  int GenerateHeader(std::ostream* os);
-  virtual const char* GetOutputExtension() { return ".sh"; }
+  int PackageFiles() override;
+  int InitializeInternal() override;
+  int GenerateHeader(std::ostream* os) override;
 };
-
-#endif

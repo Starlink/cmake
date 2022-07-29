@@ -1,19 +1,20 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include <iosfwd>
+#include <set>
+#include <string>
+#include <vector>
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmGlobalVisualStudio8Generator_h
-#define cmGlobalVisualStudio8Generator_h
+#include <cm/optional>
 
 #include "cmGlobalVisualStudio71Generator.h"
 
+class cmGeneratorTarget;
+class cmMakefile;
+class cmake;
+struct cmIDEFlagTable;
 
 /** \class cmGlobalVisualStudio8Generator
  * \brief Write a Unix makefiles.
@@ -23,74 +24,76 @@
 class cmGlobalVisualStudio8Generator : public cmGlobalVisualStudio71Generator
 {
 public:
-  cmGlobalVisualStudio8Generator(const char* name,
-    const char* platformName, const char* additionalPlatformDefinition);
-  static cmGlobalGeneratorFactory* NewFactory();
+  //! Get the name for the generator.
+  std::string GetName() const override { return this->Name; }
 
-  ///! Get the name for the generator.
-  virtual const char* GetName() const {return this->Name.c_str();}
+  /** Get the name of the main stamp list file. */
+  static std::string GetGenerateStampList();
 
-  /** Get the documentation entry for this generator.  */
-  static void GetDocumentation(cmDocumentationEntry& entry);
-
-  ///! Create a local generator appropriate to this Global Generator
-  virtual cmLocalGenerator *CreateLocalGenerator();
-
+  void EnableLanguage(std::vector<std::string> const& languages, cmMakefile*,
+                      bool optional) override;
   virtual void AddPlatformDefinitions(cmMakefile* mf);
+
+  bool SetGeneratorPlatform(std::string const& p, cmMakefile* mf) override;
+
+  cm::optional<std::string> const& GetTargetFrameworkVersion() const;
+  cm::optional<std::string> const& GetTargetFrameworkIdentifier() const;
+  cm::optional<std::string> const& GetTargetFrameworkTargetsVersion() const;
 
   /**
    * Override Configure and Generate to add the build-system check
    * target.
    */
-  virtual void Configure();
-  virtual void Generate();
-
-  /**
-   * Where does this version of Visual Studio look for macros for the
-   * current user? Returns the empty string if this version of Visual
-   * Studio does not implement support for VB macros.
-   */
-  virtual std::string GetUserMacrosDirectory();
-
-  /**
-   * What is the reg key path to "vsmacros" for this version of Visual
-   * Studio?
-   */
-  virtual std::string GetUserMacrosRegKeyBase();
+  void Configure() override;
 
   /** Return true if the target project file should have the option
       LinkLibraryDependencies and link to .sln dependencies. */
-  virtual bool NeedLinkLibraryDependencies(cmTarget& target);
+  bool NeedLinkLibraryDependencies(cmGeneratorTarget* target) override;
 
   /** Return true if building for Windows CE */
-  virtual bool TargetsWindowsCE() const {
-    return !this->WindowsCEVersion.empty(); }
+  bool TargetsWindowsCE() const override
+  {
+    return !this->WindowsCEVersion.empty();
+  }
 
 protected:
-  virtual const char* GetIDEVersion() { return "8.0"; }
+  cmGlobalVisualStudio8Generator(cmake* cm, const std::string& name,
+                                 std::string const& platformInGeneratorName);
 
-  virtual std::string FindDevEnvCommand();
+  void AddExtraIDETargets() override;
 
-  virtual bool VSLinksDependencies() const { return false; }
+  std::string FindDevEnvCommand() override;
+
+  bool VSLinksDependencies() const override { return false; }
 
   bool AddCheckTarget();
 
+  /** Return true if the configuration needs to be deployed */
+  virtual bool NeedsDeploy(cmGeneratorTarget const& target,
+                           const char* config) const;
+
+  /** Returns true if the target system support debugging deployment. */
+  virtual bool TargetSystemSupportsDeployment() const;
+
   static cmIDEFlagTable const* GetExtraFlagTableVS8();
-  virtual void WriteSLNHeader(std::ostream& fout);
-  virtual void WriteSolutionConfigurations(std::ostream& fout);
-  virtual void WriteProjectConfigurations(
-    std::ostream& fout, const char* name, cmTarget::TargetType type,
+  void WriteSolutionConfigurations(
+    std::ostream& fout, std::vector<std::string> const& configs) override;
+  void WriteProjectConfigurations(
+    std::ostream& fout, const std::string& name,
+    cmGeneratorTarget const& target, std::vector<std::string> const& configs,
     const std::set<std::string>& configsPartOfDefaultBuild,
-    const char* platformMapping = NULL);
-  virtual bool ComputeTargetDepends();
-  virtual void WriteProjectDepends(std::ostream& fout, const char* name,
-                                   const char* path, cmTarget const& t);
+    const std::string& platformMapping = "") override;
+  bool ComputeTargetDepends() override;
+  void WriteProjectDepends(std::ostream& fout, const std::string& name,
+                           const std::string& path,
+                           const cmGeneratorTarget* t) override;
+
+  bool UseFolderProperty() const override;
 
   std::string Name;
   std::string WindowsCEVersion;
 
-private:
-  class Factory;
-  friend class Factory;
+  cm::optional<std::string> DefaultTargetFrameworkVersion;
+  cm::optional<std::string> DefaultTargetFrameworkIdentifier;
+  cm::optional<std::string> DefaultTargetFrameworkTargetsVersion;
 };
-#endif

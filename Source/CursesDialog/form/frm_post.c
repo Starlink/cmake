@@ -63,16 +63,11 @@ int post_form(FORM * form)
     RETURN(E_NOT_CONNECTED);
   
   formwin = Get_Form_Window(form);
-#if defined(__LSB_VERSION__)
   getmaxyx(formwin, height, width);
-#else
-  width  = getmaxx(formwin);
-  height = getmaxy(formwin);
-#endif
   if ((form->cols > width) || (form->rows > height))
     RETURN(E_NO_ROOM);
 
-  /* reset form->curpage to an invald value. This forces Set_Form_Page
+  /* reset form->curpage to an invalid value. This forces Set_Form_Page
      to do the page initialization which is required by post_form.
   */
   page = form->curpage;

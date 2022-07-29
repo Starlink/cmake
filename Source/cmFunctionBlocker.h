@@ -1,20 +1,16 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmFunctionBlocker_h
-#define cmFunctionBlocker_h
+#include <vector>
 
-#include "cmStandardIncludes.h"
-#include "cmExecutionStatus.h"
+#include <cm/string_view>
+
 #include "cmListFileCache.h"
+
+class cmExecutionStatus;
 class cmMakefile;
 
 class cmFunctionBlocker
@@ -23,26 +19,32 @@ public:
   /**
    * should a function be blocked
    */
-  virtual bool IsFunctionBlocked(const cmListFileFunction& lff,
-                                 cmMakefile&mf,
-                                 cmExecutionStatus &status) = 0;
+  bool IsFunctionBlocked(cmListFileFunction const& lff,
+                         cmExecutionStatus& status);
 
-  /**
-   * should this function blocker be removed, useful when one function adds a
-   * blocker and another must remove it
-   */
-  virtual bool ShouldRemove(const cmListFileFunction&,
-                            cmMakefile&) {return false;}
-
-  virtual ~cmFunctionBlocker() {}
+  virtual ~cmFunctionBlocker() = default;
 
   /** Set/Get the context in which this blocker is created.  */
   void SetStartingContext(cmListFileContext const& lfc)
-    { this->StartingContext = lfc; }
-  cmListFileContext const& GetStartingContext()
-    { return this->StartingContext; }
-private:
-  cmListFileContext StartingContext;
-};
+  {
+    this->StartingContext = lfc;
+  }
+  cmListFileContext const& GetStartingContext() const
+  {
+    return this->StartingContext;
+  }
 
-#endif
+private:
+  virtual cm::string_view StartCommandName() const = 0;
+  virtual cm::string_view EndCommandName() const = 0;
+
+  virtual bool ArgumentsMatch(cmListFileFunction const& lff,
+                              cmMakefile& mf) const = 0;
+
+  virtual bool Replay(std::vector<cmListFileFunction> functions,
+                      cmExecutionStatus& status) = 0;
+
+  cmListFileContext StartingContext;
+  std::vector<cmListFileFunction> Functions;
+  unsigned int ScopeDepth = 1;
+};

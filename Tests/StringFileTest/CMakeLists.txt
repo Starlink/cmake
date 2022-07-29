@@ -1,4 +1,4 @@
-cmake_minimum_required (VERSION 2.6)
+cmake_minimum_required (VERSION 2.8.12)
 project(StringFileTest)
 include_directories(${StringFileTest_BINARY_DIR})
 
@@ -53,6 +53,16 @@ if("${infile_strings}" MATCHES "${infile_strings_goal}")
 else()
   message(SEND_ERROR
     "file(STRINGS) incorrectly read from srec file [${infile_strings}]")
+endif()
+
+#this file has utf-8 content
+file(STRINGS test.utf8 infile_strings ENCODING UTF-8)
+list(LENGTH infile_strings content_len)
+if(content_len MATCHES "3")
+  message("file(STRINGS) correctly read from utf8 file [${infile_strings}]")
+else()
+  message(SEND_ERROR
+    "file(STRINGS) incorrectly read from utf8 file [${infile_strings}]")
 endif()
 
 # String test
@@ -113,7 +123,7 @@ string(STRIP "ST2 " ST2)
 string(STRIP "  ST3" ST3)
 
 foreach(var ST1 ST2 ST3)
-  if("${var}" STREQUAL "${${var}}")
+  if("x${var}" STREQUAL "x${${var}}")
     message("[${var}] == [${${var}}]")
   else()
     message(SEND_ERROR "Problem with the STRIP command for ${var}: [${${var}}]")
@@ -127,25 +137,12 @@ string(LENGTH ${substringres} lengthres)
 
 file(RELATIVE_PATH relpath "/usr/local/bin" "/usr/X11R6/bin/xnest")
 
-# Escaping test
-set(var "\\ \" \  \t \n \r \# \( \) \0")
-message("Output: [${var}]")
-set(var \\ \" \  \t \n \r \# \( \) \0)
-message("Output: [${var}]")
-
 # Make-style unquoted argument test
 set(var $(VAR1)$(VAR2)/$(VAR3))
 message("Output: [${var}]")
 string(COMPARE EQUAL "${var}" "$(VAR1)$(VAR2)/$(VAR3)" result)
 if(NOT result)
   message(SEND_ERROR "Unquoted $(VAR) syntax is broken.")
-endif()
-
-# Obscure environment variable name
-set("ENV{x+(y)}" "Obscure environment variable value")
-message("Output: [$ENV{x+(y)}]")
-if(NOT "$ENV{x+(y)}" STREQUAL "Obscure environment variable value")
-  message(SEND_ERROR "Environment variable \"ENV{x+(y)}\" does not work.")
 endif()
 
 # Make directories test
@@ -192,7 +189,7 @@ string(CONFIGURE "${infile}" infile+-/out @ONLY)
 set(infile "${infile+-/out}")
 
 # Write include file to a file
-string(REGEX REPLACE "includefile" "${file}" outfile "${infile}")
+string(REGEX REPLACE "includefile" "Includes/Values.h" outfile "${infile}")
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/OutputFile.h-tmp" "${outfile}")
 file(RENAME "${CMAKE_CURRENT_BINARY_DIR}/OutputFile.h-tmp"
             "${CMAKE_CURRENT_BINARY_DIR}/OutputFile.h")
@@ -285,4 +282,10 @@ string(MAKE_C_IDENTIFIER "1one-two$" MCI_1)
 
 if(NOT MCI_1 STREQUAL _1one_two_)
   message(SEND_ERROR "MAKE_C_IDENTIFIER did not create expected result.")
+endif()
+
+string(GENEX_STRIP "one;$<1:two;three>;four;$<TARGET_OBJECTS:some_target>" strip_result)
+
+if (NOT strip_result STREQUAL "one;four")
+  message(SEND_ERROR "GENEX_STRIP did not create expected result: ${strip_result}")
 endif()

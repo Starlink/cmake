@@ -1,70 +1,67 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
-
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
-
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#include <assert.h>
-
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmExternalMakefileProjectGenerator.h"
 
-void cmExternalMakefileProjectGenerator
-::EnableLanguage(std::vector<std::string> const&,
-                 cmMakefile *, bool)
+#include <utility>
+
+#include "cmStringAlgorithms.h"
+
+class cmMakefile;
+
+void cmExternalMakefileProjectGenerator::EnableLanguage(
+  std::vector<std::string> const& /*unused*/, cmMakefile* /*unused*/,
+  bool /*unused*/)
 {
 }
 
 std::string cmExternalMakefileProjectGenerator::CreateFullGeneratorName(
-                                                   const char* globalGenerator,
-                                                   const char* extraGenerator)
+  const std::string& globalGenerator, const std::string& extraGenerator)
 {
   std::string fullName;
-  if (globalGenerator)
-    {
-    if (extraGenerator && *extraGenerator)
-      {
-      fullName = extraGenerator;
-      fullName += " - ";
-      }
-    fullName += globalGenerator;
+  if (!globalGenerator.empty()) {
+    if (!extraGenerator.empty()) {
+      fullName = cmStrCat(extraGenerator, " - ");
     }
+    fullName += globalGenerator;
+  }
   return fullName;
 }
 
-const char* cmExternalMakefileProjectGenerator::GetGlobalGeneratorName(
-                                                          const char* fullName)
+bool cmExternalMakefileProjectGenerator::Open(
+  const std::string& /*bindir*/, const std::string& /*projectName*/,
+  bool /*dryRun*/)
 {
-  // at least one global generator must be supported
-  assert(!this->SupportedGlobalGenerators.empty());
+  return false;
+}
 
-  if (fullName==0)
-    {
-    return 0;
-    }
+cmExternalMakefileProjectGeneratorFactory::
+  cmExternalMakefileProjectGeneratorFactory(std::string n, std::string doc)
+  : Name(std::move(n))
+  , Documentation(std::move(doc))
+{
+}
 
-  std::string currentName = fullName;
-  // if we get only the short name, take the first global generator as default
-  if (currentName == this->GetName())
-    {
-    return this->SupportedGlobalGenerators[0].c_str();
-    }
+cmExternalMakefileProjectGeneratorFactory::
+  ~cmExternalMakefileProjectGeneratorFactory() = default;
 
-  // otherwise search for the matching global generator
-  for (std::vector<std::string>::const_iterator
-       it = this->SupportedGlobalGenerators.begin();
-       it != this->SupportedGlobalGenerators.end();
-       ++it)
-    {
-      if (this->CreateFullGeneratorName(it->c_str(), this->GetName())
-                                                                == currentName)
-      {
-        return it->c_str();
-      }
-    }
-  return 0;
+std::string cmExternalMakefileProjectGeneratorFactory::GetName() const
+{
+  return this->Name;
+}
+
+std::string cmExternalMakefileProjectGeneratorFactory::GetDocumentation() const
+{
+  return this->Documentation;
+}
+
+std::vector<std::string>
+cmExternalMakefileProjectGeneratorFactory::GetSupportedGlobalGenerators() const
+{
+  return this->SupportedGlobalGenerators;
+}
+
+void cmExternalMakefileProjectGeneratorFactory::AddSupportedGlobalGenerator(
+  const std::string& base)
+{
+  this->SupportedGlobalGenerators.push_back(base);
 }

@@ -43,11 +43,59 @@ install(TARGETS mylibapp
 # CPACK_MONOLITHIC_INSTALL=1 is set (at cmake time).
 install(TARGETS mylibapp2
   RUNTIME
-  DESTINATION bin)
+  DESTINATION bin/@in@_@path@@with\\@and\\@/\@in_path\@) # test @ char in path
 
 install(FILES mylib.h
   DESTINATION include
   COMPONENT headers)
+
+if("${CPACK_GENERATOR}" MATCHES "RPM")
+  ############## test man pages
+  install(FILES mylib
+    DESTINATION share/man/mylib/man3/mylib.1)
+  install(FILES mylib
+    DESTINATION share/man/mylib/man3/mylib.1 RENAME mylib2)
+
+  ############## test symlinks
+  # Package symbolic links
+  install(DIRECTORY DESTINATION ${CMAKE_INSTALL_LIBDIR}/inside_relocatable_one/depth_two/depth_three COMPONENT libraries)
+  install(DIRECTORY DESTINATION ${CMAKE_INSTALL_LIBDIR}/inside_relocatable_two/depth_two/different_relocatable/bar COMPONENT libraries)
+  install(DIRECTORY DESTINATION other_relocatable/depth_two COMPONENT libraries)
+  install(DIRECTORY DESTINATION non_relocatable/depth_two COMPONENT libraries)
+  # test symbolic links to same dir
+  execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink depth_three symlink_samedir_path)
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/symlink_samedir_path DESTINATION ${CMAKE_INSTALL_LIBDIR}/inside_relocatable_one/depth_two COMPONENT libraries)
+  # test symbolic links to same dir with current dir ./ prefix
+  execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink ./depth_three symlink_samedir_path_current_dir)
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/symlink_samedir_path_current_dir DESTINATION ${CMAKE_INSTALL_LIBDIR}/inside_relocatable_one/depth_two COMPONENT libraries)
+  # test symbolic links to same dir with longer relative path
+  execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink ../../../${CMAKE_INSTALL_LIBDIR}/.././${CMAKE_INSTALL_LIBDIR}/inside_relocatable_one/./depth_two/depth_three symlink_samedir_path_longer)
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/symlink_samedir_path_longer DESTINATION ${CMAKE_INSTALL_LIBDIR}/inside_relocatable_one/depth_two COMPONENT libraries)
+  # test symbolic links to sub dir
+  execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink ../../${CMAKE_INSTALL_LIBDIR}/inside_relocatable_one/depth_two/depth_three symlink_subdir_path)
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/symlink_subdir_path DESTINATION ${CMAKE_INSTALL_LIBDIR}/inside_relocatable_one COMPONENT libraries)
+  # test symbolic links to parent dir
+  execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink .././../../../${CMAKE_INSTALL_LIBDIR}/inside_relocatable_one/./depth_two symlink_parentdir_path)
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/symlink_parentdir_path DESTINATION ${CMAKE_INSTALL_LIBDIR}/inside_relocatable_one/depth_two/depth_three COMPONENT libraries)
+  # test symbolic link to another relocatable path
+  execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink .././.././../other_relocatable/./depth_two symlink_other_relocatable_path)
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/symlink_other_relocatable_path DESTINATION ${CMAKE_INSTALL_LIBDIR}/inside_relocatable_two/depth_two COMPONENT libraries)
+  # test symbolic link to non relocatable path
+  execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink .././../../non_relocatable/./depth_two symlink_to_non_relocatable_path)
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/symlink_to_non_relocatable_path DESTINATION ${CMAKE_INSTALL_LIBDIR}/inside_relocatable_two/depth_two COMPONENT libraries)
+  # test symbolic link from non relocatable path
+  execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink .././../${CMAKE_INSTALL_LIBDIR}/inside_relocatable_two/depth_two symlink_from_non_relocatable_path)
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/symlink_from_non_relocatable_path DESTINATION non_relocatable/depth_two COMPONENT libraries)
+  # test symbolic link relocatable path to its relocatable subpath
+  execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink ../../inside_relocatable_two/depth_two/different_relocatable/bar symlink_relocatable_subpath)
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/symlink_relocatable_subpath DESTINATION ${CMAKE_INSTALL_LIBDIR}/inside_relocatable_one/depth_two COMPONENT libraries)
+  # test symbolic link to location outside package
+  execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink ./outside_package symlink_outside_package)
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/symlink_outside_package DESTINATION ${CMAKE_INSTALL_LIBDIR}/inside_relocatable_one/depth_two COMPONENT libraries)
+  # test symbolic link to location outside wdr (packaging directory)
+  execute_process(COMMAND ${CMAKE_COMMAND} -E create_symlink /outside_package_wdr symlink_outside_wdr)
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/symlink_outside_wdr DESTINATION ${CMAKE_INSTALL_LIBDIR}/inside_relocatable_one/depth_two COMPONENT libraries)
+endif()
 
 # CPack boilerplate for this project
 set(CPACK_PACKAGE_NAME "MyLib")
@@ -109,6 +157,28 @@ set(CPACK_INSTALL_TYPE_FULL_DISPLAY_NAME "Everything")
 set(CPACK_COMPONENT_LIBRARIES_INSTALL_TYPES Developer Full)
 set(CPACK_COMPONENT_HEADERS_INSTALL_TYPES Developer Full)
 set(CPACK_COMPONENT_APPLICATIONS_INSTALL_TYPES Full)
+
+# set CPACK_RPM_RELOCATION_PATHS here as GNUInstallDirs script
+# can not be used in CPack scripts due to CMAKE_SIZEOF_VOID_P
+# variable not being set
+set(CPACK_RPM_RELOCATION_PATHS "${CMAKE_INSTALL_INCLUDEDIR}"
+  "${CMAKE_INSTALL_LIBDIR}" "${CMAKE_INSTALL_BINDIR}" "other_relocatable"
+  "${CMAKE_INSTALL_LIBDIR}/inside_relocatable_two/depth_two/different_relocatable")
+
+# set CPACK_DEBIAN_FILE_NAME to use default package name format
+set(CPACK_DEBIAN_FILE_NAME "DEB-DEFAULT")
+
+# set some tags for NuGet packages
+# 1. all in one package
+set(CPACK_NUGET_PACKAGE_TAGS "nuget" "unit" "test" "all-in-one")
+# 2. per component packages
+set(CPACK_NUGET_APPLICATIONS_PACKAGE_TAGS "nuget" "unit" "test" "applications")
+set(CPACK_NUGET_LIBRARIES_PACKAGE_TAGS "nuget" "unit" "test" "libraries")
+set(CPACK_NUGET_HEADERS_PACKAGE_TAGS "nuget" "unit" "test" "headers")
+set(CPACK_NUGET_UNSPECIFIED_PACKAGE_TAGS "nuget" "unit" "test" "uNsP3c1FiEd")
+# 3. per group packages
+set(CPACK_NUGET_RUNTIME_PACKAGE_TAGS "nuget" "unit" "test" "run-time")
+set(CPACK_NUGET_DEVELOPMENT_PACKAGE_TAGS "nuget" "unit" "test" "development")
 
 # We may use the CPack specific config file in order
 # to tailor CPack behavior on a CPack generator specific way

@@ -1,59 +1,45 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc.
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
+#include <map>
+#include <memory>
+#include <string>
 
-#ifndef cmCPackGeneratorFactory_h
-#define cmCPackGeneratorFactory_h
-
-#include "cmObject.h"
-
-class cmCPackLog;
 class cmCPackGenerator;
+class cmCPackLog;
 
 /** \class cmCPackGeneratorFactory
  * \brief A container for CPack generators
  *
  */
-class cmCPackGeneratorFactory : public cmObject
+class cmCPackGeneratorFactory
 {
 public:
-  cmTypeMacro(cmCPackGeneratorFactory, cmObject);
-
   cmCPackGeneratorFactory();
-  ~cmCPackGeneratorFactory();
 
   //! Get the generator
-  cmCPackGenerator* NewGenerator(const char* name);
-  void DeleteGenerator(cmCPackGenerator* gen);
+  std::unique_ptr<cmCPackGenerator> NewGenerator(const std::string& name);
 
-  typedef cmCPackGenerator* CreateGeneratorCall();
+  using CreateGeneratorCall = cmCPackGenerator*();
 
-  void RegisterGenerator(const char* name,
-    const char* generatorDescription,
-    CreateGeneratorCall* createGenerator);
+  void RegisterGenerator(const std::string& name,
+                         const char* generatorDescription,
+                         CreateGeneratorCall* createGenerator);
 
   void SetLogger(cmCPackLog* logger) { this->Logger = logger; }
 
-  typedef std::map<cmStdString, cmStdString> DescriptionsMap;
+  using DescriptionsMap = std::map<std::string, std::string>;
   const DescriptionsMap& GetGeneratorsList() const
-    { return this->GeneratorDescriptions; }
+  {
+    return this->GeneratorDescriptions;
+  }
 
 private:
-  cmCPackGenerator* NewGeneratorInternal(const char* name);
-  std::vector<cmCPackGenerator*> Generators;
-
-  typedef std::map<cmStdString, CreateGeneratorCall*> t_GeneratorCreatorsMap;
+  using t_GeneratorCreatorsMap = std::map<std::string, CreateGeneratorCall*>;
   t_GeneratorCreatorsMap GeneratorCreators;
   DescriptionsMap GeneratorDescriptions;
-  cmCPackLog* Logger;
+  cmCPackLog* Logger{};
 };
-
-#endif

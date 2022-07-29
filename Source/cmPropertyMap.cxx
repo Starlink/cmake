@@ -1,86 +1,87 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
-
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
-
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmPropertyMap.h"
-#include "cmSystemTools.h"
-#include "cmake.h"
 
-cmProperty *cmPropertyMap::GetOrCreateProperty(const char *name)
+#include <algorithm>
+#include <utility>
+
+void cmPropertyMap::Clear()
 {
-  cmPropertyMap::iterator it = this->find(name);
-  cmProperty *prop;
-  if (it == this->end())
-    {
-    prop = &(*this)[name];
-    }
-  else
-    {
-    prop = &(it->second);
-    }
-  return prop;
+  this->Map_.clear();
 }
 
-void cmPropertyMap::SetProperty(const char *name, const char *value,
-                                cmProperty::ScopeType scope)
+void cmPropertyMap::SetProperty(const std::string& name, const char* value)
 {
-  if (!name)
-    {
+  if (!value) {
+    this->Map_.erase(name);
     return;
-    }
-  if(!value)
-    {
-    this->erase(name);
-    return;
-    }
-  (void)scope;
+  }
 
-  cmProperty *prop = this->GetOrCreateProperty(name);
-  prop->Set(name,value);
+  this->Map_[name] = value;
+}
+void cmPropertyMap::SetProperty(const std::string& name, cmValue value)
+{
+  if (!value) {
+    this->Map_.erase(name);
+    return;
+  }
+
+  this->Map_[name] = *value;
 }
 
-void cmPropertyMap::AppendProperty(const char* name, const char* value,
-                                   cmProperty::ScopeType scope, bool asString)
+void cmPropertyMap::AppendProperty(const std::string& name,
+                                   const std::string& value, bool asString)
 {
   // Skip if nothing to append.
-  if(!name || !value || !*value)
-    {
+  if (value.empty()) {
     return;
-    }
-  (void)scope;
+  }
 
-  cmProperty *prop = this->GetOrCreateProperty(name);
-  prop->Append(name,value,asString);
+  {
+    std::string& pVal = this->Map_[name];
+    if (!pVal.empty() && !asString) {
+      pVal += ';';
+    }
+    pVal += value;
+  }
 }
 
-const char *cmPropertyMap
-::GetPropertyValue(const char *name,
-                   cmProperty::ScopeType scope,
-                   bool &chain) const
+void cmPropertyMap::RemoveProperty(const std::string& name)
 {
-  chain = false;
-  if (!name)
-    {
-    return 0;
-    }
-
-  cmPropertyMap::const_iterator it = this->find(name);
-  if (it == this->end())
-    {
-    // should we chain up?
-    if (this->CMakeInstance)
-      {
-      chain = this->CMakeInstance->IsPropertyChained(name,scope);
-      }
-    return 0;
-    }
-  return it->second.GetValue();
+  this->Map_.erase(name);
 }
 
+cmValue cmPropertyMap::GetPropertyValue(const std::string& name) const
+{
+  auto it = this->Map_.find(name);
+  if (it != this->Map_.end()) {
+    return cmValue(it->second);
+  }
+  return nullptr;
+}
+
+std::vector<std::string> cmPropertyMap::GetKeys() const
+{
+  std::vector<std::string> keyList;
+  keyList.reserve(this->Map_.size());
+  for (auto const& item : this->Map_) {
+    keyList.push_back(item.first);
+  }
+  std::sort(keyList.begin(), keyList.end());
+  return keyList;
+}
+
+std::vector<std::pair<std::string, std::string>> cmPropertyMap::GetList() const
+{
+  using StringPair = std::pair<std::string, std::string>;
+  std::vector<StringPair> kvList;
+  kvList.reserve(this->Map_.size());
+  for (auto const& item : this->Map_) {
+    kvList.emplace_back(item.first, item.second);
+  }
+  std::sort(kvList.begin(), kvList.end(),
+            [](StringPair const& a, StringPair const& b) {
+              return a.first < b.first;
+            });
+  return kvList;
+}

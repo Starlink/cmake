@@ -1,42 +1,51 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmInstallDirectoryGenerator_h
-#define cmInstallDirectoryGenerator_h
+#include <iosfwd>
+#include <string>
+#include <vector>
 
 #include "cmInstallGenerator.h"
+#include "cmListFileCache.h"
+#include "cmScriptGenerator.h"
+
+class cmLocalGenerator;
 
 /** \class cmInstallDirectoryGenerator
  * \brief Generate directory installation rules.
  */
-class cmInstallDirectoryGenerator: public cmInstallGenerator
+class cmInstallDirectoryGenerator : public cmInstallGenerator
 {
 public:
-  cmInstallDirectoryGenerator(std::vector<std::string> const& dirs,
-                              const char* dest,
-                              const char* file_permissions,
-                              const char* dir_permissions,
-                              std::vector<std::string> const& configurations,
-                              const char* component,
-                              const char* literal_args,
-                              bool optional = false);
-  virtual ~cmInstallDirectoryGenerator();
+  cmInstallDirectoryGenerator(
+    std::vector<std::string> const& dirs, std::string const& dest,
+    std::string file_permissions, std::string dir_permissions,
+    std::vector<std::string> const& configurations,
+    std::string const& component, MessageLevel message, bool exclude_from_all,
+    std::string literal_args, bool optional, cmListFileBacktrace backtrace);
+  ~cmInstallDirectoryGenerator() override;
+
+  bool Compute(cmLocalGenerator* lg) override;
+
+  std::string GetDestination(std::string const& config) const;
+  std::vector<std::string> GetDirectories(std::string const& config) const;
+
+  bool GetOptional() const { return this->Optional; }
 
 protected:
-  virtual void GenerateScriptActions(std::ostream& os, Indent const& indent);
-  std::vector<std::string> Directories;
-  std::string FilePermissions;
-  std::string DirPermissions;
-  std::string LiteralArguments;
-  bool Optional;
+  void GenerateScriptActions(std::ostream& os, Indent indent) override;
+  void GenerateScriptForConfig(std::ostream& os, const std::string& config,
+                               Indent indent) override;
+  void AddDirectoryInstallRule(std::ostream& os, const std::string& config,
+                               Indent indent,
+                               std::vector<std::string> const& dirs);
+  cmLocalGenerator* LocalGenerator;
+  std::vector<std::string> const Directories;
+  std::string const FilePermissions;
+  std::string const DirPermissions;
+  std::string const LiteralArguments;
+  bool const Optional;
 };
-
-#endif

@@ -1,57 +1,69 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2013 Stephen Kelly <steveire@gmail.com>
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmExportInstallFileGenerator_h
-#define cmExportInstallFileGenerator_h
+#include <iosfwd>
+#include <set>
+#include <string>
+#include <vector>
 
 #include "cmExportFileGenerator.h"
 
-class cmInstallExportGenerator;
-class cmInstallTargetGenerator;
+class cmFileSet;
+class cmGeneratorTarget;
+class cmGlobalGenerator;
+class cmMakefile;
+class cmTargetExport;
 
-class cmExportTryCompileFileGenerator: public cmExportFileGenerator
+class cmExportTryCompileFileGenerator : public cmExportFileGenerator
 {
 public:
+  cmExportTryCompileFileGenerator(cmGlobalGenerator* gg,
+                                  std::vector<std::string> const& targets,
+                                  cmMakefile* mf,
+                                  std::set<std::string> const& langs);
+
   /** Set the list of targets to export.  */
-  void SetExports(const std::vector<cmTarget const*> &exports)
-    { this->Exports = exports; }
-  void SetConfig(const char *config) { this->Config = config; }
+  void SetConfig(const std::string& config) { this->Config = config; }
+
 protected:
-
   // Implement virtual methods from the superclass.
-  virtual bool GenerateMainFile(std::ostream& os);
+  bool GenerateMainFile(std::ostream& os) override;
 
-  virtual void GenerateImportTargetsConfig(std::ostream&,
-                                           const char*,
-                                           std::string const&,
-                            std::vector<std::string>&) {}
-  virtual void HandleMissingTarget(std::string&,
-                                   std::vector<std::string>&,
-                                   cmMakefile*,
-                                   cmTarget*,
-                                   cmTarget*) {}
+  void GenerateImportTargetsConfig(std::ostream&, const std::string&,
+                                   std::string const&,
+                                   std::vector<std::string>&) override
+  {
+  }
+  void HandleMissingTarget(std::string&, std::vector<std::string>&,
+                           cmGeneratorTarget const*,
+                           cmGeneratorTarget*) override
+  {
+  }
 
-  void PopulateProperties(cmTarget const* target,
+  void PopulateProperties(cmGeneratorTarget const* target,
                           ImportPropertyMap& properties,
-                          std::set<cmTarget const*> &emitted);
+                          std::set<const cmGeneratorTarget*>& emitted);
 
-  std::string InstallNameDir(cmTarget* target,
-                             const std::string& config);
+  std::string InstallNameDir(cmGeneratorTarget const* target,
+                             const std::string& config) override;
+
+  std::string GetFileSetDirectories(cmGeneratorTarget* target,
+                                    cmFileSet* fileSet,
+                                    cmTargetExport* te) override;
+
+  std::string GetFileSetFiles(cmGeneratorTarget* target, cmFileSet* fileSet,
+                              cmTargetExport* te) override;
+
 private:
-  std::string FindTargets(const char *prop, cmTarget const* tgt,
-                   std::set<cmTarget const*> &emitted);
+  std::string FindTargets(const std::string& prop,
+                          const cmGeneratorTarget* tgt,
+                          std::string const& language,
+                          std::set<const cmGeneratorTarget*>& emitted);
 
-
-  std::vector<cmTarget const*> Exports;
-  const char *Config;
+  std::vector<cmGeneratorTarget const*> Exports;
+  std::string Config;
+  std::vector<std::string> Languages;
 };
-
-#endif

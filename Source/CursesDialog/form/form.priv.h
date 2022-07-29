@@ -33,12 +33,6 @@
 #include "mf_common.h"
 #include "form.h"
 
-/* get around odd bug on aCC and itanium */
-#if defined(__hpux) && defined(__ia64)
-#define getmaxx __getmaxx
-#define getmaxy __getmaxy
-#endif
-
 /* form  status values */
 #define _OVLMODE         (0x04) /* Form is in overlay mode                */
 #define _WINDOW_MODIFIED (0x10) /* Current field window has been modified */
@@ -46,7 +40,7 @@
 
 /* field status values */
 #define _CHANGED         (0x01) /* Field has been changed                 */
-#define _NEWTOP          (0x02) /* Vertical scrolling occured             */
+#define _NEWTOP          (0x02) /* Vertical scrolling occurred             */
 #define _NEWPAGE         (0x04) /* field begins new page of form          */
 #define _MAY_GROW        (0x08) /* dynamic field may still grow           */
 

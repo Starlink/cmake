@@ -1,65 +1,86 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmCryptoHash_h
-#define cmCryptoHash_h
+#include <cstddef>
+#include <memory>
+#include <string>
+#include <vector>
 
-#include "cmStandardIncludes.h"
+#include <cm/string_view>
 
-#include <cmsys/auto_ptr.hxx>
-
+/**
+ * @brief Abstract base class for cryptographic hash generators
+ */
 class cmCryptoHash
 {
 public:
-  virtual ~cmCryptoHash() {}
-  static cmsys::auto_ptr<cmCryptoHash> New(const char* algo);
-  std::string HashString(const char* input);
-  std::string HashFile(const char* file);
-protected:
-  virtual void Initialize()=0;
-  virtual void Append(unsigned char const*, int)=0;
-  virtual std::string Finalize()=0;
+  enum Algo
+  {
+    AlgoMD5,
+    AlgoSHA1,
+    AlgoSHA224,
+    AlgoSHA256,
+    AlgoSHA384,
+    AlgoSHA512,
+    AlgoSHA3_224,
+    AlgoSHA3_256,
+    AlgoSHA3_384,
+    AlgoSHA3_512
+  };
+
+  cmCryptoHash(Algo algo);
+  ~cmCryptoHash();
+
+  cmCryptoHash(cmCryptoHash const&) = delete;
+  cmCryptoHash& operator=(cmCryptoHash const&) = delete;
+
+  /// @brief Returns a new hash generator of the requested type
+  /// @arg algo Hash type name. Supported hash types are
+  ///      MD5, SHA1, SHA224, SHA256, SHA384, SHA512,
+  ///      SHA3_224, SHA3_256, SHA3_384, SHA3_512
+  /// @return A valid auto pointer if algo is supported or
+  ///         an invalid/NULL pointer otherwise
+  static std::unique_ptr<cmCryptoHash> New(cm::string_view algo);
+
+  /// @brief Converts a hex character to its binary value (4 bits)
+  /// @arg input Hex character [0-9a-fA-F].
+  /// @arg output Binary value of the input character (4 bits)
+  /// @return True if input was a valid hex character
+  static bool IntFromHexDigit(char input, char& output);
+
+  /// @brief Converts a byte hash to a sequence of hex character pairs
+  static std::string ByteHashToString(const std::vector<unsigned char>& hash);
+
+  /// @brief Calculates a binary hash from string input data
+  /// @return Binary hash vector
+  std::vector<unsigned char> ByteHashString(cm::string_view input);
+
+  /// @brief Calculates a binary hash from file content
+  /// @see ByteHashString()
+  /// @return Non empty binary hash vector if the file was read successfully.
+  ///         An empty vector otherwise.
+  std::vector<unsigned char> ByteHashFile(const std::string& file);
+
+  /// @brief Calculates a hash string from string input data
+  /// @return Sequence of hex characters pairs for each byte of the binary hash
+  std::string HashString(cm::string_view input);
+
+  /// @brief Calculates a hash string from file content
+  /// @see HashString()
+  /// @return Non empty hash string if the file was read successfully.
+  ///         An empty string otherwise.
+  std::string HashFile(const std::string& file);
+
+  void Initialize();
+  void Append(void const*, size_t);
+  void Append(cm::string_view input);
+  std::vector<unsigned char> Finalize();
+  std::string FinalizeHex();
+
+private:
+  unsigned int Id;
+  struct rhash_context* CTX;
 };
-
-class cmCryptoHashMD5: public cmCryptoHash
-{
-  struct cmsysMD5_s* MD5;
-public:
-  cmCryptoHashMD5();
-  ~cmCryptoHashMD5();
-protected:
-  virtual void Initialize();
-  virtual void Append(unsigned char const* buf, int sz);
-  virtual std::string Finalize();
-};
-
-#define cmCryptoHash_SHA_CLASS_DECL(SHA) \
-  class cmCryptoHash##SHA: public cmCryptoHash \
-  { \
-    union _SHA_CTX* SHA; \
-  public: \
-    cmCryptoHash##SHA(); \
-    ~cmCryptoHash##SHA(); \
-  protected: \
-    virtual void Initialize(); \
-    virtual void Append(unsigned char const* buf, int sz); \
-    virtual std::string Finalize(); \
-  }
-
-cmCryptoHash_SHA_CLASS_DECL(SHA1);
-cmCryptoHash_SHA_CLASS_DECL(SHA224);
-cmCryptoHash_SHA_CLASS_DECL(SHA256);
-cmCryptoHash_SHA_CLASS_DECL(SHA384);
-cmCryptoHash_SHA_CLASS_DECL(SHA512);
-
-#undef cmCryptoHash_SHA_CLASS_DECL
-
-#endif

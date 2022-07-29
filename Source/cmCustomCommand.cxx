@@ -1,200 +1,203 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
-
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
-
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmCustomCommand.h"
 
-#include "cmMakefile.h"
+#include <cassert>
+#include <utility>
 
-#include <cmsys/auto_ptr.hxx>
+#include <cmext/algorithm>
 
-//----------------------------------------------------------------------------
-cmCustomCommand::cmCustomCommand()
-{
-  this->HaveComment = false;
-  this->EscapeOldStyle = true;
-  this->EscapeAllowMakeVars = false;
-}
-
-//----------------------------------------------------------------------------
-cmCustomCommand::cmCustomCommand(const cmCustomCommand& r):
-  Outputs(r.Outputs),
-  Depends(r.Depends),
-  CommandLines(r.CommandLines),
-  HaveComment(r.HaveComment),
-  Comment(r.Comment),
-  WorkingDirectory(r.WorkingDirectory),
-  EscapeAllowMakeVars(r.EscapeAllowMakeVars),
-  EscapeOldStyle(r.EscapeOldStyle),
-  Backtrace(new cmListFileBacktrace(*r.Backtrace))
-{
-}
-
-//----------------------------------------------------------------------------
-cmCustomCommand& cmCustomCommand::operator=(cmCustomCommand const& r)
-{
-  if(this == &r)
-    {
-    return *this;
-    }
-
-  this->Outputs = r.Outputs;
-  this->Depends = r.Depends;
-  this->CommandLines = r.CommandLines;
-  this->HaveComment = r.HaveComment;
-  this->Comment = r.Comment;
-  this->WorkingDirectory = r.WorkingDirectory;
-  this->EscapeAllowMakeVars = r.EscapeAllowMakeVars;
-  this->EscapeOldStyle = r.EscapeOldStyle;
-  this->ImplicitDepends = r.ImplicitDepends;
-
-  cmsys::auto_ptr<cmListFileBacktrace>
-    newBacktrace(new cmListFileBacktrace(*r.Backtrace));
-  delete this->Backtrace;
-  this->Backtrace = newBacktrace.release();
-
-  return *this;
-}
-
-//----------------------------------------------------------------------------
-cmCustomCommand::cmCustomCommand(cmMakefile const* mf,
-                                 const std::vector<std::string>& outputs,
-                                 const std::vector<std::string>& depends,
-                                 const cmCustomCommandLines& commandLines,
-                                 const char* comment,
-                                 const char* workingDirectory):
-  Outputs(outputs),
-  Depends(depends),
-  CommandLines(commandLines),
-  HaveComment(comment?true:false),
-  Comment(comment?comment:""),
-  WorkingDirectory(workingDirectory?workingDirectory:""),
-  EscapeAllowMakeVars(false),
-  EscapeOldStyle(true),
-  Backtrace(new cmListFileBacktrace)
-{
-  this->EscapeOldStyle = true;
-  this->EscapeAllowMakeVars = false;
-  if(mf)
-    {
-    mf->GetBacktrace(*this->Backtrace);
-    }
-}
-
-//----------------------------------------------------------------------------
-cmCustomCommand::~cmCustomCommand()
-{
-  delete this->Backtrace;
-}
-
-//----------------------------------------------------------------------------
 const std::vector<std::string>& cmCustomCommand::GetOutputs() const
 {
   return this->Outputs;
 }
 
-//----------------------------------------------------------------------------
-const char* cmCustomCommand::GetWorkingDirectory() const
+void cmCustomCommand::SetOutputs(std::vector<std::string> outputs)
 {
-  if(this->WorkingDirectory.size() == 0)
-    {
-    return 0;
-    }
-  return this->WorkingDirectory.c_str();
+  this->Outputs = std::move(outputs);
 }
 
-//----------------------------------------------------------------------------
+void cmCustomCommand::SetOutputs(std::string output)
+{
+  this->Outputs = { std::move(output) };
+}
+
+const std::vector<std::string>& cmCustomCommand::GetByproducts() const
+{
+  return this->Byproducts;
+}
+
+void cmCustomCommand::SetByproducts(std::vector<std::string> byproducts)
+{
+  this->Byproducts = std::move(byproducts);
+}
+
 const std::vector<std::string>& cmCustomCommand::GetDepends() const
 {
   return this->Depends;
 }
 
-//----------------------------------------------------------------------------
+void cmCustomCommand::SetDepends(std::vector<std::string> depends)
+{
+  if (this->HasMainDependency_) {
+    depends.insert(depends.begin(), std::move(this->Depends[0]));
+  }
+
+  Depends = std::move(depends);
+}
+
+const std::string& cmCustomCommand::GetMainDependency() const
+{
+  assert(this->HasMainDependency_);
+  return this->Depends[0];
+}
+
+void cmCustomCommand::SetMainDependency(std::string main_dependency)
+{
+  if (this->HasMainDependency_) {
+    assert(!main_dependency.empty());
+    this->Depends[0] = std::move(main_dependency);
+  } else if (main_dependency.empty()) {
+    // Do nothing.
+  } else {
+    this->Depends.insert(this->Depends.begin(), std::move(main_dependency));
+    this->HasMainDependency_ = true;
+  }
+}
+
 const cmCustomCommandLines& cmCustomCommand::GetCommandLines() const
 {
   return this->CommandLines;
 }
 
-//----------------------------------------------------------------------------
+void cmCustomCommand::SetCommandLines(cmCustomCommandLines commandLines)
+{
+  this->CommandLines = std::move(commandLines);
+}
+
 const char* cmCustomCommand::GetComment() const
 {
-  const char* no_comment = 0;
-  return this->HaveComment? this->Comment.c_str() : no_comment;
+  const char* no_comment = nullptr;
+  return this->HaveComment ? this->Comment.c_str() : no_comment;
 }
 
-//----------------------------------------------------------------------------
+void cmCustomCommand::SetComment(const char* comment)
+{
+  this->Comment = comment ? comment : "";
+  this->HaveComment = (comment != nullptr);
+}
+
 void cmCustomCommand::AppendCommands(const cmCustomCommandLines& commandLines)
 {
-  for(cmCustomCommandLines::const_iterator i=commandLines.begin();
-      i != commandLines.end(); ++i)
-    {
-    this->CommandLines.push_back(*i);
-    }
+  cm::append(this->CommandLines, commandLines);
 }
 
-//----------------------------------------------------------------------------
 void cmCustomCommand::AppendDepends(const std::vector<std::string>& depends)
 {
-  for(std::vector<std::string>::const_iterator i=depends.begin();
-      i != depends.end(); ++i)
-    {
-    this->Depends.push_back(*i);
-    }
+  cm::append(this->Depends, depends);
 }
 
-//----------------------------------------------------------------------------
 bool cmCustomCommand::GetEscapeOldStyle() const
 {
   return this->EscapeOldStyle;
 }
 
-//----------------------------------------------------------------------------
 void cmCustomCommand::SetEscapeOldStyle(bool b)
 {
   this->EscapeOldStyle = b;
 }
 
-//----------------------------------------------------------------------------
 bool cmCustomCommand::GetEscapeAllowMakeVars() const
 {
   return this->EscapeAllowMakeVars;
 }
 
-//----------------------------------------------------------------------------
 void cmCustomCommand::SetEscapeAllowMakeVars(bool b)
 {
   this->EscapeAllowMakeVars = b;
 }
 
-//----------------------------------------------------------------------------
 cmListFileBacktrace const& cmCustomCommand::GetBacktrace() const
 {
-  return *this->Backtrace;
+  return this->Backtrace;
 }
 
-//----------------------------------------------------------------------------
-cmCustomCommand::ImplicitDependsList const&
-cmCustomCommand::GetImplicitDepends() const
+void cmCustomCommand::SetBacktrace(cmListFileBacktrace lfbt)
+{
+  this->Backtrace = std::move(lfbt);
+}
+
+cmImplicitDependsList const& cmCustomCommand::GetImplicitDepends() const
 {
   return this->ImplicitDepends;
 }
 
-//----------------------------------------------------------------------------
-void cmCustomCommand::SetImplicitDepends(ImplicitDependsList const& l)
+void cmCustomCommand::SetImplicitDepends(cmImplicitDependsList const& l)
 {
   this->ImplicitDepends = l;
 }
 
-//----------------------------------------------------------------------------
-void cmCustomCommand::AppendImplicitDepends(ImplicitDependsList const& l)
+void cmCustomCommand::AppendImplicitDepends(cmImplicitDependsList const& l)
 {
-  this->ImplicitDepends.insert(this->ImplicitDepends.end(),
-                               l.begin(), l.end());
+  cm::append(this->ImplicitDepends, l);
+}
+
+bool cmCustomCommand::GetUsesTerminal() const
+{
+  return this->UsesTerminal;
+}
+
+void cmCustomCommand::SetUsesTerminal(bool b)
+{
+  this->UsesTerminal = b;
+}
+
+bool cmCustomCommand::GetCommandExpandLists() const
+{
+  return this->CommandExpandLists;
+}
+
+void cmCustomCommand::SetCommandExpandLists(bool b)
+{
+  this->CommandExpandLists = b;
+}
+
+const std::string& cmCustomCommand::GetDepfile() const
+{
+  return this->Depfile;
+}
+
+void cmCustomCommand::SetDepfile(const std::string& depfile)
+{
+  this->Depfile = depfile;
+}
+
+const std::string& cmCustomCommand::GetJobPool() const
+{
+  return this->JobPool;
+}
+
+void cmCustomCommand::SetJobPool(const std::string& job_pool)
+{
+  this->JobPool = job_pool;
+}
+
+cmPolicies::PolicyStatus cmCustomCommand::GetCMP0116Status() const
+{
+  return this->CMP0116Status;
+}
+
+void cmCustomCommand::SetCMP0116Status(cmPolicies::PolicyStatus cmp0116)
+{
+  this->CMP0116Status = cmp0116;
+}
+
+const std::string& cmCustomCommand::GetTarget() const
+{
+  return this->Target;
+}
+
+void cmCustomCommand::SetTarget(const std::string& target)
+{
+  this->Target = target;
 }

@@ -1,70 +1,84 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
-
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
-
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmLinkDirectoriesCommand.h"
 
-// cmLinkDirectoriesCommand
-bool cmLinkDirectoriesCommand
-::InitialPass(std::vector<std::string> const& args, cmExecutionStatus &)
-{
- if(args.size() < 1 )
-    {
-    return true;
-    }
+#include <sstream>
 
-  for(std::vector<std::string>::const_iterator i = args.begin();
-      i != args.end(); ++i)
-    {
-    this->AddLinkDir(*i);
-    }
+#include "cmExecutionStatus.h"
+#include "cmGeneratorExpression.h"
+#include "cmMakefile.h"
+#include "cmMessageType.h"
+#include "cmPolicies.h"
+#include "cmStringAlgorithms.h"
+#include "cmSystemTools.h"
+
+static void AddLinkDir(cmMakefile& mf, std::string const& dir,
+                       std::vector<std::string>& directories);
+
+bool cmLinkDirectoriesCommand(std::vector<std::string> const& args,
+                              cmExecutionStatus& status)
+{
+  if (args.empty()) {
+    return true;
+  }
+
+  cmMakefile& mf = status.GetMakefile();
+  bool before = mf.IsOn("CMAKE_LINK_DIRECTORIES_BEFORE");
+
+  auto i = args.cbegin();
+  if ((*i) == "BEFORE") {
+    before = true;
+    ++i;
+  } else if ((*i) == "AFTER") {
+    before = false;
+    ++i;
+  }
+
+  std::vector<std::string> directories;
+  for (; i != args.cend(); ++i) {
+    AddLinkDir(mf, *i, directories);
+  }
+
+  mf.AddLinkDirectory(cmJoin(directories, ";"), before);
+
   return true;
 }
 
-//----------------------------------------------------------------------------
-void cmLinkDirectoriesCommand::AddLinkDir(std::string const& dir)
+static void AddLinkDir(cmMakefile& mf, std::string const& dir,
+                       std::vector<std::string>& directories)
 {
   std::string unixPath = dir;
   cmSystemTools::ConvertToUnixSlashes(unixPath);
-  if(!cmSystemTools::FileIsFullPath(unixPath.c_str()))
-    {
+  if (!cmSystemTools::FileIsFullPath(unixPath) &&
+      !cmGeneratorExpression::StartsWithGeneratorExpression(unixPath)) {
     bool convertToAbsolute = false;
-    cmOStringStream e;
+    std::ostringstream e;
+    /* clang-format off */
     e << "This command specifies the relative path\n"
       << "  " << unixPath << "\n"
       << "as a link directory.\n";
-    cmPolicies* policies = this->Makefile->GetPolicies();
-    switch (this->Makefile->GetPolicyStatus(cmPolicies::CMP0015))
-      {
+    /* clang-format on */
+    switch (mf.GetPolicyStatus(cmPolicies::CMP0015)) {
       case cmPolicies::WARN:
-        e << policies->GetPolicyWarning(cmPolicies::CMP0015);
-        this->Makefile->IssueMessage(cmake::AUTHOR_WARNING, e.str());
+        e << cmPolicies::GetPolicyWarning(cmPolicies::CMP0015);
+        mf.IssueMessage(MessageType::AUTHOR_WARNING, e.str());
+        CM_FALLTHROUGH;
       case cmPolicies::OLD:
         // OLD behavior does not convert
         break;
       case cmPolicies::REQUIRED_IF_USED:
       case cmPolicies::REQUIRED_ALWAYS:
-        e << policies->GetRequiredPolicyError(cmPolicies::CMP0015);
-        this->Makefile->IssueMessage(cmake::FATAL_ERROR, e.str());
+        e << cmPolicies::GetRequiredPolicyError(cmPolicies::CMP0015);
+        mf.IssueMessage(MessageType::FATAL_ERROR, e.str());
+        CM_FALLTHROUGH;
       case cmPolicies::NEW:
         // NEW behavior converts
         convertToAbsolute = true;
         break;
-      }
-    if (convertToAbsolute)
-      {
-      std::string tmp = this->Makefile->GetStartDirectory();
-      tmp += "/";
-      tmp += unixPath;
-      unixPath = tmp;
-      }
     }
-  this->Makefile->AddLinkDirectory(unixPath.c_str());
+    if (convertToAbsolute) {
+      unixPath = cmStrCat(mf.GetCurrentSourceDirectory(), '/', unixPath);
+    }
+  }
+  directories.push_back(unixPath);
 }

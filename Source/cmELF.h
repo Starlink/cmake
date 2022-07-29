@@ -1,20 +1,15 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmELF_h
-#define cmELF_h
-
-#if !defined(CMAKE_USE_ELF_PARSER)
-# error "This file may be included only if CMAKE_USE_ELF_PARSER is enabled."
-#endif
+#include <cstdint>
+#include <iosfwd>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
 
 class cmELFInternal;
 
@@ -30,14 +25,14 @@ public:
   /** Destruct.   */
   ~cmELF();
 
+  cmELF(const cmELF&) = delete;
+  cmELF& operator=(const cmELF&) = delete;
+
   /** Get the error message if any.  */
-  std::string const& GetErrorMessage() const
-    {
-    return this->ErrorMessage;
-    }
+  std::string const& GetErrorMessage() const { return this->ErrorMessage; }
 
   /** Boolean conversion.  True if the ELF file is valid.  */
-  operator bool() const { return this->Valid(); }
+  explicit operator bool() const { return this->Valid(); }
 
   /** Enumeration of ELF file types.  */
   enum FileType
@@ -68,22 +63,30 @@ public:
     int IndexInSection;
   };
 
+  /** Represent entire dynamic section header */
+  using DynamicEntryList = std::vector<std::pair<long, unsigned long>>;
+
   /** Get the type of the file opened.  */
   FileType GetFileType() const;
 
+  /** Get the machine of the file opened.  */
+  std::uint16_t GetMachine() const;
+
   /** Get the number of ELF sections present.  */
   unsigned int GetNumberOfSections() const;
-
-  /** Get the number of DYNAMIC section entries before the first
-      DT_NULL.  Returns zero on error.  */
-  unsigned int GetDynamicEntryCount() const;
 
   /** Get the position of a DYNAMIC section header entry.  Returns
       zero on error.  */
   unsigned long GetDynamicEntryPosition(int index) const;
 
-  /** Read bytes from the file.  */
-  bool ReadBytes(unsigned long pos, unsigned long size, char* buf) const;
+  /** Get a copy of all the DYNAMIC section header entries.
+      Returns an empty vector on error */
+  DynamicEntryList GetDynamicEntries() const;
+
+  /** Encodes a DYNAMIC section header entry list into a char vector according
+      to the type of ELF file this is */
+  std::vector<char> EncodeDynamicEntries(
+    const DynamicEntryList& entries) const;
 
   /** Get the SONAME field if any.  */
   bool GetSOName(std::string& soname);
@@ -95,14 +98,19 @@ public:
   /** Get the RUNPATH field if any.  */
   StringEntry const* GetRunPath();
 
+  /** Returns true if the ELF file targets a MIPS CPU.  */
+  bool IsMIPS() const;
+
   /** Print human-readable information about the ELF file.  */
   void PrintInfo(std::ostream& os) const;
+
+  /** Interesting dynamic tags.
+      If the tag is 0, it does not exist in the host ELF implementation */
+  static const long TagRPath, TagRunPath, TagMipsRldMapRel;
 
 private:
   friend class cmELFInternal;
   bool Valid() const;
-  cmELFInternal* Internal;
+  std::unique_ptr<cmELFInternal> Internal;
   std::string ErrorMessage;
 };
-
-#endif

@@ -1,18 +1,14 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmProcessTools_h
-#define cmProcessTools_h
+#include <cstring>
+#include <iosfwd>
+#include <string>
 
-#include "cmStandardIncludes.h"
+#include "cmProcessOutput.h"
 
 /** \class cmProcessTools
  * \brief Helper classes for process output parsing
@@ -21,6 +17,7 @@
 class cmProcessTools
 {
 public:
+  using Encoding = cmProcessOutput::Encoding;
   /** Abstract interface for process output parsers.  */
   class OutputParser
   {
@@ -29,11 +26,16 @@ public:
         done incrementally.  Returns true if the parser is interested
         in any more data and false if it is done.  */
     bool Process(const char* data, int length)
-      { return this->ProcessChunk(data, length); }
+    {
+      return this->ProcessChunk(data, length);
+    }
     bool Process(const char* data)
-      { return this->Process(data, static_cast<int>(strlen(data))); }
+    {
+      return this->Process(data, static_cast<int>(strlen(data)));
+    }
 
-    virtual ~OutputParser() {}
+    virtual ~OutputParser() = default;
+
   protected:
     /** Implement in a subclass to process a chunk of data.  It should
         return true only if it is interested in more data.  */
@@ -41,7 +43,7 @@ public:
   };
 
   /** Process output parser that extracts one line at a time.  */
-  class LineParser: public OutputParser
+  class LineParser : public OutputParser
   {
   public:
     /** Construct with line separation character and choose whether to
@@ -50,14 +52,15 @@ public:
 
     /** Configure logging of lines as they are extracted.  */
     void SetLog(std::ostream* log, const char* prefix);
+
   protected:
-    char Separator;
-    bool IgnoreCR;
-    std::ostream* Log;
-    const char* Prefix;
-    char LineEnd;
+    std::ostream* Log = nullptr;
+    const char* Prefix = nullptr;
     std::string Line;
-    virtual bool ProcessChunk(const char* data, int length);
+    char Separator;
+    char LineEnd = '\0';
+    bool IgnoreCR;
+    bool ProcessChunk(const char* data, int length) override;
 
     /** Implement in a subclass to process one line of input.  It
         should return true only if it is interested in more data.  */
@@ -65,18 +68,20 @@ public:
   };
 
   /** Trivial line handler for simple logging.  */
-  class OutputLogger: public LineParser
+  class OutputLogger : public LineParser
   {
   public:
-    OutputLogger(std::ostream& log, const char* prefix = 0)
-      { this->SetLog(&log, prefix); }
+    OutputLogger(std::ostream& log, const char* prefix = nullptr)
+    {
+      this->SetLog(&log, prefix);
+    }
+
   private:
-    virtual bool ProcessLine() { return true; }
+    bool ProcessLine() override { return true; }
   };
 
   /** Run a process and send output to given parsers.  */
-  static void RunProcess(struct cmsysProcess_s* cp,
-                         OutputParser* out, OutputParser* err = 0);
+  static void RunProcess(struct cmsysProcess_s* cp, OutputParser* out,
+                         OutputParser* err = nullptr,
+                         Encoding encoding = cmProcessOutput::Auto);
 };
-
-#endif

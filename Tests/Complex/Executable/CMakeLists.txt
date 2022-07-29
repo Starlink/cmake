@@ -1,8 +1,8 @@
 #
 # Create exe.
 #
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DTEST_CXX_FLAGS")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DTEST_C_FLAGS")
+string(APPEND CMAKE_CXX_FLAGS " -DTEST_CXX_FLAGS")
+string(APPEND CMAKE_C_FLAGS " -DTEST_C_FLAGS")
 
 # Create an imported target for if(TARGET) test below.
 add_library(ExeImportedTarget UNKNOWN IMPORTED)
@@ -21,7 +21,7 @@ if(TARGET NotATarget)
   message(FATAL_ERROR "if(TARGET NotATarget) returned true!")
 endif()
 
-  # Use LINK_LIBRARIES instead of TARGET_LINK_LIBRARIES to
+# Use LINK_LIBRARIES instead of TARGET_LINK_LIBRARIES to
 set(COMPLEX_LIBS CMakeTestLibrary;CMakeTestLibraryShared;CMakeTestCLibraryShared)
 link_libraries(${COMPLEX_LIBS})
 
@@ -89,18 +89,22 @@ remove_definitions(-DCOMPLEX_DEFINED)
 # Test pre-build/pre-link/post-build rules for an executable.
 add_custom_command(TARGET complex PRE_BUILD
                    COMMAND ${CREATE_FILE_EXE}
-                   ARGS "${Complex_BINARY_DIR}/Executable/prebuild.txt")
+                   ARGS "Executable/prebuild.txt"
+                   WORKING_DIRECTORY "${Complex_BINARY_DIR}")
 add_custom_command(TARGET complex PRE_LINK
                    COMMAND ${CREATE_FILE_EXE}
-                   ARGS "${Complex_BINARY_DIR}/Executable/prelink.txt")
+                   ARGS "Executable/prelink.txt"
+                   WORKING_DIRECTORY "${Complex_BINARY_DIR}")
 add_custom_command(TARGET complex POST_BUILD
                    COMMAND ${CREATE_FILE_EXE}
-                   ARGS "${Complex_BINARY_DIR}/Executable/postbuild.txt")
+                   ARGS "Executable/postbuild.txt"
+                   WORKING_DIRECTORY "${Complex_BINARY_DIR}")
 add_custom_command(TARGET complex POST_BUILD
                    COMMAND ${CMAKE_COMMAND}
                    ARGS -E copy
-                        "${Complex_BINARY_DIR}/Executable/postbuild.txt"
-                        "${Complex_BINARY_DIR}/Executable/postbuild2.txt")
+                        "Executable/postbuild.txt"
+                        "Executable/postbuild2.txt"
+                   WORKING_DIRECTORY "${Complex_BINARY_DIR}")
 
 set_source_files_properties(complex
   COMPILE_FLAGS
@@ -142,7 +146,8 @@ add_dependencies(notInAllCustom notInAllExe)
 #
 add_subdirectory(Temp)
 
-if(CMAKE_COMPILER_IS_GNUCXX AND CMAKE_INCLUDE_SYSTEM_FLAG_CXX)
+if(CMAKE_COMPILER_IS_GNUCXX AND CMAKE_INCLUDE_SYSTEM_FLAG_CXX
+   AND NOT XCODE) # XCODE is excluded due to #15687
   add_executable(testSystemDir testSystemDir.cxx)
   set_target_properties(testSystemDir PROPERTIES COMPILE_FLAGS "-Werror")
 endif()

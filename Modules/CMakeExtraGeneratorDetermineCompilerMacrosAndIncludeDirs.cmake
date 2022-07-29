@@ -1,16 +1,6 @@
+# Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+# file Copyright.txt or https://cmake.org/licensing for details.
 
-#=============================================================================
-# Copyright 2009 Kitware, Inc.
-#
-# Distributed under the OSI-approved BSD License (the "License");
-# see accompanying file Copyright.txt for details.
-#
-# This software is distributed WITHOUT ANY WARRANTY; without even the
-# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the License for more information.
-#=============================================================================
-# (To distribute this file outside of CMake, substitute the full
-#  License text for the above reference.)
 
 # This file is included by CMakeFindEclipseCDT4.cmake and CMakeFindCodeBlocks.cmake
 
@@ -26,11 +16,19 @@ macro(_DETERMINE_GCC_SYSTEM_INCLUDE_DIRS _lang _resultIncludeDirs _resultDefines
   if (${_lang} STREQUAL "c++")
     set(_compilerExecutable "${CMAKE_CXX_COMPILER}")
     set(_arg1 "${CMAKE_CXX_COMPILER_ARG1}")
+
+    if (CMAKE_CXX_FLAGS MATCHES "(-stdlib=[^ ]+)")
+      set(_stdlib "${CMAKE_MATCH_1}")
+    endif ()
+    if (CMAKE_CXX_FLAGS MATCHES "(-std=[^ ]+)")
+      set(_stdver "${CMAKE_MATCH_1}")
+    endif ()
   else ()
     set(_compilerExecutable "${CMAKE_C_COMPILER}")
     set(_arg1 "${CMAKE_C_COMPILER_ARG1}")
   endif ()
-  execute_process(COMMAND ${_compilerExecutable} ${_arg1} -v -E -x ${_lang} -dD dummy
+  separate_arguments(_arg1 NATIVE_COMMAND "${_arg1}")
+  execute_process(COMMAND ${_compilerExecutable} ${_arg1} ${_stdver} ${_stdlib} -v -E -x ${_lang} -dD dummy
                   WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/CMakeFiles
                   ERROR_VARIABLE _gccOutput
                   OUTPUT_VARIABLE _gccStdout )
@@ -69,10 +67,10 @@ macro(_DETERMINE_GCC_SYSTEM_INCLUDE_DIRS _lang _resultIncludeDirs _resultDefines
     #message(STATUS "m1: -${CMAKE_MATCH_1}- m2: -${CMAKE_MATCH_2}- m3: -${CMAKE_MATCH_3}-")
 
     list(APPEND ${_resultDefines} "${_name}")
-    if(_value)
-      list(APPEND ${_resultDefines} "${_value}")
-    else()
+    if ("${_value}" STREQUAL "")
       list(APPEND ${_resultDefines} " ")
+    else()
+      list(APPEND ${_resultDefines} "${_value}")
     endif()
   endforeach()
 
@@ -90,19 +88,23 @@ set(ENV{LANG}        C)
 
 # Now check for C, works for gcc and Intel compiler at least
 if (NOT CMAKE_EXTRA_GENERATOR_C_SYSTEM_INCLUDE_DIRS)
-  if ("${CMAKE_C_COMPILER_ID}" MATCHES GNU  OR  "${CMAKE_C_COMPILER_ID}" MATCHES Intel  OR  "${CMAKE_C_COMPILER_ID}" MATCHES Clang)
+  if (CMAKE_C_COMPILER_ID MATCHES GNU  OR  CMAKE_C_COMPILER_ID MATCHES "LCC"  OR  CMAKE_C_COMPILER_ID MATCHES "Intel"  OR  CMAKE_C_COMPILER_ID MATCHES Clang)
     _DETERMINE_GCC_SYSTEM_INCLUDE_DIRS(c _dirs _defines)
     set(CMAKE_EXTRA_GENERATOR_C_SYSTEM_INCLUDE_DIRS "${_dirs}" CACHE INTERNAL "C compiler system include directories")
     set(CMAKE_EXTRA_GENERATOR_C_SYSTEM_DEFINED_MACROS "${_defines}" CACHE INTERNAL "C compiler system defined macros")
+  elseif ("${CMAKE_C_COMPILER_ID}" MATCHES MSVC)
+    set(CMAKE_EXTRA_GENERATOR_C_SYSTEM_INCLUDE_DIRS "$ENV{INCLUDE}" CACHE INTERNAL "C compiler system include directories")
   endif ()
 endif ()
 
 # And now the same for C++
 if (NOT CMAKE_EXTRA_GENERATOR_CXX_SYSTEM_INCLUDE_DIRS)
-  if ("${CMAKE_CXX_COMPILER_ID}" MATCHES GNU  OR  "${CMAKE_CXX_COMPILER_ID}" MATCHES Intel  OR  "${CMAKE_CXX_COMPILER_ID}" MATCHES Clang)
+  if ("${CMAKE_CXX_COMPILER_ID}" MATCHES GNU  OR  "${CMAKE_CXX_COMPILER_ID}" MATCHES "LCC"  OR  "${CMAKE_CXX_COMPILER_ID}" MATCHES "Intel"  OR  "${CMAKE_CXX_COMPILER_ID}" MATCHES Clang)
     _DETERMINE_GCC_SYSTEM_INCLUDE_DIRS(c++ _dirs _defines)
     set(CMAKE_EXTRA_GENERATOR_CXX_SYSTEM_INCLUDE_DIRS "${_dirs}" CACHE INTERNAL "CXX compiler system include directories")
     set(CMAKE_EXTRA_GENERATOR_CXX_SYSTEM_DEFINED_MACROS "${_defines}" CACHE INTERNAL "CXX compiler system defined macros")
+  elseif ("${CMAKE_CXX_COMPILER_ID}" MATCHES MSVC)
+    set(CMAKE_EXTRA_GENERATOR_CXX_SYSTEM_INCLUDE_DIRS "$ENV{INCLUDE}" CACHE INTERNAL "CXX compiler system include directories")
   endif ()
 endif ()
 

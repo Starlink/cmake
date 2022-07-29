@@ -1,51 +1,53 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmInstallFilesGenerator_h
-#define cmInstallFilesGenerator_h
+#include <iosfwd>
+#include <string>
+#include <vector>
 
 #include "cmInstallGenerator.h"
+#include "cmListFileCache.h"
+#include "cmScriptGenerator.h"
 
-class cmMakefile;
+class cmLocalGenerator;
 
 /** \class cmInstallFilesGenerator
  * \brief Generate file installation rules.
  */
-class cmInstallFilesGenerator: public cmInstallGenerator
+class cmInstallFilesGenerator : public cmInstallGenerator
 {
 public:
-  cmInstallFilesGenerator(cmMakefile* mf,
-                          std::vector<std::string> const& files,
-                          const char* dest, bool programs,
-                          const char* file_permissions,
+  cmInstallFilesGenerator(std::vector<std::string> const& files,
+                          std::string const& dest, bool programs,
+                          std::string file_permissions,
                           std::vector<std::string> const& configurations,
-                          const char* component,
-                          const char* rename,
-                          bool optional = false);
-  virtual ~cmInstallFilesGenerator();
+                          std::string const& component, MessageLevel message,
+                          bool exclude_from_all, std::string rename,
+                          bool optional, cmListFileBacktrace backtrace);
+  ~cmInstallFilesGenerator() override;
+
+  bool Compute(cmLocalGenerator* lg) override;
+
+  std::string GetDestination(std::string const& config) const;
+  std::string GetRename(std::string const& config) const;
+  std::vector<std::string> GetFiles(std::string const& config) const;
+  bool GetOptional() const { return this->Optional; }
 
 protected:
-  virtual void GenerateScriptActions(std::ostream& os, Indent const& indent);
-  virtual void GenerateScriptForConfig(std::ostream& os,
-                                       const char* config,
-                                       Indent const& indent);
-  void AddFilesInstallRule(std::ostream& os, Indent const& indent,
+  void GenerateScriptActions(std::ostream& os, Indent indent) override;
+  void GenerateScriptForConfig(std::ostream& os, const std::string& config,
+                               Indent indent) override;
+  void AddFilesInstallRule(std::ostream& os, std::string const& config,
+                           Indent indent,
                            std::vector<std::string> const& files);
 
-  cmMakefile* Makefile;
-  std::vector<std::string> Files;
-  bool Programs;
-  std::string FilePermissions;
-  std::string Rename;
-  bool Optional;
+  cmLocalGenerator* LocalGenerator;
+  std::vector<std::string> const Files;
+  std::string const FilePermissions;
+  std::string const Rename;
+  bool const Programs;
+  bool const Optional;
 };
-
-#endif

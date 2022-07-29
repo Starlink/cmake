@@ -33,11 +33,7 @@
 #ifndef FORM_H
 #define FORM_H
 
-#if defined(__sun__) && defined(__GNUC__)
- #define _MSE_INT_H
-#endif
-
-#include <cmFormConfigure.h>
+#include "cmFormConfigure.h"
 
 /* figure out which curses.h to include */
 # if defined(CURSES_HAVE_NCURSES_H)
@@ -47,7 +43,17 @@
 # elif defined(CURSES_HAVE_NCURSES_CURSES_H)
 #  include <ncurses/curses.h>
 # else
+#  if defined(__hpux)
+#   if defined(_XOPEN_SOURCE_EXTENDED)
+#    define HAVE__XOPEN_SOURCE_EXTENDED
+#   else
+#    define _XOPEN_SOURCE_EXTENDED
+#   endif
+#  endif
 #  include <curses.h>
+#  if defined(__hpux) && !defined(HAVE__XOPEN_SOURCE_EXTENDED)
+#   undef _XOPEN_SOURCE_EXTENDED
+#  endif
 # endif
 
 #include <eti.h>

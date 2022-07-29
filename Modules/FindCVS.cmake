@@ -1,37 +1,28 @@
-#.rst:
-# FindCVS
-# -------
-#
-#
-#
-# The module defines the following variables:
-#
-# ::
-#
-#    CVS_EXECUTABLE - path to cvs command line client
-#    CVS_FOUND - true if the command line client was found
-#
-# Example usage:
-#
-# ::
-#
-#    find_package(CVS)
-#    if(CVS_FOUND)
-#      message("CVS found: ${CVS_EXECUTABLE}")
-#    endif()
+# Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+# file Copyright.txt or https://cmake.org/licensing for details.
 
-#=============================================================================
-# Copyright 2008-2009 Kitware, Inc.
-#
-# Distributed under the OSI-approved BSD License (the "License");
-# see accompanying file Copyright.txt for details.
-#
-# This software is distributed WITHOUT ANY WARRANTY; without even the
-# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the License for more information.
-#=============================================================================
-# (To distribute this file outside of CMake, substitute the full
-#  License text for the above reference.)
+#[=======================================================================[.rst:
+FindCVS
+-------
+
+Find the Concurrent Versions System (CVS).
+
+The module defines the following variables:
+
+::
+
+   CVS_EXECUTABLE - path to cvs command line client
+   CVS_FOUND - true if the command line client was found
+
+Example usage:
+
+::
+
+   find_package(CVS)
+   if(CVS_FOUND)
+     message("CVS found: ${CVS_EXECUTABLE}")
+   endif()
+#]=======================================================================]
 
 # CVSNT
 

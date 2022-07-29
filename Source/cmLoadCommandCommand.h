@@ -1,30 +1,13 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmLoadCommandCommand_h
-#define cmLoadCommandCommand_h
+#include <string>
+#include <vector>
 
-#include "cmCommand.h"
+class cmExecutionStatus;
 
-class cmLoadCommandCommand : public cmCommand
-{
-public:
-  virtual cmCommand* Clone() { return new cmLoadCommandCommand; }
-  virtual bool InitialPass(std::vector<std::string> const& args,
-                           cmExecutionStatus &status);
-  virtual const char* GetName() const {return "load_command";}
-  virtual bool IsDiscouraged() const { return true; }
-  cmTypeMacro(cmLoadCommandCommand, cmCommand);
-};
-
-
-
-#endif
+bool cmLoadCommandCommand(std::vector<std::string> const& args,
+                          cmExecutionStatus& status);

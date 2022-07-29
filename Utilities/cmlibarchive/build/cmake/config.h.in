@@ -1,4 +1,5 @@
 /* config.h.  Generated from build/cmake/config.h.in by cmake configure */
+#define __LIBARCHIVE_CONFIG_H_INCLUDED 1
 #if defined(__osf__)
 # define _OSF_SOURCE
 #endif
@@ -7,182 +8,29 @@
  * Ensure we have C99-style int64_t, etc, all defined.
  */
 
-/* First, we need to know if the system has already defined them. */
-#cmakedefine HAVE_INT16_T
-#cmakedefine HAVE_INT32_T
-#cmakedefine HAVE_INT64_T
-#cmakedefine HAVE_INTMAX_T
-
-#cmakedefine HAVE_UINT8_T
-#cmakedefine HAVE_UINT16_T
-#cmakedefine HAVE_UINT32_T
-#cmakedefine HAVE_UINT64_T
-#cmakedefine HAVE_UINTMAX_T
-
-/* We might have the types we want under other spellings. */
-#cmakedefine HAVE___INT64
-#cmakedefine HAVE_U_INT64_T
-#cmakedefine HAVE_UNSIGNED___INT64
-
-/* The sizes of various standard integer types. */
-@SIZE_OF_SHORT_CODE@
-@SIZE_OF_INT_CODE@
-@SIZE_OF_LONG_CODE@
-@SIZE_OF_LONG_LONG_CODE@
-@SIZE_OF_UNSIGNED_SHORT_CODE@
-@SIZE_OF_UNSIGNED_CODE@
-@SIZE_OF_UNSIGNED_LONG_CODE@
-@SIZE_OF_UNSIGNED_LONG_LONG_CODE@
-
-/*
- * If we lack int64_t, define it to the first of __int64, int, long, and long long
- * that exists and is the right size.
- */
-#if !defined(HAVE_INT64_T) && defined(HAVE___INT64)
-typedef __int64 int64_t;
-#define HAVE_INT64_T
-#endif
-
-#if !defined(HAVE_INT64_T) && SIZE_OF_INT == 8
-typedef int int64_t;
-#define HAVE_INT64_T
-#endif
-
-#if !defined(HAVE_INT64_T) && SIZE_OF_LONG == 8
-typedef long int64_t;
-#define HAVE_INT64_T
-#endif
-
-#if !defined(HAVE_INT64_T) && SIZE_OF_LONG_LONG == 8
-typedef long long int64_t;
-#define HAVE_INT64_T
-#endif
-
-#if !defined(HAVE_INT64_T)
-#error No 64-bit integer type was found.
-#endif
-
-/*
- * Similarly for int32_t
- */
-#if !defined(HAVE_INT32_T) && SIZE_OF_INT == 4
-typedef long int32_t;
-#define HAVE_INT32_T
-#endif
-
-#if !defined(HAVE_INT32_T) && SIZE_OF_LONG == 4
-typedef long int32_t;
-#define HAVE_INT32_T
-#endif
-
-#if !defined(HAVE_INT32_T)
-#error No 32-bit integer type was found.
-#endif
-
-/*
- * Similarly for int16_t
- */
-#if !defined(HAVE_INT16_T) && SIZE_OF_INT == 2
-typedef int int16_t;
-#define HAVE_INT16_T
-#endif
-
-#if !defined(HAVE_INT16_T) && SIZE_OF_SHORT == 2
-typedef short int16_t;
-#define HAVE_INT16_T
-#endif
-
-#if !defined(HAVE_INT16_T)
-#error No 16-bit integer type was found.
-#endif
-
-/*
- * Similarly for uint64_t
- */
-#if !defined(HAVE_UINT64_T) && defined(HAVE_UNSIGNED___INT64)
-typedef unsigned __int64 uint64_t;
-#define HAVE_UINT64_T
-#endif
-
-#if !defined(HAVE_UINT64_T) && SIZE_OF_UNSIGNED == 8
-typedef unsigned uint64_t;
-#define HAVE_UINT64_T
-#endif
-
-#if !defined(HAVE_UINT64_T) && SIZE_OF_UNSIGNED_LONG == 8
-typedef unsigned long uint64_t;
-#define HAVE_UINT64_T
-#endif
-
-#if !defined(HAVE_UINT64_T) && SIZE_OF_UNSIGNED_LONG_LONG == 8
-typedef unsigned long long uint64_t;
-#define HAVE_UINT64_T
-#endif
-
-#if !defined(HAVE_UINT64_T)
-#error No 64-bit unsigned integer type was found.
-#endif
-
-
-/*
- * Similarly for uint32_t
- */
-#if !defined(HAVE_UINT32_T) && SIZE_OF_UNSIGNED == 4
-typedef unsigned uint32_t;
-#define HAVE_UINT32_T
-#endif
-
-#if !defined(HAVE_UINT32_T) && SIZE_OF_UNSIGNED_LONG == 4
-typedef unsigned long uint32_t;
-#define HAVE_UINT32_T
-#endif
-
-#if !defined(HAVE_UINT32_T)
-#error No 32-bit unsigned integer type was found.
-#endif
-
-/*
- * Similarly for uint16_t
- */
-#if !defined(HAVE_UINT16_T) && SIZE_OF_UNSIGNED == 2
-typedef unsigned uint16_t;
-#define HAVE_UINT16_T
-#endif
-
-#if !defined(HAVE_UINT16_T) && SIZE_OF_UNSIGNED_SHORT == 2
-typedef unsigned short uint16_t;
-#define HAVE_UINT16_T
-#endif
-
-#if !defined(HAVE_UINT16_T)
-#error No 16-bit unsigned integer type was found.
-#endif
-
-/*
- * Similarly for uint8_t
- */
-#if !defined(HAVE_UINT8_T)
-typedef unsigned char uint8_t;
-#define HAVE_UINT8_T
-#endif
-
-#if !defined(HAVE_UINT16_T)
-#error No 8-bit unsigned integer type was found.
-#endif
-
-/* Define intmax_t and uintmax_t if they are not already defined. */
-#if !defined(HAVE_INTMAX_T)
-typedef int64_t intmax_t;
-#define INTMAX_MIN INT64_MIN
-#define INTMAX_MAX INT64_MAX
-#endif
-
-#if !defined(HAVE_UINTMAX_T)
-typedef uint64_t uintmax_t;
-#endif
-
 /* Define ZLIB_WINAPI if zlib was built on Visual Studio. */
 #cmakedefine ZLIB_WINAPI 1
+
+/* Darwin ACL support */
+#cmakedefine ARCHIVE_ACL_DARWIN 1
+
+/* FreeBSD ACL support */
+#cmakedefine ARCHIVE_ACL_FREEBSD 1
+
+/* FreeBSD NFSv4 ACL support */
+#cmakedefine ARCHIVE_ACL_FREEBSD_NFS4 1
+
+/* Linux POSIX.1e ACL support via libacl */
+#cmakedefine ARCHIVE_ACL_LIBACL 1
+
+/* Linux NFSv4 ACL support via librichacl */
+#cmakedefine ARCHIVE_ACL_LIBRICHACL 1
+
+/* Solaris ACL support */
+#cmakedefine ARCHIVE_ACL_SUNOS 1
+
+/* Solaris NFSv4 ACL support */
+#cmakedefine ARCHIVE_ACL_SUNOS_NFS4 1
 
 /* MD5 via ARCHIVE_CRYPTO_MD5_LIBC supported. */
 #cmakedefine ARCHIVE_CRYPTO_MD5_LIBC 1
@@ -286,14 +134,32 @@ typedef uint64_t uintmax_t;
 /* SHA512 via ARCHIVE_CRYPTO_SHA512_WIN supported. */
 #cmakedefine ARCHIVE_CRYPTO_SHA512_WIN 1
 
+/* AIX xattr support */
+#cmakedefine ARCHIVE_XATTR_AIX 1
+
+/* Darwin xattr support */
+#cmakedefine ARCHIVE_XATTR_DARWIN 1
+
+/* FreeBSD xattr support */
+#cmakedefine ARCHIVE_XATTR_FREEBSD 1
+
+/* Linux xattr support */
+#cmakedefine ARCHIVE_XATTR_LINUX 1
+
 /* Version number of bsdcpio */
 #cmakedefine BSDCPIO_VERSION_STRING "${BSDCPIO_VERSION_STRING}"
 
 /* Version number of bsdtar */
 #cmakedefine BSDTAR_VERSION_STRING "${BSDTAR_VERSION_STRING}"
 
+/* Version number of bsdcat */
+#cmakedefine BSDCAT_VERSION_STRING "${BSDCAT_VERSION_STRING}"
+
 /* Define to 1 if you have the `acl_create_entry' function. */
 #cmakedefine HAVE_ACL_CREATE_ENTRY 1
+
+/* Define to 1 if you have the `acl_get_fd_np' function. */
+#cmakedefine HAVE_ACL_GET_FD_NP 1
 
 /* Define to 1 if you have the `acl_get_link' function. */
 #cmakedefine HAVE_ACL_GET_LINK 1
@@ -325,11 +191,14 @@ typedef uint64_t uintmax_t;
 /* Define to 1 if you have the `acl_set_file' function. */
 #cmakedefine HAVE_ACL_SET_FILE 1
 
-/* True for systems with POSIX ACL support */
-#cmakedefine HAVE_ACL_USER 1
+/* Define to 1 if you have the `arc4random_buf' function. */
+#cmakedefine HAVE_ARC4RANDOM_BUF 1
 
 /* Define to 1 if you have the <attr/xattr.h> header file. */
 #cmakedefine HAVE_ATTR_XATTR_H 1
+
+/* Define to 1 if you have the <Bcrypt.h> header file. */
+#cmakedefine HAVE_BCRYPT_H 1
 
 /* Define to 1 if you have the <bsdxml.h> header file. */
 #cmakedefine HAVE_BSDXML_H 1
@@ -358,33 +227,45 @@ typedef uint64_t uintmax_t;
 /* Define to 1 if you have the `cygwin_conv_path' function. */
 #cmakedefine HAVE_CYGWIN_CONV_PATH 1
 
-/* Define to 1 if you have the declaration of `INT64_MAX', and to 0 if you
+/* Define to 1 if you have the declaration of `ACE_GETACL', and to 0 if you
    don't. */
-#cmakedefine HAVE_DECL_INT64_MAX 1
+#cmakedefine HAVE_DECL_ACE_GETACL 1
 
-/* Define to 1 if you have the declaration of `INT64_MIN', and to 0 if you
+/* Define to 1 if you have the declaration of `ACE_GETACLCNT', and to 0 if you
    don't. */
-#cmakedefine HAVE_DECL_INT64_MIN 1
+#cmakedefine HAVE_DECL_ACE_GETACLCNT 1
 
-/* Define to 1 if you have the declaration of `SIZE_MAX', and to 0 if you
+/* Define to 1 if you have the declaration of `ACE_SETACL', and to 0 if you
    don't. */
-#cmakedefine HAVE_DECL_SIZE_MAX 1
+#cmakedefine HAVE_DECL_ACE_SETACL 1
 
-/* Define to 1 if you have the declaration of `SSIZE_MAX', and to 0 if you
+/* Define to 1 if you have the declaration of `ACL_SYNCHRONIZE', and to 0 if
+   you don't. */
+#cmakedefine HAVE_DECL_ACL_SYNCHRONIZE 1
+
+/* Define to 1 if you have the declaration of `ACL_TYPE_EXTENDED', and to 0 if
+   you don't. */
+#cmakedefine HAVE_DECL_ACL_TYPE_EXTENDED 1
+
+/* Define to 1 if you have the declaration of `ACL_TYPE_NFS4', and to 0 if you
    don't. */
-#cmakedefine HAVE_DECL_SSIZE_MAX 1
+#cmakedefine HAVE_DECL_ACL_TYPE_NFS4 1
+
+/* Define to 1 if you have the declaration of `ACL_USER', and to 0 if you
+   don't. */
+#cmakedefine HAVE_DECL_ACL_USER 1
+
+/* Define to 1 if you have the declaration of `SETACL', and to 0 if you don't.
+   */
+#cmakedefine HAVE_DECL_SETACL 1
 
 /* Define to 1 if you have the declaration of `strerror_r', and to 0 if you
    don't. */
 #cmakedefine HAVE_DECL_STRERROR_R 1
 
-/* Define to 1 if you have the declaration of `UINT32_MAX', and to 0 if you
-   don't. */
-#cmakedefine HAVE_DECL_UINT32_MAX 1
-
-/* Define to 1 if you have the declaration of `UINT64_MAX', and to 0 if you
-   don't. */
-#cmakedefine HAVE_DECL_UINT64_MAX 1
+/* Define to 1 if you have the declaration of `XATTR_NOFOLLOW', and to 0 if
+   you don't. */
+#cmakedefine HAVE_DECL_XATTR_NOFOLLOW 1
 
 /* Define to 1 if you have the <direct.h> header file. */
 #cmakedefine HAVE_DIRECT_H 1
@@ -434,6 +315,14 @@ typedef uint64_t uintmax_t;
 
 /* Define to 1 if EXTATTR_NAMESPACE_USER is defined in sys/extattr.h. */
 #cmakedefine HAVE_DECL_EXTATTR_NAMESPACE_USER 1
+
+/* Define to 1 if you have the declaration of `GETACL', and to 0 if you don't.
+   */
+#cmakedefine HAVE_DECL_GETACL 1
+
+/* Define to 1 if you have the declaration of `GETACLCNT', and to 0 if you
+   don't. */
+#cmakedefine HAVE_DECL_GETACLCNT 1
 
 /* Define to 1 if you have the `fchdir' function. */
 #cmakedefine HAVE_FCHDIR 1
@@ -543,9 +432,6 @@ typedef uint64_t uintmax_t;
 /* Define to 1 if you have the <iconv.h> header file. */
 #cmakedefine HAVE_ICONV_H 1
 
-/* Define to 1 if you have the <inttypes.h> header file. */
-#cmakedefine HAVE_INTTYPES_H 1
-
 /* Define to 1 if you have the <io.h> header file. */
 #cmakedefine HAVE_IO_H 1
 
@@ -579,11 +465,26 @@ typedef uint64_t uintmax_t;
 /* Define to 1 if you have the `bz2' library (-lbz2). */
 #cmakedefine HAVE_LIBBZ2 1
 
+/* Define to 1 if you have the `b2' library (-lb2). */
+#cmakedefine HAVE_LIBB2 1
+
+/* Define to 1 if you have the <blake2.h> header file. */
+#cmakedefine HAVE_BLAKE2_H 1
+
+/* Define to 1 if you have the `charset' library (-lcharset). */
+#cmakedefine HAVE_LIBCHARSET 1
+
+/* Define to 1 if you have the `crypto' library (-lcrypto). */
+#cmakedefine HAVE_LIBCRYPTO 1
+
 /* Define to 1 if you have the `expat' library (-lexpat). */
 #cmakedefine HAVE_LIBEXPAT 1
 
 /* Define to 1 if you have the `gcc' library (-lgcc). */
 #cmakedefine HAVE_LIBGCC 1
+
+/* Define to 1 if you have the `lz4' library (-llz4). */
+#cmakedefine HAVE_LIBLZ4 1
 
 /* Define to 1 if you have the `lzma' library (-llzma). */
 #cmakedefine HAVE_LIBLZMA 1
@@ -593,6 +494,9 @@ typedef uint64_t uintmax_t;
 
 /* Define to 1 if you have the `lzo2' library (-llzo2). */
 #cmakedefine HAVE_LIBLZO2 1
+
+/* Define to 1 if you have the `mbedcrypto' library (-lmbedcrypto). */
+#cmakedefine HAVE_LIBMBEDCRYPTO 1
 
 /* Define to 1 if you have the `nettle' library (-lnettle). */
 #cmakedefine HAVE_LIBNETTLE 1
@@ -615,11 +519,17 @@ typedef uint64_t uintmax_t;
 /* Define to 1 if you have the `z' library (-lz). */
 #cmakedefine HAVE_LIBZ 1
 
+/* Define to 1 if you have the `zstd' library (-lzstd). */
+#cmakedefine HAVE_LIBZSTD 1
+
 /* Define to 1 if you have the <limits.h> header file. */
 #cmakedefine HAVE_LIMITS_H 1
 
 /* Define to 1 if you have the `link' function. */
 #cmakedefine HAVE_LINK 1
+
+/* Define to 1 if you have the `linkat' function. */
+#cmakedefine HAVE_LINKAT 1
 
 /* Define to 1 if you have the <linux/types.h> header file. */
 #cmakedefine HAVE_LINUX_TYPES_H 1
@@ -679,11 +589,20 @@ typedef uint64_t uintmax_t;
 /* Define to 1 if you have the `lutimes' function. */
 #cmakedefine HAVE_LUTIMES 1
 
+/* Define to 1 if you have the <lz4hc.h> header file. */
+#cmakedefine HAVE_LZ4HC_H 1
+
+/* Define to 1 if you have the <lz4.h> header file. */
+#cmakedefine HAVE_LZ4_H 1
+
 /* Define to 1 if you have the <lzmadec.h> header file. */
 #cmakedefine HAVE_LZMADEC_H 1
 
 /* Define to 1 if you have the <lzma.h> header file. */
 #cmakedefine HAVE_LZMA_H 1
+
+/* Define to 1 if you have a working `lzma_stream_encoder_mt' function. */
+#cmakedefine HAVE_LZMA_STREAM_ENCODER_MT 1
 
 /* Define to 1 if you have the <lzo/lzo1x.h> header file. */
 #cmakedefine HAVE_LZO_LZO1X_H 1
@@ -693,6 +612,9 @@ typedef uint64_t uintmax_t;
 
 /* Define to 1 if you have the `mbrtowc' function. */
 #cmakedefine HAVE_MBRTOWC 1
+
+/* Define to 1 if you have the <membership.h> header file. */
+#cmakedefine HAVE_MEMBERSHIP_H 1
 
 /* Define to 1 if you have the `memmove' function. */
 #cmakedefine HAVE_MEMMOVE 1
@@ -715,8 +637,17 @@ typedef uint64_t uintmax_t;
 /* Define to 1 if you have the <ndir.h> header file, and it defines `DIR'. */
 #cmakedefine HAVE_NDIR_H 1
 
+/* Define to 1 if you have the <nettle/aes.h> header file. */
+#cmakedefine HAVE_NETTLE_AES_H 1
+
+/* Define to 1 if you have the <nettle/hmac.h> header file. */
+#cmakedefine HAVE_NETTLE_HMAC_H 1
+
 /* Define to 1 if you have the <nettle/md5.h> header file. */
 #cmakedefine HAVE_NETTLE_MD5_H 1
+
+/* Define to 1 if you have the <nettle/pbkdf2.h> header file. */
+#cmakedefine HAVE_NETTLE_PBKDF2_H 1
 
 /* Define to 1 if you have the <nettle/ripemd160.h> header file. */
 #cmakedefine HAVE_NETTLE_RIPEMD160_H 1
@@ -739,6 +670,9 @@ typedef uint64_t uintmax_t;
 /* Define to 1 if you have the `pipe' function. */
 #cmakedefine HAVE_PIPE 1
 
+/* Define to 1 if you have the `PKCS5_PBKDF2_HMAC_SHA1' function. */
+#cmakedefine HAVE_PKCS5_PBKDF2_HMAC_SHA1 1
+
 /* Define to 1 if you have the `poll' function. */
 #cmakedefine HAVE_POLL 1
 
@@ -751,6 +685,9 @@ typedef uint64_t uintmax_t;
 /* Define to 1 if you have the <process.h> header file. */
 #cmakedefine HAVE_PROCESS_H 1
 
+/* Define to 1 if you have the <pthread.h> header file. */
+#cmakedefine HAVE_PTHREAD_H 1
+
 /* Define to 1 if you have the <pwd.h> header file. */
 #cmakedefine HAVE_PWD_H 1
 
@@ -762,6 +699,12 @@ typedef uint64_t uintmax_t;
 
 /* Define to 1 if you have the `readlinkat' function. */
 #cmakedefine HAVE_READLINKAT 1
+
+/* Define to 1 if you have the `readpassphrase' function. */
+#cmakedefine HAVE_READPASSPHRASE 1
+
+/* Define to 1 if you have the <readpassphrase.h> header file. */
+#cmakedefine HAVE_READPASSPHRASE_H 1
 
 /* Define to 1 if you have the <regex.h> header file. */
 #cmakedefine HAVE_REGEX_H 1
@@ -797,14 +740,14 @@ typedef uint64_t uintmax_t;
 /* Define to 1 if you have the <stdarg.h> header file. */
 #cmakedefine HAVE_STDARG_H 1
 
-/* Define to 1 if you have the <stdint.h> header file. */
-#cmakedefine HAVE_STDINT_H 1
-
 /* Define to 1 if you have the <stdlib.h> header file. */
 #cmakedefine HAVE_STDLIB_H 1
 
 /* Define to 1 if you have the `strchr' function. */
 #cmakedefine HAVE_STRCHR 1
+
+/* Define to 1 if you have the `strnlen' function. */
+#cmakedefine HAVE_STRNLEN 1
 
 /* Define to 1 if you have the `strdup' function. */
 #cmakedefine HAVE_STRDUP 1
@@ -866,6 +809,12 @@ typedef uint64_t uintmax_t;
 /* Define to 1 if `__tm_gmtoff' is a member of `struct tm'. */
 #cmakedefine HAVE_STRUCT_TM___TM_GMTOFF 1
 
+/* Define to 1 if you have `struct vfsconf'. */
+#cmakedefine HAVE_STRUCT_VFSCONF 1
+
+/* Define to 1 if you have `struct xvfsconf'. */
+#cmakedefine HAVE_STRUCT_XVFSCONF 1
+
 /* Define to 1 if you have the `symlink' function. */
 #cmakedefine HAVE_SYMLINK 1
 
@@ -904,6 +853,9 @@ typedef uint64_t uintmax_t;
 /* Define to 1 if you have the <sys/poll.h> header file. */
 #cmakedefine HAVE_SYS_POLL_H 1
 
+/* Define to 1 if you have the <sys/richacl.h> header file. */
+#cmakedefine HAVE_SYS_RICHACL_H 1
+
 /* Define to 1 if you have the <sys/select.h> header file. */
 #cmakedefine HAVE_SYS_SELECT_H 1
 
@@ -915,6 +867,10 @@ typedef uint64_t uintmax_t;
 
 /* Define to 1 if you have the <sys/stat.h> header file. */
 #cmakedefine HAVE_SYS_STAT_H 1
+
+
+/* Define to 1 if you have the <sys/sysmacros.h> header file. */
+#cmakedefine HAVE_SYS_SYSMACROS_H 1
 
 /* Define to 1 if you have the <sys/time.h> header file. */
 #cmakedefine HAVE_SYS_TIME_H 1
@@ -948,6 +904,9 @@ typedef uint64_t uintmax_t;
 
 /* Define to 1 if you have the <unistd.h> header file. */
 #cmakedefine HAVE_UNISTD_H 1
+
+/* Define to 1 if you have the `unlinkat' function. */
+#cmakedefine HAVE_UNLINKAT 1
 
 /* Define to 1 if you have the `unsetenv' function. */
 #cmakedefine HAVE_UNSETENV 1
@@ -1018,11 +977,20 @@ typedef uint64_t uintmax_t;
 /* Define to 1 if you have the `wmemcpy' function. */
 #cmakedefine HAVE_WMEMCPY 1
 
+/* Define to 1 if you have the `wmemmove' function. */
+#cmakedefine HAVE_WMEMMOVE 1
+
 /* Define to 1 if you have a working EXT2_IOC_GETFLAGS */
 #cmakedefine HAVE_WORKING_EXT2_IOC_GETFLAGS 1
 
+/* Define to 1 if you have a working FS_IOC_GETFLAGS */
+#cmakedefine HAVE_WORKING_FS_IOC_GETFLAGS 1
+
 /* Define to 1 if you have the <zlib.h> header file. */
 #cmakedefine HAVE_ZLIB_H 1
+
+/* Define to 1 if you have the <zstd.h> header file. */
+#cmakedefine HAVE_ZSTD_H 1
 
 /* Define to 1 if you have the `_ctime64_s' function. */
 #cmakedefine HAVE__CTIME64_S 1
@@ -1032,6 +1000,9 @@ typedef uint64_t uintmax_t;
 
 /* Define to 1 if you have the `_get_timezone' function. */
 #cmakedefine HAVE__GET_TIMEZONE 1
+
+/* Define to 1 if you have the `_gmtime64_s' function. */
+#cmakedefine HAVE__GMTIME64_S 1
 
 /* Define to 1 if you have the `_localtime64_s' function. */
 #cmakedefine HAVE__LOCALTIME64_S 1
@@ -1111,9 +1082,18 @@ typedef uint64_t uintmax_t;
 /* Define for large files, on AIX-style hosts. */
 #cmakedefine _LARGE_FILES ${_LARGE_FILES}
 
-/* Define for Windows to use Windows 2000+ APIs. */
+/* Define to control Windows SDK version */
+#ifndef NTDDI_VERSION
+#cmakedefine NTDDI_VERSION ${NTDDI_VERSION}
+#endif // NTDDI_VERSION
+
+#ifndef _WIN32_WINNT
 #cmakedefine _WIN32_WINNT ${_WIN32_WINNT}
+#endif // _WIN32_WINNT
+
+#ifndef WINVER
 #cmakedefine WINVER ${WINVER}
+#endif // WINVER
 
 /* Define to empty if `const' does not conform to ANSI C. */
 #cmakedefine const ${const}
@@ -1142,8 +1122,45 @@ typedef uint64_t uintmax_t;
 /* Define to `int' if <sys/types.h> doesn't define. */
 #cmakedefine uid_t ${uid_t}
 
-/* Define to `int' if <sys/types.h> does not define. */
-#cmakedefine intptr_t ${intptr_t}
+#include <cm3p/kwiml/int.h>
 
-/* Define to `unsigned int' if <sys/types.h> does not define. */
-#cmakedefine uintptr_t ${uintptr_t}
+#ifndef KWIML_INT_HAVE_INT64_T
+typedef KWIML_INT_int64_t int64_t;
+#endif
+#ifndef KWIML_INT_HAVE_INT32_T
+typedef KWIML_INT_int32_t int32_t;
+#endif
+#ifndef KWIML_INT_HAVE_INT16_T
+typedef KWIML_INT_int16_t int16_t;
+#endif
+#ifndef KWIML_INT_HAVE_INT8_T
+typedef KWIML_INT_int8_t int8_t;
+#endif
+#ifndef KWIML_INT_HAVE_INTPTR_T
+typedef KWIML_INT_intptr_t intptr_t;
+#endif
+#ifndef KWIML_INT_HAVE_UINT64_T
+typedef KWIML_INT_uint64_t uint64_t;
+#endif
+#ifndef KWIML_INT_HAVE_UINT32_T
+typedef KWIML_INT_uint32_t uint32_t;
+#endif
+#ifndef KWIML_INT_HAVE_UINT16_T
+typedef KWIML_INT_uint16_t uint16_t;
+#endif
+#ifndef KWIML_INT_HAVE_UINT8_T
+typedef KWIML_INT_uint8_t uint8_t;
+#endif
+#ifndef KWIML_INT_HAVE_UINTPTR_T
+typedef KWIML_INT_uintptr_t uintptr_t;
+#endif
+
+/* Define to 1 if you have the <stdint.h> header file. */
+#ifdef KWIML_INT_HAVE_STDINT_H
+# define HAVE_STDINT_H 1
+#endif
+
+/* Define to 1 if you have the <inttypes.h> header file. */
+#ifdef KWIML_INT_HAVE_INTTYPES_H
+# define HAVE_INTTYPES_H 1
+#endif

@@ -1,33 +1,24 @@
-#.rst:
-# FindUnixCommands
-# ----------------
-#
-# Find unix commands from cygwin
-#
-# This module looks for some usual Unix commands.
+# Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+# file Copyright.txt or https://cmake.org/licensing for details.
 
-#=============================================================================
-# Copyright 2001-2009 Kitware, Inc.
-#
-# Distributed under the OSI-approved BSD License (the "License");
-# see accompanying file Copyright.txt for details.
-#
-# This software is distributed WITHOUT ANY WARRANTY; without even the
-# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the License for more information.
-#=============================================================================
-# (To distribute this file outside of CMake, substitute the full
-#  License text for the above reference.)
+#[=======================================================================[.rst:
+FindUnixCommands
+----------------
+
+Find Unix commands, including the ones from Cygwin
+
+This module looks for the Unix commands ``bash``, ``cp``, ``gzip``,
+``mv``, ``rm``, and ``tar`` and stores the result in the variables
+``BASH``, ``CP``, ``GZIP``, ``MV``, ``RM``, and ``TAR``.
+#]=======================================================================]
 
 include(${CMAKE_CURRENT_LIST_DIR}/FindCygwin.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/FindMsys.cmake)
 
 find_program(BASH
   bash
   ${CYGWIN_INSTALL_PATH}/bin
-  /bin
-  /usr/bin
-  /usr/local/bin
-  /sbin
+  ${MSYS_INSTALL_PATH}/usr/bin
 )
 mark_as_advanced(
   BASH
@@ -36,10 +27,7 @@ mark_as_advanced(
 find_program(CP
   cp
   ${CYGWIN_INSTALL_PATH}/bin
-  /bin
-  /usr/bin
-  /usr/local/bin
-  /sbin
+  ${MSYS_INSTALL_PATH}/usr/bin
 )
 mark_as_advanced(
   CP
@@ -48,10 +36,7 @@ mark_as_advanced(
 find_program(GZIP
   gzip
   ${CYGWIN_INSTALL_PATH}/bin
-  /bin
-  /usr/bin
-  /usr/local/bin
-  /sbin
+  ${MSYS_INSTALL_PATH}/usr/bin
 )
 mark_as_advanced(
   GZIP
@@ -60,10 +45,7 @@ mark_as_advanced(
 find_program(MV
   mv
   ${CYGWIN_INSTALL_PATH}/bin
-  /bin
-  /usr/bin
-  /usr/local/bin
-  /sbin
+  ${MSYS_INSTALL_PATH}/usr/bin
 )
 mark_as_advanced(
   MV
@@ -72,10 +54,7 @@ mark_as_advanced(
 find_program(RM
   rm
   ${CYGWIN_INSTALL_PATH}/bin
-  /bin
-  /usr/bin
-  /usr/local/bin
-  /sbin
+  ${MSYS_INSTALL_PATH}/usr/bin
 )
 mark_as_advanced(
   RM
@@ -87,11 +66,13 @@ find_program(TAR
   gtar
   PATH
   ${CYGWIN_INSTALL_PATH}/bin
-  /bin
-  /usr/bin
-  /usr/local/bin
-  /sbin
+  ${MSYS_INSTALL_PATH}/usr/bin
 )
 mark_as_advanced(
   TAR
+)
+
+include(${CMAKE_CURRENT_LIST_DIR}/FindPackageHandleStandardArgs.cmake)
+find_package_handle_standard_args(UnixCommands
+  REQUIRED_VARS BASH CP GZIP MV RM TAR
 )

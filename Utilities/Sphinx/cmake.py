@@ -1,26 +1,61 @@
-#=============================================================================
-# CMake - Cross Platform Makefile Generator
-# Copyright 2000-2013 Kitware, Inc., Insight Software Consortium
-#
-# Distributed under the OSI-approved BSD License (the "License");
-# see accompanying file Copyright.txt for details.
-#
-# This software is distributed WITHOUT ANY WARRANTY; without even the
-# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the License for more information.
-#=============================================================================
+# Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+# file Copyright.txt or https://cmake.org/licensing for details.
+
 import os
 import re
 
-# Monkey patch for pygments reporting an error when generator expressions are
-# used.
-# https://bitbucket.org/birkenfeld/pygments-main/issue/942/cmake-generator-expressions-not-handled
-from pygments.lexers import CMakeLexer
-from pygments.token import Name, Operator
-from pygments.lexer import bygroups
-CMakeLexer.tokens["args"].append(('(\\$<)(.+?)(>)',
-                                  bygroups(Operator, Name.Variable, Operator)))
+# Override much of pygments' CMakeLexer.
+# We need to parse CMake syntax definitions, not CMake code.
 
+# For hard test cases that use much of the syntax below, see
+# - module/FindPkgConfig.html (with "glib-2.0>=2.10 gtk+-2.0" and similar)
+# - module/ExternalProject.html (with http:// https:// git@; also has command options -E --build)
+# - manual/cmake-buildsystem.7.html (with nested $<..>; relative and absolute paths, "::")
+
+from pygments.lexers import CMakeLexer
+from pygments.token import Name, Operator, Punctuation, String, Text, Comment, Generic, Whitespace, Number
+from pygments.lexer import bygroups
+
+# Notes on regular expressions below:
+# - [\.\+-] are needed for string constants like gtk+-2.0
+# - Unix paths are recognized by '/'; support for Windows paths may be added if needed
+# - (\\.) allows for \-escapes (used in manual/cmake-language.7)
+# - $<..$<..$>..> nested occurrence in cmake-buildsystem
+# - Nested variable evaluations are only supported in a limited capacity. Only
+#   one level of nesting is supported and at most one nested variable can be present.
+
+CMakeLexer.tokens["root"] = [
+  (r'\b(\w+)([ \t]*)(\()', bygroups(Name.Function, Text, Name.Function), '#push'),     # fctn(
+  (r'\(', Name.Function, '#push'),
+  (r'\)', Name.Function, '#pop'),
+  (r'\[', Punctuation, '#push'),
+  (r'\]', Punctuation, '#pop'),
+  (r'[|;,.=*\-]', Punctuation),
+  (r'\\\\', Punctuation),                                   # used in commands/source_group
+  (r'[:]', Operator),
+  (r'[<>]=', Punctuation),                                  # used in FindPkgConfig.cmake
+  (r'\$<', Operator, '#push'),                              # $<...>
+  (r'<[^<|]+?>(\w*\.\.\.)?', Name.Variable),                # <expr>
+  (r'(\$\w*\{)([^\}\$]*)?(?:(\$\w*\{)([^\}]+?)(\}))?([^\}]*?)(\})',  # ${..} $ENV{..}, possibly nested
+    bygroups(Operator, Name.Tag, Operator, Name.Tag, Operator, Name.Tag, Operator)),
+  (r'([A-Z]+\{)(.+?)(\})', bygroups(Operator, Name.Tag, Operator)),  # DATA{ ...}
+  (r'[a-z]+(@|(://))((\\.)|[\w.+-:/\\])+', Name.Attribute),          # URL, git@, ...
+  (r'/\w[\w\.\+-/\\]*', Name.Attribute),                    # absolute path
+  (r'/', Name.Attribute),
+  (r'\w[\w\.\+-]*/[\w.+-/\\]*', Name.Attribute),            # relative path
+  (r'[A-Z]((\\.)|[\w.+-])*[a-z]((\\.)|[\w.+-])*', Name.Builtin), # initial A-Z, contains a-z
+  (r'@?[A-Z][A-Z0-9_]*', Name.Constant),
+  (r'[a-z_]((\\;)|(\\ )|[\w.+-])*', Name.Builtin),
+  (r'[0-9][0-9\.]*', Number),
+  (r'(?s)"(\\"|[^"])*"', String),                           # "string"
+  (r'\.\.\.', Name.Variable),
+  (r'<', Operator, '#push'),                                # <..|..> is different from <expr>
+  (r'>', Operator, '#pop'),
+  (r'\n', Whitespace),
+  (r'[ \t]+', Whitespace),
+  (r'#.*\n', Comment),
+  #  (r'[^<>\])\}\|$"# \t\n]+', Name.Exception),            # fallback, for debugging only
+]
 
 from docutils.parsers.rst import Directive, directives
 from docutils.transforms import Transform
@@ -37,6 +72,38 @@ from sphinx.domains import Domain, ObjType
 from sphinx.roles import XRefRole
 from sphinx.util.nodes import make_refnode
 from sphinx import addnodes
+
+sphinx_before_1_4 = False
+sphinx_before_1_7_2 = False
+try:
+    from sphinx import version_info
+    if version_info < (1, 4):
+        sphinx_before_1_4 = True
+    if version_info < (1, 7, 2):
+        sphinx_before_1_7_2 = True
+except ImportError:
+    # The `sphinx.version_info` tuple was added in Sphinx v1.2:
+    sphinx_before_1_4 = True
+    sphinx_before_1_7_2 = True
+
+if sphinx_before_1_7_2:
+  # Monkey patch for sphinx generating invalid content for qcollectiongenerator
+  # https://github.com/sphinx-doc/sphinx/issues/1435
+  from sphinx.util.pycompat import htmlescape
+  from sphinx.builders.qthelp import QtHelpBuilder
+  old_build_keywords = QtHelpBuilder.build_keywords
+  def new_build_keywords(self, title, refs, subitems):
+    old_items = old_build_keywords(self, title, refs, subitems)
+    new_items = []
+    for item in old_items:
+      before, rest = item.split("ref=\"", 1)
+      ref, after = rest.split("\"")
+      if ("<" in ref and ">" in ref):
+        new_items.append(before + "ref=\"" + htmlescape(ref) + "\"" + after)
+      else:
+        new_items.append(item)
+    return new_items
+  QtHelpBuilder.build_keywords = new_build_keywords
 
 class CMakeModule(Directive):
     required_arguments = 1
@@ -112,18 +179,27 @@ class _cmake_index_entry:
     def __init__(self, desc):
         self.desc = desc
 
-    def __call__(self, title, targetid):
-        return ('pair', u'%s ; %s' % (self.desc, title), targetid, 'main')
+    def __call__(self, title, targetid, main = 'main'):
+        # See https://github.com/sphinx-doc/sphinx/issues/2673
+        if sphinx_before_1_4:
+            return ('pair', u'%s ; %s' % (self.desc, title), targetid, main)
+        else:
+            return ('pair', u'%s ; %s' % (self.desc, title), targetid, main, None)
 
 _cmake_index_objs = {
     'command':    _cmake_index_entry('command'),
+    'cpack_gen':  _cmake_index_entry('cpack generator'),
+    'envvar':     _cmake_index_entry('envvar'),
     'generator':  _cmake_index_entry('generator'),
+    'genex':      _cmake_index_entry('genex'),
+    'guide':      _cmake_index_entry('guide'),
     'manual':     _cmake_index_entry('manual'),
     'module':     _cmake_index_entry('module'),
     'policy':     _cmake_index_entry('policy'),
     'prop_cache': _cmake_index_entry('cache property'),
     'prop_dir':   _cmake_index_entry('directory property'),
     'prop_gbl':   _cmake_index_entry('global property'),
+    'prop_inst':  _cmake_index_entry('installed file property'),
     'prop_sf':    _cmake_index_entry('source file property'),
     'prop_test':  _cmake_index_entry('test property'),
     'prop_tgt':   _cmake_index_entry('target property'),
@@ -149,7 +225,7 @@ class CMakeTransform(Transform):
         self.titles = {}
 
     def parse_title(self, docname):
-        """Parse a document title as the first line starting in [A-Za-z0-9<]
+        """Parse a document title as the first line starting in [A-Za-z0-9<$]
            or fall back to the document basename if no such line exists.
            The cmake --help-*-list commands also depend on this convention.
            Return the title or False if the document file does not exist.
@@ -164,7 +240,7 @@ class CMakeTransform(Transform):
                 title = False
             else:
                 for line in f:
-                    if len(line) > 0 and (line[0].isalnum() or line[0] == '<'):
+                    if len(line) > 0 and (line[0].isalnum() or line[0] == '<' or line[0] == '$'):
                         title = line.rstrip()
                         break
                 f.close()
@@ -177,13 +253,24 @@ class CMakeTransform(Transform):
         env = self.document.settings.env
 
         # Treat some documents as cmake domain objects.
-        objtype, sep, tail = env.docname.rpartition('/')
+        objtype, sep, tail = env.docname.partition('/')
         make_index_entry = _cmake_index_objs.get(objtype)
         if make_index_entry:
             title = self.parse_title(env.docname)
             # Insert the object link target.
-            targetid = '%s:%s' % (objtype, title)
+            if objtype == 'command':
+                targetname = title.lower()
+            elif objtype == 'guide' and not tail.endswith('/index'):
+                targetname = tail
+            else:
+                if objtype == 'genex':
+                    m = CMakeXRefRole._re_genex.match(title)
+                    if m:
+                        title = m.group(1)
+                targetname = title
+            targetid = '%s:%s' % (objtype, targetname)
             targetnode = nodes.target('', '', ids=[targetid])
+            self.document.note_explicit_target(targetnode)
             self.document.insert(0, targetnode)
             # Insert the object index entry.
             indexnode = addnodes.index()
@@ -197,10 +284,18 @@ class CMakeObject(ObjectDescription):
     def handle_signature(self, sig, signode):
         # called from sphinx.directives.ObjectDescription.run()
         signode += addnodes.desc_name(sig, sig)
+        if self.objtype == 'genex':
+            m = CMakeXRefRole._re_genex.match(sig)
+            if m:
+                sig = m.group(1)
         return sig
 
     def add_target_and_index(self, name, sig, signode):
-        targetid = '%s:%s' % (self.objtype, name)
+        if self.objtype == 'command':
+           targetname = name.lower()
+        else:
+           targetname = name
+        targetid = '%s:%s' % (self.objtype, targetname)
         if targetid not in self.state.document.ids:
             signode['names'].append(targetid)
             signode['ids'].append(targetid)
@@ -218,6 +313,8 @@ class CMakeXRefRole(XRefRole):
     # See sphinx.util.nodes.explicit_title_re; \x00 escapes '<'.
     _re = re.compile(r'^(.+?)(\s*)(?<!\x00)<(.*?)>$', re.DOTALL)
     _re_sub = re.compile(r'^([^()\s]+)\s*\(([^()]*)\)$', re.DOTALL)
+    _re_genex = re.compile(r'^\$<([^<>:]+)(:[^<>]+)?>$', re.DOTALL)
+    _re_guide = re.compile(r'^([^<>/]+)/([^<>]*)$', re.DOTALL)
 
     def __call__(self, typ, rawtext, text, *args, **keys):
         # Translate CMake command cross-references of the form:
@@ -228,6 +325,14 @@ class CMakeXRefRole(XRefRole):
             m = CMakeXRefRole._re_sub.match(text)
             if m:
                 text = '%s <%s>' % (text, m.group(1))
+        elif typ == 'cmake:genex':
+            m = CMakeXRefRole._re_genex.match(text)
+            if m:
+                text = '%s <%s>' % (text, m.group(1))
+        elif typ == 'cmake:guide':
+            m = CMakeXRefRole._re_guide.match(text)
+            if m:
+                text = '%s <%s>' % (m.group(2), text)
         # CMake cross-reference targets frequently contain '<' so escape
         # any explicit `<target>` with '<' not preceded by whitespace.
         while True:
@@ -238,19 +343,71 @@ class CMakeXRefRole(XRefRole):
                 break
         return XRefRole.__call__(self, typ, rawtext, text, *args, **keys)
 
+    # We cannot insert index nodes using the result_nodes method
+    # because CMakeXRefRole is processed before substitution_reference
+    # nodes are evaluated so target nodes (with 'ids' fields) would be
+    # duplicated in each evaluated substitution replacement.  The
+    # docutils substitution transform does not allow this.  Instead we
+    # use our own CMakeXRefTransform below to add index entries after
+    # substitutions are completed.
+    #
+    # def result_nodes(self, document, env, node, is_ref):
+    #     pass
+
+class CMakeXRefTransform(Transform):
+
+    # Run this transform early since we insert nodes we want
+    # treated as if they were written in the documents, but
+    # after the sphinx (210) and docutils (220) substitutions.
+    default_priority = 221
+
+    def apply(self):
+        env = self.document.settings.env
+
+        # Find CMake cross-reference nodes and add index and target
+        # nodes for them.
+        for ref in self.document.traverse(addnodes.pending_xref):
+            if not ref['refdomain'] == 'cmake':
+                continue
+
+            objtype = ref['reftype']
+            make_index_entry = _cmake_index_objs.get(objtype)
+            if not make_index_entry:
+                continue
+
+            objname = ref['reftarget']
+            if objtype == 'guide' and CMakeXRefRole._re_guide.match(objname):
+                # Do not index cross-references to guide sections.
+                continue
+
+            targetnum = env.new_serialno('index-%s:%s' % (objtype, objname))
+
+            targetid = 'index-%s-%s:%s' % (targetnum, objtype, objname)
+            targetnode = nodes.target('', '', ids=[targetid])
+            self.document.note_explicit_target(targetnode)
+
+            indexnode = addnodes.index()
+            indexnode['entries'] = [make_index_entry(objname, targetid, '')]
+            ref.replace_self([indexnode, targetnode, ref])
+
 class CMakeDomain(Domain):
     """CMake domain."""
     name = 'cmake'
     label = 'CMake'
     object_types = {
         'command':    ObjType('command',    'command'),
+        'cpack_gen':  ObjType('cpack_gen',  'cpack_gen'),
+        'envvar':     ObjType('envvar',     'envvar'),
         'generator':  ObjType('generator',  'generator'),
+        'genex':      ObjType('genex',      'genex'),
+        'guide':      ObjType('guide',      'guide'),
         'variable':   ObjType('variable',   'variable'),
         'module':     ObjType('module',     'module'),
         'policy':     ObjType('policy',     'policy'),
         'prop_cache': ObjType('prop_cache', 'prop_cache'),
         'prop_dir':   ObjType('prop_dir',   'prop_dir'),
         'prop_gbl':   ObjType('prop_gbl',   'prop_gbl'),
+        'prop_inst':  ObjType('prop_inst',  'prop_inst'),
         'prop_sf':    ObjType('prop_sf',    'prop_sf'),
         'prop_test':  ObjType('prop_test',  'prop_test'),
         'prop_tgt':   ObjType('prop_tgt',   'prop_tgt'),
@@ -258,6 +415,8 @@ class CMakeDomain(Domain):
     }
     directives = {
         'command':    CMakeObject,
+        'envvar':     CMakeObject,
+        'genex':      CMakeObject,
         'variable':   CMakeObject,
         # Other object types cannot be created except by the CMakeTransform
         # 'generator':  CMakeObject,
@@ -266,6 +425,7 @@ class CMakeDomain(Domain):
         # 'prop_cache': CMakeObject,
         # 'prop_dir':   CMakeObject,
         # 'prop_gbl':   CMakeObject,
+        # 'prop_inst':  CMakeObject,
         # 'prop_sf':    CMakeObject,
         # 'prop_test':  CMakeObject,
         # 'prop_tgt':   CMakeObject,
@@ -273,13 +433,18 @@ class CMakeDomain(Domain):
     }
     roles = {
         'command':    CMakeXRefRole(fix_parens = True, lowercase = True),
+        'cpack_gen':  CMakeXRefRole(),
+        'envvar':     CMakeXRefRole(),
         'generator':  CMakeXRefRole(),
+        'genex':      CMakeXRefRole(),
+        'guide':      CMakeXRefRole(),
         'variable':   CMakeXRefRole(),
         'module':     CMakeXRefRole(),
         'policy':     CMakeXRefRole(),
         'prop_cache': CMakeXRefRole(),
         'prop_dir':   CMakeXRefRole(),
         'prop_gbl':   CMakeXRefRole(),
+        'prop_inst':  CMakeXRefRole(),
         'prop_sf':    CMakeXRefRole(),
         'prop_test':  CMakeXRefRole(),
         'prop_tgt':   CMakeXRefRole(),
@@ -314,4 +479,5 @@ class CMakeDomain(Domain):
 def setup(app):
     app.add_directive('cmake-module', CMakeModule)
     app.add_transform(CMakeTransform)
+    app.add_transform(CMakeXRefTransform)
     app.add_domain(CMakeDomain)

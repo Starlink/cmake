@@ -1,24 +1,18 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2004-2009 Kitware, Inc.
-  Copyright 2004 Alexander Neundorf (neundorf@kde.org)
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmExtraCodeBlocksGenerator_h
-#define cmExtraCodeBlocksGenerator_h
+#include <string>
+#include <vector>
 
 #include "cmExternalMakefileProjectGenerator.h"
 
+class cmGeneratorTarget;
 class cmLocalGenerator;
 class cmMakefile;
-class cmTarget;
-class cmGeneratedFileStream;
+class cmXMLWriter;
 
 /** \class cmExtraCodeBlocksGenerator
  * \brief Write CodeBlocks project files for Makefile based projects
@@ -28,35 +22,31 @@ class cmExtraCodeBlocksGenerator : public cmExternalMakefileProjectGenerator
 public:
   cmExtraCodeBlocksGenerator();
 
-  virtual const char* GetName() const
-                         { return cmExtraCodeBlocksGenerator::GetActualName();}
-  static const char* GetActualName()                    { return "CodeBlocks";}
-  static cmExternalMakefileProjectGenerator* New()
-                                     { return new cmExtraCodeBlocksGenerator; }
-  /** Get the documentation entry for this generator.  */
-  virtual void GetDocumentation(cmDocumentationEntry& entry,
-                                const char* fullName) const;
+  static cmExternalMakefileProjectGeneratorFactory* GetFactory();
 
-  virtual void Generate();
+  void Generate() override;
+
 private:
+  struct CbpUnit
+  {
+    std::vector<const cmGeneratorTarget*> Targets;
+  };
 
   void CreateProjectFile(const std::vector<cmLocalGenerator*>& lgs);
 
   void CreateNewProjectFile(const std::vector<cmLocalGenerator*>& lgs,
-                                const std::string& filename);
-  std::string CreateDummyTargetFile(cmMakefile* mf, cmTarget* target) const;
+                            const std::string& filename);
+  std::string CreateDummyTargetFile(cmLocalGenerator* lg,
+                                    cmGeneratorTarget* target) const;
 
   std::string GetCBCompilerId(const cmMakefile* mf);
-  int GetCBTargetType(cmTarget* target);
-  std::string BuildMakeCommand(const std::string& make, const char* makefile,
-                               const char* target);
-  void AppendTarget(cmGeneratedFileStream& fout,
-                    const char* targetName,
-                    cmTarget* target,
-                    const char* make,
-                    const cmMakefile* makefile,
-                    const char* compiler);
-
+  int GetCBTargetType(cmGeneratorTarget* target);
+  std::string BuildMakeCommand(const std::string& make,
+                               const std::string& makefile,
+                               const std::string& target,
+                               const std::string& makeFlags);
+  void AppendTarget(cmXMLWriter& xml, const std::string& targetName,
+                    cmGeneratorTarget* target, const std::string& make,
+                    const cmLocalGenerator* lg, const std::string& compiler,
+                    const std::string& makeFlags);
 };
-
-#endif

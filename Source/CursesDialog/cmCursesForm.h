@@ -1,26 +1,23 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef __cmCursesForm_h
-#define __cmCursesForm_h
+#include <string>
 
-#include "../cmStandardIncludes.h"
+#include "cmsys/FStream.hxx"
+
 #include "cmCursesStandardIncludes.h"
-#include <cmsys/FStream.hxx>
 
 class cmCursesForm
 {
 public:
   cmCursesForm();
   virtual ~cmCursesForm();
+
+  cmCursesForm(cmCursesForm const&) = delete;
+  cmCursesForm& operator=(cmCursesForm const&) = delete;
 
   // Description:
   // Handle user input.
@@ -38,7 +35,7 @@ public:
   // Description:
   // During a CMake run, an error handle should add errors
   // to be displayed afterwards.
-  virtual void AddError(const char*, const char*) {}
+  virtual void AddError(const std::string&, const char*) {}
 
   // Description:
   // Turn debugging on. This will create ccmakelog.txt.
@@ -54,23 +51,17 @@ public:
 
   // Description:
   // Return the FORM. Should be only used by low-level methods.
-  FORM* GetForm()
-    {
-      return this->Form;
-    }
+  FORM* GetForm() { return this->Form; }
 
   static cmCursesForm* CurrentForm;
 
+  // Description:
+  // Handle resizing the form with curses.
+  void HandleResize();
 
 protected:
-
   static cmsys::ofstream DebugFile;
   static bool Debug;
 
-  cmCursesForm(const cmCursesForm& form);
-  void operator=(const cmCursesForm&);
-
   FORM* Form;
 };
-
-#endif // __cmCursesForm_h

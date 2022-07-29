@@ -1,124 +1,214 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
-
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
-
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmConfigureFileCommand.h"
 
-#include <cmsys/RegularExpression.hxx>
+#include <set>
+#include <sstream>
+
+#include <cm/string_view>
+#include <cmext/string_view>
+
+#include <sys/types.h>
+
+#include "cmExecutionStatus.h"
+#include "cmFSPermissions.h"
+#include "cmMakefile.h"
+#include "cmMessageType.h"
+#include "cmNewLineStyle.h"
+#include "cmStringAlgorithms.h"
+#include "cmSystemTools.h"
 
 // cmConfigureFileCommand
-bool cmConfigureFileCommand
-::InitialPass(std::vector<std::string> const& args, cmExecutionStatus &)
+bool cmConfigureFileCommand(std::vector<std::string> const& args,
+                            cmExecutionStatus& status)
 {
-  if(args.size() < 2 )
-    {
-    this->SetError("called with incorrect number of arguments, expected 2");
+  if (args.size() < 2) {
+    status.SetError("called with incorrect number of arguments, expected 2");
     return false;
-    }
+  }
 
-  const char* inFile = args[0].c_str();
-  if(!cmSystemTools::FileIsFullPath(inFile))
-    {
-    this->InputFile = this->Makefile->GetCurrentDirectory();
-    this->InputFile += "/";
-    }
-  this->InputFile += inFile;
+  std::string const& inFile = args[0];
+  const std::string inputFile = cmSystemTools::CollapseFullPath(
+    inFile, status.GetMakefile().GetCurrentSourceDirectory());
 
   // If the input location is a directory, error out.
-  if(cmSystemTools::FileIsDirectory(this->InputFile.c_str()))
-    {
-    cmOStringStream e;
-    e << "input location\n"
-      << "  " << this->InputFile << "\n"
-      << "is a directory but a file was expected.";
-    this->SetError(e.str().c_str());
+  if (cmSystemTools::FileIsDirectory(inputFile)) {
+    status.SetError(cmStrCat("input location\n  ", inputFile,
+                             "\n"
+                             "is a directory but a file was expected."));
     return false;
-    }
+  }
 
-  const char* outFile = args[1].c_str();
-  if(!cmSystemTools::FileIsFullPath(outFile))
-    {
-    this->OutputFile = this->Makefile->GetCurrentOutputDirectory();
-    this->OutputFile += "/";
-    }
-  this->OutputFile += outFile;
+  std::string const& outFile = args[1];
+  std::string outputFile = cmSystemTools::CollapseFullPath(
+    outFile, status.GetMakefile().GetCurrentBinaryDirectory());
 
   // If the output location is already a directory put the file in it.
-  if(cmSystemTools::FileIsDirectory(this->OutputFile.c_str()))
-    {
-    this->OutputFile += "/";
-    this->OutputFile += cmSystemTools::GetFilenameName(inFile);
-    }
+  if (cmSystemTools::FileIsDirectory(outputFile)) {
+    outputFile += "/";
+    outputFile += cmSystemTools::GetFilenameName(inFile);
+  }
 
-  if ( !this->Makefile->CanIWriteThisFile(this->OutputFile.c_str()) )
-    {
-    std::string e = "attempted to configure a file: " + this->OutputFile
-      + " into a source directory.";
-    this->SetError(e.c_str());
+  if (!status.GetMakefile().CanIWriteThisFile(outputFile)) {
+    std::string e = "attempted to configure a file: " + outputFile +
+      " into a source directory.";
+    status.SetError(e);
     cmSystemTools::SetFatalErrorOccured();
     return false;
-    }
+  }
   std::string errorMessage;
-  if (!this->NewLineStyle.ReadFromArguments(args, errorMessage))
-    {
-    this->SetError(errorMessage.c_str());
+  cmNewLineStyle newLineStyle;
+  if (!newLineStyle.ReadFromArguments(args, errorMessage)) {
+    status.SetError(errorMessage);
     return false;
-    }
-  this->CopyOnly = false;
-  this->EscapeQuotes = false;
+  }
+  bool copyOnly = false;
+  bool escapeQuotes = false;
+  bool useSourcePermissions = false;
+  bool noSourcePermissions = false;
+  bool filePermissions = false;
+  std::vector<std::string> filePermissionOptions;
 
-  this->AtOnly = false;
-  for(unsigned int i=2;i < args.size();++i)
-    {
-    if(args[i] == "COPYONLY")
-      {
-      this->CopyOnly = true;
-      if (this->NewLineStyle.IsValid())
-        {
-        this->SetError("COPYONLY could not be used in combination "
-                       "with NEWLINE_STYLE");
+  enum class Doing
+  {
+    DoingNone,
+    DoingFilePermissions,
+    DoneFilePermissions
+  };
+
+  Doing doing = Doing::DoingNone;
+
+  static std::set<cm::string_view> noopOptions = {
+    /* Legacy.  */
+    "IMMEDIATE"_s,
+    /* Handled by NewLineStyle member.  */
+    "NEWLINE_STYLE"_s,
+    "LF"_s,
+    "UNIX"_s,
+    "CRLF"_s,
+    "WIN32"_s,
+    "DOS"_s,
+  };
+
+  std::string unknown_args;
+  bool atOnly = false;
+  for (unsigned int i = 2; i < args.size(); ++i) {
+    if (args[i] == "COPYONLY") {
+      if (doing == Doing::DoingFilePermissions) {
+        doing = Doing::DoneFilePermissions;
+      }
+      copyOnly = true;
+      if (newLineStyle.IsValid()) {
+        status.SetError("COPYONLY could not be used in combination "
+                        "with NEWLINE_STYLE");
         return false;
+      }
+    } else if (args[i] == "ESCAPE_QUOTES") {
+      if (doing == Doing::DoingFilePermissions) {
+        doing = Doing::DoneFilePermissions;
+      }
+      escapeQuotes = true;
+    } else if (args[i] == "@ONLY") {
+      if (doing == Doing::DoingFilePermissions) {
+        doing = Doing::DoneFilePermissions;
+      }
+      atOnly = true;
+    } else if (args[i] == "NO_SOURCE_PERMISSIONS") {
+      if (doing == Doing::DoingFilePermissions) {
+        status.SetError(" given both FILE_PERMISSIONS and "
+                        "NO_SOURCE_PERMISSIONS. Only one option allowed.");
+        return false;
+      }
+      noSourcePermissions = true;
+    } else if (args[i] == "USE_SOURCE_PERMISSIONS") {
+      if (doing == Doing::DoingFilePermissions) {
+        status.SetError(" given both FILE_PERMISSIONS and "
+                        "USE_SOURCE_PERMISSIONS. Only one option allowed.");
+        return false;
+      }
+      useSourcePermissions = true;
+    } else if (args[i] == "FILE_PERMISSIONS") {
+      if (useSourcePermissions) {
+        status.SetError(" given both FILE_PERMISSIONS and "
+                        "USE_SOURCE_PERMISSIONS. Only one option allowed.");
+        return false;
+      }
+      if (noSourcePermissions) {
+        status.SetError(" given both FILE_PERMISSIONS and "
+                        "NO_SOURCE_PERMISSIONS. Only one option allowed.");
+        return false;
+      }
+
+      if (doing == Doing::DoingNone) {
+        doing = Doing::DoingFilePermissions;
+        filePermissions = true;
+      }
+    } else if (noopOptions.find(args[i]) != noopOptions.end()) {
+      /* Ignore no-op options.  */
+    } else if (doing == Doing::DoingFilePermissions) {
+      filePermissionOptions.push_back(args[i]);
+    } else {
+      unknown_args += " ";
+      unknown_args += args[i];
+      unknown_args += "\n";
+    }
+  }
+  if (!unknown_args.empty()) {
+    std::string msg = cmStrCat(
+      "configure_file called with unknown argument(s):\n", unknown_args);
+    status.GetMakefile().IssueMessage(MessageType::AUTHOR_WARNING, msg);
+  }
+
+  if (useSourcePermissions && noSourcePermissions) {
+    status.SetError(" given both USE_SOURCE_PERMISSIONS and "
+                    "NO_SOURCE_PERMISSIONS. Only one option allowed.");
+    return false;
+  }
+
+  mode_t permissions = 0;
+
+  if (filePermissions) {
+    if (filePermissionOptions.empty()) {
+      status.SetError(" given FILE_PERMISSIONS without any options.");
+      return false;
+    }
+
+    std::vector<std::string> invalidOptions;
+    for (auto const& e : filePermissionOptions) {
+      if (!cmFSPermissions::stringToModeT(e, permissions)) {
+        invalidOptions.push_back(e);
+      }
+    }
+
+    if (!invalidOptions.empty()) {
+      std::ostringstream oss;
+      oss << " given invalid permission ";
+      for (auto i = 0u; i < invalidOptions.size(); i++) {
+        if (i == 0u) {
+          oss << "\"" << invalidOptions[i] << "\"";
+        } else {
+          oss << ",\"" << invalidOptions[i] << "\"";
         }
       }
-    else if(args[i] == "ESCAPE_QUOTES")
-      {
-      this->EscapeQuotes = true;
-      }
-    else if(args[i] == "@ONLY")
-      {
-      this->AtOnly = true;
-      }
-    else if(args[i] == "IMMEDIATE")
-      {
-      /* Ignore legacy option.  */
-      }
+      oss << ".";
+      status.SetError(oss.str());
+      return false;
     }
+  }
 
-  if ( !this->ConfigureFile() )
-    {
-    this->SetError("Problem configuring file");
+  if (noSourcePermissions) {
+    permissions |= cmFSPermissions::mode_owner_read;
+    permissions |= cmFSPermissions::mode_owner_write;
+    permissions |= cmFSPermissions::mode_group_read;
+    permissions |= cmFSPermissions::mode_world_read;
+  }
+
+  if (!status.GetMakefile().ConfigureFile(inputFile, outputFile, copyOnly,
+                                          atOnly, escapeQuotes, permissions,
+                                          newLineStyle)) {
+    status.SetError("Problem configuring file");
     return false;
-    }
+  }
 
   return true;
 }
-
-int cmConfigureFileCommand::ConfigureFile()
-{
-  return this->Makefile->ConfigureFile(
-    this->InputFile.c_str(),
-    this->OutputFile.c_str(),
-    this->CopyOnly,
-    this->AtOnly,
-    this->EscapeQuotes,
-    this->NewLineStyle);
-}
-
-

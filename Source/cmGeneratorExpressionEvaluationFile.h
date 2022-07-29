@@ -1,48 +1,64 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2013 Stephen Kelly <steveire@gmail.com>
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmGeneratorExpressionEvaluationFile_h
-#define cmGeneratorExpressionEvaluationFile_h
+#include <map>
+#include <memory>
+#include <string>
+#include <vector>
 
-#include "cmStandardIncludes.h"
-#include <cmsys/auto_ptr.hxx>
+#include "cm_sys_stat.h"
 
 #include "cmGeneratorExpression.h"
+#include "cmPolicies.h"
 
-//----------------------------------------------------------------------------
+class cmGeneratorTarget;
+class cmLocalGenerator;
+
 class cmGeneratorExpressionEvaluationFile
 {
 public:
-  cmGeneratorExpressionEvaluationFile(const std::string &input,
-        cmsys::auto_ptr<cmCompiledGeneratorExpression> outputFileExpr,
-        cmMakefile *makefile,
-        cmsys::auto_ptr<cmCompiledGeneratorExpression> condition,
-        bool inputIsContent);
+  cmGeneratorExpressionEvaluationFile(
+    std::string input, std::string target,
+    std::unique_ptr<cmCompiledGeneratorExpression> outputFileExpr,
+    std::unique_ptr<cmCompiledGeneratorExpression> condition,
+    bool inputIsContent, std::string newLineCharacter, mode_t permissions,
+    cmPolicies::PolicyStatus policyStatusCMP0070);
 
-  void Generate();
+  void Generate(cmLocalGenerator* lg);
 
   std::vector<std::string> GetFiles() const { return this->Files; }
 
-private:
-  void Generate(const char *config,
-              cmCompiledGeneratorExpression* inputExpression,
-              std::map<std::string, std::string> &outputFiles);
+  void CreateOutputFile(cmLocalGenerator* lg, std::string const& config);
 
 private:
+  void Generate(cmLocalGenerator* lg, const std::string& config,
+                const std::string& lang,
+                cmCompiledGeneratorExpression* inputExpression,
+                std::map<std::string, std::string>& outputFiles, mode_t perm);
+
+  std::string GetInputFileName(cmLocalGenerator* lg);
+  std::string GetOutputFileName(cmLocalGenerator* lg,
+                                cmGeneratorTarget* target,
+                                const std::string& config,
+                                const std::string& lang);
+  enum PathRole
+  {
+    PathForInput,
+    PathForOutput
+  };
+  std::string FixRelativePath(std::string const& filePath, PathRole role,
+                              cmLocalGenerator* lg);
+
   const std::string Input;
-  const cmsys::auto_ptr<cmCompiledGeneratorExpression> OutputFileExpr;
-  cmMakefile *Makefile;
-  const cmsys::auto_ptr<cmCompiledGeneratorExpression> Condition;
+  const std::string Target;
+  const std::unique_ptr<cmCompiledGeneratorExpression> OutputFileExpr;
+  const std::unique_ptr<cmCompiledGeneratorExpression> Condition;
   std::vector<std::string> Files;
   const bool InputIsContent;
+  const std::string NewLineCharacter;
+  cmPolicies::PolicyStatus PolicyStatusCMP0070;
+  mode_t Permissions;
 };
-
-#endif

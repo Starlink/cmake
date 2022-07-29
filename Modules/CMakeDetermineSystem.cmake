@@ -1,18 +1,8 @@
+# Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+# file Copyright.txt or https://cmake.org/licensing for details.
 
-#=============================================================================
-# Copyright 2002-2009 Kitware, Inc.
-#
-# Distributed under the OSI-approved BSD License (the "License");
-# see accompanying file Copyright.txt for details.
-#
-# This software is distributed WITHOUT ANY WARRANTY; without even the
-# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the License for more information.
-#=============================================================================
-# (To distribute this file outside of CMake, substitute the full
-#  License text for the above reference.)
 
-# This module is used by the Makefile generator to determin the following variables:
+# This module is used by the Makefile generator to determine the following variables:
 # CMAKE_SYSTEM_NAME - on unix this is uname -s, for windows it is Windows
 # CMAKE_SYSTEM_VERSION - on unix this is uname -r, for windows it is empty
 # CMAKE_SYSTEM - ${CMAKE_SYSTEM}-${CMAKE_SYSTEM_VERSION}, for windows: ${CMAKE_SYSTEM}
@@ -23,7 +13,6 @@
 # BSD/OS                        BSD/OS
 # FreeBSD                       FreeBSD
 # HP-UX                         HP-UX
-# IRIX                          IRIX
 # Linux                         Linux
 # GNU/kFreeBSD                  GNU/kFreeBSD
 # NetBSD                        NetBSD
@@ -38,6 +27,7 @@
 # Tru64                         Tru64
 # Ultrix                        ULTRIX
 # cygwin                        CYGWIN_NT-5.1
+# MSYS                          MSYS_NT-6.1
 # MacOSX                        Darwin
 
 
@@ -45,13 +35,50 @@
 if(CMAKE_HOST_UNIX)
   find_program(CMAKE_UNAME uname /bin /usr/bin /usr/local/bin )
   if(CMAKE_UNAME)
-    exec_program(uname ARGS -s OUTPUT_VARIABLE CMAKE_HOST_SYSTEM_NAME)
-    exec_program(uname ARGS -r OUTPUT_VARIABLE CMAKE_HOST_SYSTEM_VERSION)
-    if(CMAKE_HOST_SYSTEM_NAME MATCHES "Linux|CYGWIN.*|Darwin")
-      exec_program(uname ARGS -m OUTPUT_VARIABLE CMAKE_HOST_SYSTEM_PROCESSOR
+    if(CMAKE_HOST_SYSTEM_NAME STREQUAL "AIX")
+      exec_program(${CMAKE_UNAME} ARGS -v OUTPUT_VARIABLE _CMAKE_HOST_SYSTEM_MAJOR_VERSION)
+      exec_program(${CMAKE_UNAME} ARGS -r OUTPUT_VARIABLE _CMAKE_HOST_SYSTEM_MINOR_VERSION)
+      set(CMAKE_HOST_SYSTEM_VERSION "${_CMAKE_HOST_SYSTEM_MAJOR_VERSION}.${_CMAKE_HOST_SYSTEM_MINOR_VERSION}")
+      unset(_CMAKE_HOST_SYSTEM_MAJOR_VERSION)
+      unset(_CMAKE_HOST_SYSTEM_MINOR_VERSION)
+    else()
+      exec_program(${CMAKE_UNAME} ARGS -r OUTPUT_VARIABLE CMAKE_HOST_SYSTEM_VERSION)
+    endif()
+    if(CMAKE_HOST_SYSTEM_NAME MATCHES "Linux|CYGWIN.*|MSYS.*|^GNU$|Android")
+      exec_program(${CMAKE_UNAME} ARGS -m OUTPUT_VARIABLE CMAKE_HOST_SYSTEM_PROCESSOR
         RETURN_VALUE val)
-      if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin" AND
-         CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "Power Macintosh")
+    elseif(CMAKE_HOST_SYSTEM_NAME MATCHES "Darwin")
+      # If we are running on Apple Silicon, honor CMAKE_APPLE_SILICON_PROCESSOR.
+      if(DEFINED CMAKE_APPLE_SILICON_PROCESSOR)
+        set(_CMAKE_APPLE_SILICON_PROCESSOR "${CMAKE_APPLE_SILICON_PROCESSOR}")
+      elseif(DEFINED ENV{CMAKE_APPLE_SILICON_PROCESSOR})
+        set(_CMAKE_APPLE_SILICON_PROCESSOR "$ENV{CMAKE_APPLE_SILICON_PROCESSOR}")
+      else()
+        set(_CMAKE_APPLE_SILICON_PROCESSOR "")
+      endif()
+      if(_CMAKE_APPLE_SILICON_PROCESSOR)
+        if(";${_CMAKE_APPLE_SILICON_PROCESSOR};" MATCHES "^;(arm64|x86_64);$")
+          execute_process(COMMAND sysctl -q hw.optional.arm64
+            OUTPUT_VARIABLE _sysctl_stdout
+            ERROR_VARIABLE _sysctl_stderr
+            RESULT_VARIABLE _sysctl_result
+            )
+          if(NOT _sysctl_result EQUAL 0 OR NOT _sysctl_stdout MATCHES "hw.optional.arm64: 1")
+            set(_CMAKE_APPLE_SILICON_PROCESSOR "")
+          endif()
+          unset(_sysctl_result)
+          unset(_sysctl_stderr)
+          unset(_sysctl_stdout)
+        endif()
+      endif()
+      if(_CMAKE_APPLE_SILICON_PROCESSOR)
+        set(CMAKE_HOST_SYSTEM_PROCESSOR "${_CMAKE_APPLE_SILICON_PROCESSOR}")
+      else()
+        exec_program(${CMAKE_UNAME} ARGS -m OUTPUT_VARIABLE CMAKE_HOST_SYSTEM_PROCESSOR
+          RETURN_VALUE val)
+      endif()
+      unset(_CMAKE_APPLE_SILICON_PROCESSOR)
+      if(CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "Power Macintosh")
         # OS X ppc 'uname -m' may report 'Power Macintosh' instead of 'powerpc'
         set(CMAKE_HOST_SYSTEM_PROCESSOR "powerpc")
       endif()
@@ -59,10 +86,10 @@ if(CMAKE_HOST_UNIX)
       exec_program(arch ARGS -s OUTPUT_VARIABLE CMAKE_HOST_SYSTEM_PROCESSOR
         RETURN_VALUE val)
     else()
-      exec_program(uname ARGS -p OUTPUT_VARIABLE CMAKE_HOST_SYSTEM_PROCESSOR
+      exec_program(${CMAKE_UNAME} ARGS -p OUTPUT_VARIABLE CMAKE_HOST_SYSTEM_PROCESSOR
         RETURN_VALUE val)
       if("${val}" GREATER 0)
-        exec_program(uname ARGS -m OUTPUT_VARIABLE CMAKE_HOST_SYSTEM_PROCESSOR
+        exec_program(${CMAKE_UNAME} ARGS -m OUTPUT_VARIABLE CMAKE_HOST_SYSTEM_PROCESSOR
           RETURN_VALUE val)
       endif()
     endif()
@@ -72,12 +99,11 @@ if(CMAKE_HOST_UNIX)
     endif()
     set(CMAKE_UNAME ${CMAKE_UNAME} CACHE INTERNAL "uname command")
     # processor may have double quote in the name, and that needs to be removed
-    string(REGEX REPLACE "\"" "" CMAKE_HOST_SYSTEM_PROCESSOR "${CMAKE_HOST_SYSTEM_PROCESSOR}")
-    string(REGEX REPLACE "/" "_" CMAKE_HOST_SYSTEM_PROCESSOR "${CMAKE_HOST_SYSTEM_PROCESSOR}")
+    string(REPLACE "\"" "" CMAKE_HOST_SYSTEM_PROCESSOR "${CMAKE_HOST_SYSTEM_PROCESSOR}")
+    string(REPLACE "/" "_" CMAKE_HOST_SYSTEM_PROCESSOR "${CMAKE_HOST_SYSTEM_PROCESSOR}")
   endif()
 else()
   if(CMAKE_HOST_WIN32)
-    set (CMAKE_HOST_SYSTEM_NAME "Windows")
     if (DEFINED ENV{PROCESSOR_ARCHITEW6432})
       set (CMAKE_HOST_SYSTEM_PROCESSOR "$ENV{PROCESSOR_ARCHITEW6432}")
     else()
@@ -123,44 +149,24 @@ elseif(CMAKE_VS_WINCE_VERSION)
   set(PRESET_CMAKE_SYSTEM_NAME TRUE)
 else()
   set(CMAKE_SYSTEM_NAME      "${CMAKE_HOST_SYSTEM_NAME}")
-  set(CMAKE_SYSTEM_VERSION   "${CMAKE_HOST_SYSTEM_VERSION}")
+  if(NOT DEFINED CMAKE_SYSTEM_VERSION)
+    set(CMAKE_SYSTEM_VERSION "${CMAKE_HOST_SYSTEM_VERSION}")
+  endif()
   set(CMAKE_SYSTEM_PROCESSOR "${CMAKE_HOST_SYSTEM_PROCESSOR}")
   set(CMAKE_CROSSCOMPILING FALSE)
   set(PRESET_CMAKE_SYSTEM_NAME FALSE)
 endif()
 
+include(Platform/${CMAKE_SYSTEM_NAME}-Determine OPTIONAL)
 
-macro(ADJUST_CMAKE_SYSTEM_VARIABLES _PREFIX)
-  if(NOT ${_PREFIX}_NAME)
-    set(${_PREFIX}_NAME "UnknownOS")
-  endif()
-
-  # fix for BSD/OS , remove the /
-  if(${_PREFIX}_NAME MATCHES BSD.OS)
-    set(${_PREFIX}_NAME BSDOS)
-  endif()
-
-  # fix for GNU/kFreeBSD, remove the GNU/
-  if(${_PREFIX}_NAME MATCHES kFreeBSD)
-    set(${_PREFIX}_NAME kFreeBSD)
-  endif()
-
-  # fix for CYGWIN which has windows version in it
-  if(${_PREFIX}_NAME MATCHES CYGWIN)
-    set(${_PREFIX}_NAME CYGWIN)
-  endif()
-
-  # set CMAKE_SYSTEM to the CMAKE_SYSTEM_NAME
-  set(${_PREFIX}  ${${_PREFIX}_NAME})
-  # if there is a CMAKE_SYSTEM_VERSION then add a -${CMAKE_SYSTEM_VERSION}
-  if(${_PREFIX}_VERSION)
-    set(${_PREFIX} ${${_PREFIX}}-${${_PREFIX}_VERSION})
-  endif()
-
-endmacro()
-
-ADJUST_CMAKE_SYSTEM_VARIABLES(CMAKE_SYSTEM)
-ADJUST_CMAKE_SYSTEM_VARIABLES(CMAKE_HOST_SYSTEM)
+set(CMAKE_SYSTEM ${CMAKE_SYSTEM_NAME})
+if(CMAKE_SYSTEM_VERSION)
+  string(APPEND CMAKE_SYSTEM -${CMAKE_SYSTEM_VERSION})
+endif()
+set(CMAKE_HOST_SYSTEM ${CMAKE_HOST_SYSTEM_NAME})
+if(CMAKE_HOST_SYSTEM_VERSION)
+  string(APPEND CMAKE_HOST_SYSTEM -${CMAKE_HOST_SYSTEM_VERSION})
+endif()
 
 # this file is also executed from cpack, then we don't need to generate these files
 # in this case there is no CMAKE_BINARY_DIR
@@ -179,7 +185,7 @@ if(CMAKE_BINARY_DIR)
   # if a toolchain file is used, it needs to be included in the configured file,
   # so settings done there are also available if they don't go in the cache and in try_compile()
   set(INCLUDE_CMAKE_TOOLCHAIN_FILE_IF_REQUIRED)
-  if(DEFINED CMAKE_TOOLCHAIN_FILE)
+  if(CMAKE_TOOLCHAIN_FILE)
     set(INCLUDE_CMAKE_TOOLCHAIN_FILE_IF_REQUIRED "include(\"${CMAKE_TOOLCHAIN_FILE}\")")
   endif()
 

@@ -1,70 +1,69 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2012 Nicolas Despres <nicolas.despres@gmail.com>
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmOSXBundleGenerator_h
-#define cmOSXBundleGenerator_h
-
-#include "cmStandardIncludes.h"
-#include "cmSourceFile.h"
-
-#include <string>
 #include <set>
+#include <string>
+#include <vector>
 
-class cmTarget;
-class cmMakefile;
-class cmLocalGenerator;
 class cmGeneratorTarget;
+class cmLocalGenerator;
+class cmMakefile;
+class cmSourceFile;
 
 class cmOSXBundleGenerator
 {
 public:
-  cmOSXBundleGenerator(cmGeneratorTarget* target,
-                       const char* configName);
+  cmOSXBundleGenerator(cmGeneratorTarget* target);
+
+  struct SkipParts
+  {
+    SkipParts()
+      : infoPlist(false)
+    {
+    }
+    bool infoPlist; // NOLINT(modernize-use-default-member-init)
+  };
 
   // create an app bundle at a given root, and return
   // the directory within the bundle that contains the executable
-  void CreateAppBundle(const std::string& targetName, std::string& root);
+  void CreateAppBundle(const std::string& targetName, std::string& root,
+                       const std::string& config);
 
   // create a framework at a given root
-  void CreateFramework(const std::string& targetName,
-                       const std::string& root);
+  void CreateFramework(const std::string& targetName, const std::string& root,
+                       const std::string& config,
+                       const SkipParts& skipParts = SkipParts());
 
   // create a cf bundle at a given root
-  void CreateCFBundle(const std::string& targetName,
-                      const std::string& root);
+  void CreateCFBundle(const std::string& targetName, const std::string& root,
+                      const std::string& config);
 
   struct MacOSXContentGeneratorType
   {
-    virtual ~MacOSXContentGeneratorType() {}
-    virtual void operator()(cmSourceFile& source, const char* pkgloc) = 0;
+    virtual ~MacOSXContentGeneratorType() = default;
+    virtual void operator()(cmSourceFile const& source, const char* pkgloc,
+                            const std::string& config) = 0;
   };
 
   void GenerateMacOSXContentStatements(
-    std::vector<cmSourceFile*> const& sources,
-    MacOSXContentGeneratorType* generator);
-  std::string InitMacOSXContentDirectory(const char* pkgloc);
+    std::vector<cmSourceFile const*> const& sources,
+    MacOSXContentGeneratorType* generator, const std::string& config);
+  std::string InitMacOSXContentDirectory(const char* pkgloc,
+                                         const std::string& config);
 
-  void SetMacContentFolders(std::set<cmStdString>* macContentFolders)
-  { this->MacContentFolders = macContentFolders; }
+  void SetMacContentFolders(std::set<std::string>* macContentFolders)
+  {
+    this->MacContentFolders = macContentFolders;
+  }
 
 private:
   bool MustSkip();
 
-private:
-  cmTarget* Target;
+  cmGeneratorTarget* GT;
   cmMakefile* Makefile;
   cmLocalGenerator* LocalGenerator;
-  const char* ConfigName;
-  std::set<cmStdString>* MacContentFolders;
+  std::set<std::string>* MacContentFolders;
 };
-
-
-#endif

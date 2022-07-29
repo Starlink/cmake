@@ -1,7 +1,7 @@
 load_command
 ------------
 
-Disallowed.  See CMake Policy :policy:`CMP0031`.
+Disallowed since version 3.0.  See CMake Policy :policy:`CMP0031`.
 
 Load a command into a running CMake.
 
@@ -11,9 +11,9 @@ Load a command into a running CMake.
 
 The given locations are searched for a library whose name is
 cmCOMMAND_NAME.  If found, it is loaded as a module and the command is
-added to the set of available CMake commands.  Usually, TRY_COMPILE is
-used before this command to compile the module.  If the command is
-successfully loaded a variable named
+added to the set of available CMake commands.  Usually,
+:command:`try_compile` is used before this command to compile the
+module.  If the command is successfully loaded a variable named
 
 ::
 

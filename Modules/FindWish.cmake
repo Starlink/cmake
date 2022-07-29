@@ -1,33 +1,24 @@
-#.rst:
-# FindWish
-# --------
-#
-# Find wish installation
-#
-# This module finds if TCL is installed and determines where the include
-# files and libraries are.  It also determines what the name of the
-# library is.  This code sets the following variables:
-#
-# ::
-#
-#   TK_WISH = the path to the wish executable
-#
-#
-#
-# if UNIX is defined, then it will look for the cygwin version first
+# Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+# file Copyright.txt or https://cmake.org/licensing for details.
 
-#=============================================================================
-# Copyright 2001-2009 Kitware, Inc.
-#
-# Distributed under the OSI-approved BSD License (the "License");
-# see accompanying file Copyright.txt for details.
-#
-# This software is distributed WITHOUT ANY WARRANTY; without even the
-# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the License for more information.
-#=============================================================================
-# (To distribute this file outside of CMake, substitute the full
-#  License text for the above reference.)
+#[=======================================================================[.rst:
+FindWish
+--------
+
+Find wish installation
+
+This module finds if TCL is installed and determines where the include
+files and libraries are.  It also determines what the name of the
+library is.  This code sets the following variables:
+
+::
+
+  TK_WISH = the path to the wish executable
+
+
+
+if UNIX is defined, then it will look for the cygwin version first
+#]=======================================================================]
 
 if(UNIX)
   find_program(TK_WISH cygwish80 )

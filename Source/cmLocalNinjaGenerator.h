@@ -1,23 +1,28 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2011 Peter Collingbourne <peter@pcc.me.uk>
-  Copyright 2011 Nicolas Despres <nicolas.despres@gmail.com>
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-#ifndef cmLocalNinjaGenerator_h
-#  define cmLocalNinjaGenerator_h
+#include <iosfwd>
+#include <map>
+#include <set>
+#include <string>
+#include <vector>
 
-#  include "cmLocalGenerator.h"
-#  include "cmNinjaTypes.h"
+#include "cmListFileCache.h"
+#include "cmLocalCommonGenerator.h"
+#include "cmNinjaTypes.h"
+#include "cmOutputConverter.h"
 
-class cmGlobalNinjaGenerator;
+class cmCustomCommand;
+class cmCustomCommandGenerator;
 class cmGeneratedFileStream;
+class cmGeneratorTarget;
+class cmGlobalGenerator;
+class cmGlobalNinjaGenerator;
+class cmMakefile;
+class cmRulePlaceholderExpander;
 class cmake;
 
 /**
@@ -27,109 +32,104 @@ class cmake;
  * cmLocalNinjaGenerator produces a local build.ninja file from its
  * member Makefile.
  */
-class cmLocalNinjaGenerator : public cmLocalGenerator
+class cmLocalNinjaGenerator : public cmLocalCommonGenerator
 {
 public:
-  /// Default constructor.
-  cmLocalNinjaGenerator();
+  cmLocalNinjaGenerator(cmGlobalGenerator* gg, cmMakefile* mf);
 
-  /// Destructor.
-  virtual ~cmLocalNinjaGenerator();
+  ~cmLocalNinjaGenerator() override;
 
-  /// Overloaded methods. @see cmLocalGenerator::Generate()
-  virtual void Generate();
+  void Generate() override;
 
-  /// Overloaded methods. @see cmLocalGenerator::Configure()
-  virtual void Configure();
+  cmRulePlaceholderExpander* CreateRulePlaceholderExpander() const override;
 
-  /// Overloaded methods. @see cmLocalGenerator::GetTargetDirectory()
-  virtual std::string GetTargetDirectory(cmTarget const& target) const;
+  std::string GetTargetDirectory(
+    cmGeneratorTarget const* target) const override;
 
   const cmGlobalNinjaGenerator* GetGlobalNinjaGenerator() const;
   cmGlobalNinjaGenerator* GetGlobalNinjaGenerator();
 
-  /**
-   * Shortcut to get the cmake instance throw the global generator.
-   * @return an instance of the cmake object.
-   */
   const cmake* GetCMakeInstance() const;
   cmake* GetCMakeInstance();
-
-  const char* GetConfigName() const
-  { return this->ConfigName.c_str(); }
-
-  /// @return whether we are processing the top CMakeLists.txt file.
-  bool isRootMakefile() const;
 
   /// @returns the relative path between the HomeOutputDirectory and this
   /// local generators StartOutputDirectory.
   std::string GetHomeRelativeOutputPath() const
-  { return this->HomeRelativeOutputPath; }
-
-  std::string ConvertToNinjaPath(const char *path);
-
-  struct map_to_ninja_path {
-    cmLocalNinjaGenerator *LocalGenerator;
-    map_to_ninja_path(cmLocalNinjaGenerator *LocalGen)
-      : LocalGenerator(LocalGen) {}
-    std::string operator()(const std::string &path) {
-      return LocalGenerator->ConvertToNinjaPath(path.c_str());
-    }
-  };
-
-  map_to_ninja_path MapToNinjaPath() {
-    return map_to_ninja_path(this);
+  {
+    return this->HomeRelativeOutputPath;
   }
 
-  void ExpandRuleVariables(std::string& string,
-                           const RuleVariables& replaceValues) {
-    cmLocalGenerator::ExpandRuleVariables(string, replaceValues);
-  }
+  std::string BuildCommandLine(
+    std::vector<std::string> const& cmdLines, std::string const& outputConfig,
+    std::string const& commandConfig,
+    std::string const& customStep = std::string(),
+    cmGeneratorTarget const* target = nullptr) const;
 
-  std::string BuildCommandLine(const std::vector<std::string> &cmdLines);
+  void AppendTargetOutputs(cmGeneratorTarget* target, cmNinjaDeps& outputs,
+                           const std::string& config);
+  void AppendTargetDepends(cmGeneratorTarget* target, cmNinjaDeps& outputs,
+                           const std::string& config,
+                           const std::string& fileConfig,
+                           cmNinjaTargetDepends depends);
 
-  void AppendTargetOutputs(cmTarget* target, cmNinjaDeps& outputs);
-  void AppendTargetDepends(cmTarget* target, cmNinjaDeps& outputs);
+  std::string CreateUtilityOutput(std::string const& targetName,
+                                  std::vector<std::string> const& byproducts,
+                                  cmListFileBacktrace const& bt) override;
 
-  void AddCustomCommandTarget(cmCustomCommand const* cc, cmTarget* target);
-  void AppendCustomCommandLines(const cmCustomCommand *cc,
-                                std::vector<std::string> &cmdLines);
-  void AppendCustomCommandDeps(const cmCustomCommand *cc,
-                               cmNinjaDeps &ninjaDeps);
+  std::vector<cmCustomCommandGenerator> MakeCustomCommandGenerators(
+    cmCustomCommand const& cc, std::string const& config) override;
 
-  virtual std::string ConvertToLinkReference(std::string const& lib);
+  void AddCustomCommandTarget(cmCustomCommand const* cc,
+                              cmGeneratorTarget* target);
+  void AppendCustomCommandLines(cmCustomCommandGenerator const& ccg,
+                                std::vector<std::string>& cmdLines);
+  void AppendCustomCommandDeps(cmCustomCommandGenerator const& ccg,
+                               cmNinjaDeps& ninjaDeps,
+                               const std::string& config);
 
+  bool HasUniqueByproducts(std::vector<std::string> const& byproducts,
+                           cmListFileBacktrace const& bt);
 
 protected:
-  virtual std::string ConvertToIncludeReference(std::string const& path);
-
+  std::string ConvertToIncludeReference(
+    std::string const& path, cmOutputConverter::OutputFormat format) override;
 
 private:
-  cmGeneratedFileStream& GetBuildFileStream() const;
+  cmGeneratedFileStream& GetImplFileStream(const std::string& config) const;
+  cmGeneratedFileStream& GetCommonFileStream() const;
   cmGeneratedFileStream& GetRulesFileStream() const;
 
   void WriteBuildFileTop();
   void WriteProjectHeader(std::ostream& os);
-  void WriteNinjaFilesInclusion(std::ostream& os);
+  void WriteNinjaRequiredVersion(std::ostream& os);
+  void WriteNinjaConfigurationVariable(std::ostream& os,
+                                       const std::string& config);
+  void WriteNinjaFilesInclusionConfig(std::ostream& os);
+  void WriteNinjaFilesInclusionCommon(std::ostream& os);
+  void WriteNinjaWorkDir(std::ostream& os);
   void WriteProcessedMakefile(std::ostream& os);
   void WritePools(std::ostream& os);
 
-  void SetConfigName();
+  void WriteCustomCommandBuildStatement(
+    cmCustomCommand const* cc, const std::set<cmGeneratorTarget*>& targets,
+    const std::string& config);
 
-  void WriteCustomCommandRule();
-  void WriteCustomCommandBuildStatement(cmCustomCommand const *cc,
-                                        const cmNinjaDeps& orderOnlyDeps);
+  void WriteCustomCommandBuildStatements(const std::string& config);
 
-  void WriteCustomCommandBuildStatements();
+  std::string MakeCustomLauncher(cmCustomCommandGenerator const& ccg);
 
-  std::string MakeCustomLauncher(const cmCustomCommand& cc);
+  std::string WriteCommandScript(std::vector<std::string> const& cmdLines,
+                                 std::string const& outputConfig,
+                                 std::string const& commandConfig,
+                                 std::string const& customStep,
+                                 cmGeneratorTarget const* target) const;
 
-  std::string ConfigName;
+  void AdditionalCleanFiles(const std::string& config);
+
   std::string HomeRelativeOutputPath;
 
-  typedef std::map<cmCustomCommand const*, std::set<cmTarget*> >
-    CustomCommandTargetMap;
+  using CustomCommandTargetMap =
+    std::map<cmCustomCommand const*, std::set<cmGeneratorTarget*>>;
   CustomCommandTargetMap CustomCommandTargets;
+  std::vector<cmCustomCommand const*> CustomCommands;
 };
-
-#endif // ! cmLocalNinjaGenerator_h

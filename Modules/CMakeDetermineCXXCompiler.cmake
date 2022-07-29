@@ -1,16 +1,6 @@
+# Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+# file Copyright.txt or https://cmake.org/licensing for details.
 
-#=============================================================================
-# Copyright 2002-2009 Kitware, Inc.
-#
-# Distributed under the OSI-approved BSD License (the "License");
-# see accompanying file Copyright.txt for details.
-#
-# This software is distributed WITHOUT ANY WARRANTY; without even the
-# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the License for more information.
-#=============================================================================
-# (To distribute this file outside of CMake, substitute the full
-#  License text for the above reference.)
 
 # determine the compiler to use for C++ programs
 # NOTE, a generator may set CMAKE_CXX_COMPILER before
@@ -33,12 +23,14 @@
 include(${CMAKE_ROOT}/Modules/CMakeDetermineCompiler.cmake)
 
 # Load system-specific compiler preferences for this language.
+include(Platform/${CMAKE_SYSTEM_NAME}-Determine-CXX OPTIONAL)
 include(Platform/${CMAKE_SYSTEM_NAME}-CXX OPTIONAL)
 if(NOT CMAKE_CXX_COMPILER_NAMES)
   set(CMAKE_CXX_COMPILER_NAMES CC)
 endif()
 
 if(${CMAKE_GENERATOR} MATCHES "Visual Studio")
+elseif("${CMAKE_GENERATOR}" MATCHES "Green Hills MULTI")
 elseif("${CMAKE_GENERATOR}" MATCHES "Xcode")
   set(CMAKE_CXX_COMPILER_XCODE_TYPE sourcecode.cpp.cpp)
   _cmake_find_compiler_path(CXX)
@@ -47,10 +39,10 @@ else()
     set(CMAKE_CXX_COMPILER_INIT NOTFOUND)
 
     # prefer the environment variable CXX
-    if($ENV{CXX} MATCHES ".+")
+    if(NOT $ENV{CXX} STREQUAL "")
       get_filename_component(CMAKE_CXX_COMPILER_INIT $ENV{CXX} PROGRAM PROGRAM_ARGS CMAKE_CXX_FLAGS_ENV_INIT)
       if(CMAKE_CXX_FLAGS_ENV_INIT)
-        set(CMAKE_CXX_COMPILER_ARG1 "${CMAKE_CXX_FLAGS_ENV_INIT}" CACHE STRING "First argument to CXX compiler")
+        set(CMAKE_CXX_COMPILER_ARG1 "${CMAKE_CXX_FLAGS_ENV_INIT}" CACHE STRING "Arguments to CXX compiler")
       endif()
       if(NOT EXISTS ${CMAKE_CXX_COMPILER_INIT})
         message(FATAL_ERROR "Could not find compiler set in environment variable CXX:\n$ENV{CXX}.\n${CMAKE_CXX_COMPILER_INIT}")
@@ -66,7 +58,7 @@ else()
 
     # finally list compilers to try
     if(NOT CMAKE_CXX_COMPILER_INIT)
-      set(CMAKE_CXX_COMPILER_LIST CC ${_CMAKE_TOOLCHAIN_PREFIX}c++ ${_CMAKE_TOOLCHAIN_PREFIX}g++ aCC cl bcc xlC clang++)
+      set(CMAKE_CXX_COMPILER_LIST CC ${_CMAKE_TOOLCHAIN_PREFIX}c++ ${_CMAKE_TOOLCHAIN_PREFIX}g++ aCC cl bcc xlC icpx icx clang++)
     endif()
 
     _cmake_find_compiler(CXX)
@@ -78,10 +70,26 @@ else()
   # Each entry in this list is a set of extra flags to try
   # adding to the compile line to see if it helps produce
   # a valid identification file.
+  set(CMAKE_CXX_COMPILER_ID_TEST_FLAGS_FIRST)
   set(CMAKE_CXX_COMPILER_ID_TEST_FLAGS
     # Try compiling to an object file only.
     "-c"
+    # IAR does not detect language automatically
+    "--c++"
+    "--ec++"
+
+    # ARMClang need target options
+    "--target=arm-arm-none-eabi -mcpu=cortex-m3"
+
+    # MSVC needs at least one include directory for __has_include to function,
+    # but custom toolchains may run MSVC with no INCLUDE env var and no -I flags.
+    # Also avoid linking so this works with no LIB env var.
+    "-c -I__does_not_exist__"
     )
+endif()
+
+if(CMAKE_CXX_COMPILER_TARGET)
+  set(CMAKE_CXX_COMPILER_ID_TEST_FLAGS_FIRST "-c --target=${CMAKE_CXX_COMPILER_TARGET}")
 endif()
 
 # Build a small source file to identify the compiler.
@@ -90,26 +98,49 @@ if(NOT CMAKE_CXX_COMPILER_ID_RUN)
 
   # Try to identify the compiler.
   set(CMAKE_CXX_COMPILER_ID)
+  set(CMAKE_CXX_PLATFORM_ID)
   file(READ ${CMAKE_ROOT}/Modules/CMakePlatformId.h.in
     CMAKE_CXX_COMPILER_ID_PLATFORM_CONTENT)
 
   # The IAR compiler produces weird output.
-  # See http://www.cmake.org/Bug/view.php?id=10176#c19598
+  # See https://gitlab.kitware.com/cmake/cmake/-/issues/10176#note_153591
   list(APPEND CMAKE_CXX_COMPILER_ID_VENDORS IAR)
   set(CMAKE_CXX_COMPILER_ID_VENDOR_FLAGS_IAR )
   set(CMAKE_CXX_COMPILER_ID_VENDOR_REGEX_IAR "IAR .+ Compiler")
 
+  # Match the link line from xcodebuild output of the form
+  #  Ld ...
+  #      ...
+  #      /path/to/cc ...CompilerIdCXX/...
+  # to extract the compiler front-end for the language.
+  set(CMAKE_CXX_COMPILER_ID_TOOL_MATCH_REGEX "\nLd[^\n]*(\n[ \t]+[^\n]*)*\n[ \t]+([^ \t\r\n]+)[^\r\n]*-o[^\r\n]*CompilerIdCXX/(\\./)?(CompilerIdCXX.(framework|xctest|build/[^ \t\r\n]+)/)?CompilerIdCXX[ \t\n\\\"]")
+  set(CMAKE_CXX_COMPILER_ID_TOOL_MATCH_INDEX 2)
+
   include(${CMAKE_ROOT}/Modules/CMakeDetermineCompilerId.cmake)
   CMAKE_DETERMINE_COMPILER_ID(CXX CXXFLAGS CMakeCXXCompilerId.cpp)
 
+  _cmake_find_compiler_sysroot(CXX)
+
   # Set old compiler and platform id variables.
-  if("${CMAKE_CXX_COMPILER_ID}" MATCHES "GNU")
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     set(CMAKE_COMPILER_IS_GNUCXX 1)
   endif()
-  if("${CMAKE_CXX_PLATFORM_ID}" MATCHES "MinGW")
-    set(CMAKE_COMPILER_IS_MINGW 1)
-  elseif("${CMAKE_CXX_PLATFORM_ID}" MATCHES "Cygwin")
-    set(CMAKE_COMPILER_IS_CYGWIN 1)
+else()
+  if(NOT DEFINED CMAKE_CXX_COMPILER_FRONTEND_VARIANT)
+    # Some toolchain files set our internal CMAKE_CXX_COMPILER_ID_RUN
+    # variable but are not aware of CMAKE_CXX_COMPILER_FRONTEND_VARIANT.
+    # They pre-date our support for the GNU-like variant targeting the
+    # MSVC ABI so we do not consider that here.
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang"
+      OR "x${CMAKE_CXX_COMPILER_ID}" STREQUAL "xIntelLLVM")
+      if("x${CMAKE_CXX_SIMULATE_ID}" STREQUAL "xMSVC")
+        set(CMAKE_CXX_COMPILER_FRONTEND_VARIANT "MSVC")
+      else()
+        set(CMAKE_CXX_COMPILER_FRONTEND_VARIANT "GNU")
+      endif()
+    else()
+      set(CMAKE_CXX_COMPILER_FRONTEND_VARIANT "")
+    endif()
   endif()
 endif()
 
@@ -126,18 +157,20 @@ endif ()
 # "arm-unknown-nto-qnx6" instead of the correct "arm-unknown-nto-qnx6.3.0-"
 
 
-if (CMAKE_CROSSCOMPILING  AND NOT  _CMAKE_TOOLCHAIN_PREFIX)
+if (NOT _CMAKE_TOOLCHAIN_PREFIX)
 
-  if("${CMAKE_CXX_COMPILER_ID}" MATCHES "GNU" OR "${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
+  if("${CMAKE_CXX_COMPILER_ID}" MATCHES "GNU|Clang|QCC|LCC")
     get_filename_component(COMPILER_BASENAME "${CMAKE_CXX_COMPILER}" NAME)
-    if (COMPILER_BASENAME MATCHES "^(.+-)(clan)?[gc]\\+\\+(-[0-9]+\\.[0-9]+\\.[0-9]+)?(\\.exe)?$")
+    if (COMPILER_BASENAME MATCHES "^(.+-)?(clang\\+\\+|[gc]\\+\\+|clang-cl)(-[0-9]+(\\.[0-9]+)*)?(-[^.]+)?(\\.exe)?$")
       set(_CMAKE_TOOLCHAIN_PREFIX ${CMAKE_MATCH_1})
+      set(_CMAKE_TOOLCHAIN_SUFFIX ${CMAKE_MATCH_3})
+      set(_CMAKE_COMPILER_SUFFIX ${CMAKE_MATCH_5})
     elseif("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
       if(CMAKE_CXX_COMPILER_TARGET)
         set(_CMAKE_TOOLCHAIN_PREFIX ${CMAKE_CXX_COMPILER_TARGET}-)
       endif()
     elseif(COMPILER_BASENAME MATCHES "QCC(\\.exe)?$")
-      if(CMAKE_CXX_COMPILER_TARGET MATCHES "gcc_nto([^_le]+)(le)?.*$")
+      if(CMAKE_CXX_COMPILER_TARGET MATCHES "gcc_nto([a-z0-9]+_[0-9]+|[^_le]+)(le)")
         set(_CMAKE_TOOLCHAIN_PREFIX nto${CMAKE_MATCH_1}-)
       endif()
     endif ()
@@ -159,11 +192,34 @@ if (CMAKE_CROSSCOMPILING  AND NOT  _CMAKE_TOOLCHAIN_PREFIX)
 
 endif ()
 
+set(_CMAKE_PROCESSING_LANGUAGE "CXX")
 include(CMakeFindBinUtils)
+include(Compiler/${CMAKE_CXX_COMPILER_ID}-FindBinUtils OPTIONAL)
+unset(_CMAKE_PROCESSING_LANGUAGE)
+
+if(CMAKE_CXX_COMPILER_SYSROOT)
+  string(CONCAT _SET_CMAKE_CXX_COMPILER_SYSROOT
+    "set(CMAKE_CXX_COMPILER_SYSROOT \"${CMAKE_CXX_COMPILER_SYSROOT}\")\n"
+    "set(CMAKE_COMPILER_SYSROOT \"${CMAKE_CXX_COMPILER_SYSROOT}\")")
+else()
+  set(_SET_CMAKE_CXX_COMPILER_SYSROOT "")
+endif()
+
+if(CMAKE_CXX_COMPILER_ARCHITECTURE_ID)
+  set(_SET_CMAKE_CXX_COMPILER_ARCHITECTURE_ID
+    "set(CMAKE_CXX_COMPILER_ARCHITECTURE_ID ${CMAKE_CXX_COMPILER_ARCHITECTURE_ID})")
+else()
+  set(_SET_CMAKE_CXX_COMPILER_ARCHITECTURE_ID "")
+endif()
+
 if(MSVC_CXX_ARCHITECTURE_ID)
-  include(${CMAKE_ROOT}/Modules/CMakeClDeps.cmake)
   set(SET_MSVC_CXX_ARCHITECTURE_ID
     "set(MSVC_CXX_ARCHITECTURE_ID ${MSVC_CXX_ARCHITECTURE_ID})")
+endif()
+
+if(CMAKE_CXX_XCODE_ARCHS)
+  set(SET_CMAKE_XCODE_ARCHS
+    "set(CMAKE_XCODE_ARCHS \"${CMAKE_CXX_XCODE_ARCHS}\")")
 endif()
 
 # configure all variables set in this file

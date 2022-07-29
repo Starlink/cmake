@@ -1,4 +1,11 @@
+# Using 2.8 will trigger a deprecation warning.  In this case it's explicitly
+# intentional since the tests checks various policy implementations prior to
+# 2.8.12
 cmake_minimum_required(VERSION 2.8)
+
+if(POLICY CMP0129)
+  cmake_policy(SET CMP0129 NEW)
+endif()
 
 project(target_link_libraries)
 
@@ -130,3 +137,21 @@ target_link_libraries(newsignature1 PRIVATE depC INTERFACE depD PUBLIC depB PRIV
 
 assert_property(newsignature1 INTERFACE_LINK_LIBRARIES "depD;depB")
 assert_property(newsignature1 LINK_LIBRARIES "depC;depB;subdirlib")
+
+#----------------------------------------------------------------------------
+# Test cross-directory linking.
+cmake_policy(PUSH)
+cmake_policy(SET CMP0022 NEW)
+cmake_policy(SET CMP0079 NEW)
+add_executable(TopDir TopDir.c)
+add_library(TopDirInterface INTERFACE)
+target_link_libraries(TopDir PRIVATE TopDirInterface)
+add_subdirectory(SubDirA)
+add_subdirectory(SubDirB)
+target_link_libraries(SubDirB TopDirImported)
+add_subdirectory(SubDirC)
+target_link_libraries(SubDirC PRIVATE SubDirC2)
+target_link_libraries(TopDir SubDirC)
+add_library(TopDirImported IMPORTED INTERFACE)
+target_compile_definitions(TopDirImported INTERFACE DEF_TopDirImported)
+cmake_policy(POP)

@@ -1,208 +1,163 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
-
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
-
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmExportLibraryDependenciesCommand.h"
+
+#include <map>
+#include <utility>
+
+#include <cm/memory>
+
+#include "cmsys/FStream.hxx"
+
+#include "cmExecutionStatus.h"
+#include "cmGeneratedFileStream.h"
 #include "cmGlobalGenerator.h"
 #include "cmLocalGenerator.h"
-#include "cmGeneratedFileStream.h"
+#include "cmMakefile.h"
+#include "cmStateTypes.h"
+#include "cmStringAlgorithms.h"
+#include "cmSystemTools.h"
+#include "cmTarget.h"
+#include "cmTargetLinkLibraryType.h"
+#include "cmValue.h"
 #include "cmake.h"
-#include "cmVersion.h"
 
-#include <cmsys/auto_ptr.hxx>
+class cmListFileBacktrace;
 
-bool cmExportLibraryDependenciesCommand
-::InitialPass(std::vector<std::string> const& args, cmExecutionStatus &)
-{
-  if(this->Disallowed(cmPolicies::CMP0033,
-      "The export_library_dependencies command should not be called; "
-      "see CMP0033."))
-    { return true; }
-  if(args.size() < 1 )
-    {
-    this->SetError("called with incorrect number of arguments");
-    return false;
-    }
-
-  // store the arguments for the final pass
-  this->Filename = args[0];
-  this->Append = false;
-  if(args.size() > 1)
-    {
-    if(args[1] == "APPEND")
-      {
-      this->Append = true;
-      }
-    }
-  return true;
-}
-
-
-void cmExportLibraryDependenciesCommand::FinalPass()
-{
-  // export_library_dependencies() shouldn't modify anything
-  // ensure this by calling a const method
-  this->ConstFinalPass();
-}
-
-void cmExportLibraryDependenciesCommand::ConstFinalPass() const
+static void FinalAction(cmMakefile& makefile, std::string const& filename,
+                        bool append)
 {
   // Use copy-if-different if not appending.
-  cmsys::auto_ptr<cmsys::ofstream> foutPtr;
-  if(this->Append)
-    {
-    cmsys::auto_ptr<cmsys::ofstream> ap(
-      new cmsys::ofstream(this->Filename.c_str(), std::ios::app));
-    foutPtr = ap;
-    }
-  else
-    {
-    cmsys::auto_ptr<cmGeneratedFileStream> ap(
-      new cmGeneratedFileStream(this->Filename.c_str(), true));
+  std::unique_ptr<cmsys::ofstream> foutPtr;
+  if (append) {
+    const auto openmodeApp = std::ios::app;
+    foutPtr = cm::make_unique<cmsys::ofstream>(filename.c_str(), openmodeApp);
+  } else {
+    std::unique_ptr<cmGeneratedFileStream> ap(
+      new cmGeneratedFileStream(filename, true));
     ap->SetCopyIfDifferent(true);
-    foutPtr = ap;
-    }
-  std::ostream& fout = *foutPtr.get();
+    foutPtr = std::move(ap);
+  }
+  std::ostream& fout = *foutPtr;
 
-  if (!fout)
-    {
-    cmSystemTools::Error("Error Writing ", this->Filename.c_str());
+  if (!fout) {
+    cmSystemTools::Error("Error Writing " + filename);
     cmSystemTools::ReportLastSystemError("");
     return;
-    }
+  }
 
   // Collect dependency information about all library targets built in
   // the project.
-  cmake* cm = this->Makefile->GetCMakeInstance();
+  cmake* cm = makefile.GetCMakeInstance();
   cmGlobalGenerator* global = cm->GetGlobalGenerator();
-  const std::vector<cmLocalGenerator *>& locals = global->GetLocalGenerators();
-  std::map<cmStdString, cmStdString> libDepsOld;
-  std::map<cmStdString, cmStdString> libDepsNew;
-  std::map<cmStdString, cmStdString> libTypes;
-  for(std::vector<cmLocalGenerator *>::const_iterator i = locals.begin();
-      i != locals.end(); ++i)
-    {
-    const cmLocalGenerator* gen = *i;
-    const cmTargets &tgts = gen->GetMakefile()->GetTargets();
-    for(cmTargets::const_iterator l = tgts.begin();
-        l != tgts.end(); ++l)
-      {
+  const auto& locals = global->GetMakefiles();
+  std::map<std::string, std::string> libDepsOld;
+  std::map<std::string, std::string> libDepsNew;
+  std::map<std::string, std::string> libTypes;
+  for (const auto& local : locals) {
+    for (auto const& tgt : local->GetTargets()) {
       // Get the current target.
-      cmTarget const& target = l->second;
+      cmTarget const& target = tgt.second;
 
       // Skip non-library targets.
-      if(target.GetType() < cmTarget::STATIC_LIBRARY
-         || target.GetType() > cmTarget::MODULE_LIBRARY)
-        {
+      if (target.GetType() < cmStateEnums::STATIC_LIBRARY ||
+          target.GetType() > cmStateEnums::MODULE_LIBRARY) {
         continue;
-        }
+      }
 
       // Construct the dependency variable name.
-      std::string targetEntry = target.GetName();
-      targetEntry += "_LIB_DEPENDS";
+      std::string targetEntry = cmStrCat(target.GetName(), "_LIB_DEPENDS");
 
-      // Construct the dependency variable value.  It is safe to use
-      // the target GetLinkLibraries method here because this code is
-      // called at the end of configure but before generate so library
-      // dependencies have yet to be analyzed.  Therefore the value
-      // will be the direct link dependencies.
+      // Construct the dependency variable value with the direct link
+      // dependencies.
       std::string valueOld;
       std::string valueNew;
-      cmTarget::LinkLibraryVectorType const& libs = target.GetLinkLibraries();
-      for(cmTarget::LinkLibraryVectorType::const_iterator li = libs.begin();
-          li != libs.end(); ++li)
-        {
-        std::string ltVar = li->first;
-        ltVar += "_LINK_TYPE";
+      cmTarget::LinkLibraryVectorType const& libs =
+        target.GetOriginalLinkLibraries();
+      for (cmTarget::LibraryID const& li : libs) {
+        std::string ltVar = cmStrCat(li.first, "_LINK_TYPE");
         std::string ltValue;
-        switch(li->second)
-          {
-          case cmTarget::GENERAL:
+        switch (li.second) {
+          case GENERAL_LibraryType:
             valueNew += "general;";
             ltValue = "general";
             break;
-          case cmTarget::DEBUG:
+          case DEBUG_LibraryType:
             valueNew += "debug;";
             ltValue = "debug";
             break;
-          case cmTarget::OPTIMIZED:
+          case OPTIMIZED_LibraryType:
             valueNew += "optimized;";
             ltValue = "optimized";
             break;
-          }
-        std::string lib = li->first;
-        if(cmTarget* libtgt = global->FindTarget(0, lib.c_str()))
-          {
+        }
+        std::string lib = li.first;
+        if (cmTarget* libtgt = global->FindTarget(lib)) {
           // Handle simple output name changes.  This command is
           // deprecated so we do not support full target name
           // translation (which requires per-configuration info).
-          if(const char* outname = libtgt->GetProperty("OUTPUT_NAME"))
-            {
-            lib = outname;
-            }
+          if (cmValue outname = libtgt->GetProperty("OUTPUT_NAME")) {
+            lib = *outname;
           }
+        }
         valueOld += lib;
         valueOld += ";";
         valueNew += lib;
         valueNew += ";";
 
         std::string& ltEntry = libTypes[ltVar];
-        if(ltEntry.empty())
-          {
+        if (ltEntry.empty()) {
           ltEntry = ltValue;
-          }
-        else if(ltEntry != ltValue)
-          {
+        } else if (ltEntry != ltValue) {
           ltEntry = "general";
-          }
         }
+      }
       libDepsNew[targetEntry] = valueNew;
       libDepsOld[targetEntry] = valueOld;
-      }
     }
+  }
 
   // Generate dependency information for both old and new style CMake
   // versions.
   const char* vertest =
     "\"${CMAKE_MAJOR_VERSION}.${CMAKE_MINOR_VERSION}\" GREATER 2.4";
-  fout << "# Generated by CMake " <<  cmVersion::GetCMakeVersion() << "\n\n";
+  fout << "# Generated by CMake\n\n";
   fout << "if(" << vertest << ")\n";
   fout << "  # Information for CMake 2.6 and above.\n";
-  for(std::map<cmStdString, cmStdString>::const_iterator
-        i = libDepsNew.begin();
-      i != libDepsNew.end(); ++i)
-    {
-    if(!i->second.empty())
-      {
-      fout << "  set(\"" << i->first << "\" \"" << i->second << "\")\n";
-      }
+  for (auto const& i : libDepsNew) {
+    if (!i.second.empty()) {
+      fout << "  set(\"" << i.first << "\" \"" << i.second << "\")\n";
     }
+  }
   fout << "else()\n";
   fout << "  # Information for CMake 2.4 and lower.\n";
-  for(std::map<cmStdString, cmStdString>::const_iterator
-        i = libDepsOld.begin();
-      i != libDepsOld.end(); ++i)
-    {
-    if(!i->second.empty())
-      {
-      fout << "  set(\"" << i->first << "\" \"" << i->second << "\")\n";
-      }
+  for (auto const& i : libDepsOld) {
+    if (!i.second.empty()) {
+      fout << "  set(\"" << i.first << "\" \"" << i.second << "\")\n";
     }
-  for(std::map<cmStdString, cmStdString>::const_iterator i = libTypes.begin();
-      i != libTypes.end(); ++i)
-    {
-    if(i->second != "general")
-      {
-      fout << "  set(\"" << i->first << "\" \"" << i->second << "\")\n";
-      }
+  }
+  for (auto const& i : libTypes) {
+    if (i.second != "general") {
+      fout << "  set(\"" << i.first << "\" \"" << i.second << "\")\n";
     }
+  }
   fout << "endif()\n";
-  return;
+}
+
+bool cmExportLibraryDependenciesCommand(std::vector<std::string> const& args,
+                                        cmExecutionStatus& status)
+{
+  if (args.empty()) {
+    status.SetError("called with incorrect number of arguments");
+    return false;
+  }
+
+  std::string const& filename = args[0];
+  bool const append = args.size() > 1 && args[1] == "APPEND";
+  status.GetMakefile().AddGeneratorAction(
+    [filename, append](cmLocalGenerator& lg, const cmListFileBacktrace&) {
+      FinalAction(*lg.GetMakefile(), filename, append);
+    });
+
+  return true;
 }

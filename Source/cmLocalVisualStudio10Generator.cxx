@@ -1,68 +1,65 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
-
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
-
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmLocalVisualStudio10Generator.h"
-#include "cmTarget.h"
-#include "cmMakefile.h"
-#include "cmVisualStudio10TargetGenerator.h"
+
+#include <cm3p/expat.h>
+
+#include "cmGlobalGenerator.h"
 #include "cmGlobalVisualStudio10Generator.h"
-#include <cm_expat.h>
+#include "cmGlobalVisualStudioGenerator.h"
+#include "cmStateTypes.h"
+#include "cmStringAlgorithms.h"
+#include "cmVisualStudio10TargetGenerator.h"
 #include "cmXMLParser.h"
+#include "cmake.h"
+
+class cmGeneratorTarget;
+
 class cmVS10XMLParser : public cmXMLParser
 {
-  public:
-  virtual void EndElement(const char* /* name */)
-    {
-    }
+public:
+  virtual void EndElement(const std::string& /* name */) {}
   virtual void CharacterDataHandler(const char* data, int length)
-    {
-      if(this->DoGUID )
-        {
-        this->GUID.assign(data+1, length-2);
-        this->DoGUID = false;
-        }
-    }
-  virtual void StartElement(const char* name, const char**)
-    {
-      // once the GUID is found do nothing
-      if(this->GUID.size())
-        {
-        return;
-        }
-      if(strcmp("ProjectGUID", name) == 0 || strcmp("ProjectGuid", name) == 0)
-        {
-        this->DoGUID = true;
-        }
-    }
-  int InitializeParser()
-    {
+  {
+    if (this->DoGUID) {
+      if (data[0] == '{') {
+        // remove surrounding curly brackets
+        this->GUID.assign(data + 1, length - 2);
+      } else {
+        this->GUID.assign(data, length);
+      }
       this->DoGUID = false;
-      int ret = cmXMLParser::InitializeParser();
-      if(ret == 0)
-        {
-        return ret;
-        }
-      // visual studio projects have a strange encoding, but it is
-      // really utf-8
-      XML_SetEncoding(static_cast<XML_Parser>(this->Parser), "utf-8");
-      return 1;
     }
+  }
+  virtual void StartElement(const std::string& name, const char**)
+  {
+    // once the GUID is found do nothing
+    if (!this->GUID.empty()) {
+      return;
+    }
+    if ("ProjectGUID" == name || "ProjectGuid" == name) {
+      this->DoGUID = true;
+    }
+  }
+  int InitializeParser()
+  {
+    this->DoGUID = false;
+    int ret = cmXMLParser::InitializeParser();
+    if (ret == 0) {
+      return ret;
+    }
+    // visual studio projects have a strange encoding, but it is
+    // really utf-8
+    XML_SetEncoding(static_cast<XML_Parser>(this->Parser), "utf-8");
+    return 1;
+  }
   std::string GUID;
   bool DoGUID;
 };
 
-
-//----------------------------------------------------------------------------
-cmLocalVisualStudio10Generator::cmLocalVisualStudio10Generator(VSVersion v):
-  cmLocalVisualStudio7Generator(v)
+cmLocalVisualStudio10Generator::cmLocalVisualStudio10Generator(
+  cmGlobalGenerator* gg, cmMakefile* mf)
+  : cmLocalVisualStudio7Generator(gg, mf)
 {
 }
 
@@ -70,58 +67,37 @@ cmLocalVisualStudio10Generator::~cmLocalVisualStudio10Generator()
 {
 }
 
-void cmLocalVisualStudio10Generator::Generate()
+void cmLocalVisualStudio10Generator::GenerateTarget(cmGeneratorTarget* target)
 {
-
-  cmTargets &tgts = this->Makefile->GetTargets();
-  for(cmTargets::iterator l = tgts.begin(); l != tgts.end(); ++l)
-    {
-    if(l->second.GetType() == cmTarget::INTERFACE_LIBRARY)
-      {
-      continue;
-      }
-    if(static_cast<cmGlobalVisualStudioGenerator*>(this->GlobalGenerator)
-       ->TargetIsFortranOnly(l->second))
-      {
-      this->CreateSingleVCProj(l->first.c_str(),l->second);
-      }
-    else
-      {
-      cmVisualStudio10TargetGenerator tg(
-        &l->second, static_cast<cmGlobalVisualStudio10Generator*>(
-          this->GetGlobalGenerator()));
-      tg.Generate();
-      }
-    }
-  this->WriteStampFiles();
+  if (static_cast<cmGlobalVisualStudioGenerator*>(this->GlobalGenerator)
+        ->TargetIsFortranOnly(target)) {
+    this->cmLocalVisualStudio7Generator::GenerateTarget(target);
+  } else {
+    cmVisualStudio10TargetGenerator tg(
+      target,
+      static_cast<cmGlobalVisualStudio10Generator*>(
+        this->GetGlobalGenerator()));
+    tg.Generate();
+  }
 }
 
-
-void cmLocalVisualStudio10Generator
-::ReadAndStoreExternalGUID(const char* name,
-                           const char* path)
+void cmLocalVisualStudio10Generator::ReadAndStoreExternalGUID(
+  const std::string& name, const char* path)
 {
   cmVS10XMLParser parser;
   parser.ParseFile(path);
 
-  // if we can not find a GUID then create one
-  if(parser.GUID.empty())
-    {
-    this->GlobalGenerator->CreateGUID(name);
+  // if we can not find a GUID then we will generate one later
+  if (parser.GUID.empty()) {
     return;
-    }
+  }
 
-  std::string guidStoreName = name;
-  guidStoreName += "_GUID_CMAKE";
+  std::string guidStoreName = cmStrCat(name, "_GUID_CMAKE");
   // save the GUID in the cache
-  this->GlobalGenerator->GetCMakeInstance()->
-    AddCacheEntry(guidStoreName.c_str(),
-                  parser.GUID.c_str(),
-                  "Stored GUID",
-                  cmCacheManager::INTERNAL);
+  this->GlobalGenerator->GetCMakeInstance()->AddCacheEntry(
+    guidStoreName, parser.GUID.c_str(), "Stored GUID", cmStateEnums::INTERNAL);
 }
 
-//----------------------------------------------------------------------------
 const char* cmLocalVisualStudio10Generator::ReportErrorLabel() const
 {
   return ":VCEnd";

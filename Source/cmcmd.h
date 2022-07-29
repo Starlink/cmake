@@ -1,54 +1,43 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
+#include <memory>
+#include <string>
+#include <vector>
 
-#ifndef cmcmd_h
-#define cmcmd_h
+#include "cmsys/Status.hxx"
 
-#include "cmStandardIncludes.h"
+#include "cmCryptoHash.h"
+
+class cmConsoleBuf;
 
 class cmcmd
 {
 public:
-
   /**
    * Execute commands during the build process. Supports options such
    * as echo, remove file etc.
    */
-  static int ExecuteCMakeCommand(std::vector<std::string>&);
-protected:
+  static int ExecuteCMakeCommand(std::vector<std::string> const&,
+                                 std::unique_ptr<cmConsoleBuf> consoleBuf);
 
-  static int SymlinkLibrary(std::vector<std::string>& args);
-  static int SymlinkExecutable(std::vector<std::string>& args);
-  static bool SymlinkInternal(std::string const& file,
-                              std::string const& link);
-  static int ExecuteEchoColor(std::vector<std::string>& args);
-  static int ExecuteLinkScript(std::vector<std::string>& args);
+protected:
+  static int HandleCoCompileCommands(std::vector<std::string> const& args);
+  static int HashSumFile(std::vector<std::string> const& args,
+                         cmCryptoHash::Algo algo);
+  static int SymlinkLibrary(std::vector<std::string> const& args);
+  static int SymlinkExecutable(std::vector<std::string> const& args);
+  static cmsys::Status SymlinkInternal(std::string const& file,
+                                       std::string const& link);
+  static int ExecuteEchoColor(std::vector<std::string> const& args);
+  static int ExecuteLinkScript(std::vector<std::string> const& args);
   static int WindowsCEEnvironment(const char* version,
                                   const std::string& name);
-  static int VisualStudioLink(std::vector<std::string>& args, int type);
-  static int VisualStudioLinkIncremental(std::vector<std::string>& args,
-                                         int type,
-                                         bool verbose);
-  static int VisualStudioLinkNonIncremental(std::vector<std::string>& args,
-                                            int type,
-                                            bool hasManifest,
-                                            bool verbose);
-  static int ParseVisualStudioLinkCommand(std::vector<std::string>& args,
-                                          std::vector<cmStdString>& command,
-                                          std::string& targetName);
-  static bool RunCommand(const char* comment,
-                         std::vector<cmStdString>& command,
-                         bool verbose,
-                         int* retCodeOut = 0);
+  static int RunPreprocessor(const std::vector<std::string>& command,
+                             const std::string& intermediate_file);
+  static int RunLLVMRC(std::vector<std::string> const& args);
+  static int VisualStudioLink(std::vector<std::string> const& args, int type);
 };
-
-#endif

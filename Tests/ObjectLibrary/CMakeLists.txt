@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 2.8.12)
 project(ObjectLibrary C)
 
 add_subdirectory(A)
@@ -12,14 +12,11 @@ add_library(Cshared SHARED c.c $<TARGET_OBJECTS:A> $<TARGET_OBJECTS:Bexport>)
 add_executable(UseCshared main.c)
 set_property(TARGET UseCshared PROPERTY COMPILE_DEFINITIONS SHARED_C)
 target_link_libraries(UseCshared Cshared)
+add_custom_command(TARGET UseCshared POST_BUILD COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_BINARY_DIR}/A/a.cmake)
 
 add_executable(UseCinternal main.c c.c $<TARGET_OBJECTS:A> $<TARGET_OBJECTS:B>)
 
-if("${CMAKE_GENERATOR}" MATCHES "^Visual Studio (6|7|7 .NET 2003)$")
-  # VS 6 and 7 generators do not add objects as sources so we need a
-  # dummy object to convince the IDE to build the targets below.
-  set(dummy dummy.obj) # In MinGW: gcc -c dummy.c -o dummy.obj
-elseif("${CMAKE_GENERATOR}" MATCHES "Xcode")
+if("${CMAKE_GENERATOR}" MATCHES "Xcode")
   # Xcode does not seem to support targets without sources.
   set(dummy dummy.c)
 endif()
@@ -59,4 +56,24 @@ add_executable(UseABinternal ${dummy}
   $<TARGET_OBJECTS:ABmain> $<TARGET_OBJECTS:A> $<TARGET_OBJECTS:B>
   )
 
+# Test target-level dependencies of executable without sources.
+file(REMOVE ${CMAKE_CURRENT_BINARY_DIR}/UseABinternalDep.cmake)
+add_custom_target(UseABinternalDep COMMAND ${CMAKE_COMMAND} -E touch UseABinternalDep.cmake)
+add_custom_command(TARGET UseABinternal POST_BUILD COMMAND ${CMAKE_COMMAND} -P UseABinternalDep.cmake)
+add_dependencies(UseABinternal UseABinternalDep)
+
+# Test a static library with sources from a different static library
+add_library(UseCstaticObjs STATIC $<TARGET_OBJECTS:Cstatic> $<TARGET_OBJECTS:A> $<TARGET_OBJECTS:Bexport>)
+
+# Test a shared library with sources from a different shared library
+add_library(UseCsharedObjs SHARED $<TARGET_OBJECTS:Cshared> $<TARGET_OBJECTS:A> $<TARGET_OBJECTS:Bexport>)
+
+# Test a shared executable with sources from a different shared library
+add_executable(UseABstaticObjs $<TARGET_OBJECTS:UseABstatic>)
+target_link_libraries(UseABstaticObjs ABstatic)
+
 add_subdirectory(ExportLanguages)
+
+add_subdirectory(LinkObjects)
+
+add_subdirectory(Transitive)

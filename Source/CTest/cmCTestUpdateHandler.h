@@ -1,25 +1,14 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc.
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-
-#ifndef cmCTestUpdateHandler_h
-#define cmCTestUpdateHandler_h
-
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "cmCTestGenericHandler.h"
-#include "cmListFileCache.h"
-
-#if defined(__sgi) && !defined(__GNUC__)
-# pragma set woff 1375 /* base class destructor not virtual */
-#endif
 
 /** \class cmCTestUpdateHandler
  * \brief A class that handles ctest -S invocations
@@ -28,16 +17,17 @@
 class cmCTestUpdateHandler : public cmCTestGenericHandler
 {
 public:
-  cmTypeMacro(cmCTestUpdateHandler, cmCTestGenericHandler);
+  using Superclass = cmCTestGenericHandler;
 
   /*
    * The main entry point for this class
    */
-  int ProcessHandler();
+  int ProcessHandler() override;
 
   cmCTestUpdateHandler();
 
-  enum {
+  enum
+  {
     e_UNKNOWN = 0,
     e_CVS,
     e_SVN,
@@ -51,13 +41,16 @@ public:
   /**
    * Initialize handler
    */
-  virtual void Initialize();
+  void Initialize() override;
 
 private:
   // Some structures needed for update
-  struct StringPair :
-    public std::pair<std::string, std::string>{};
-  struct UpdateFiles : public std::vector<StringPair>{};
+  struct StringPair : public std::pair<std::string, std::string>
+  {
+  };
+  struct UpdateFiles : public std::vector<StringPair>
+  {
+  };
 
   // Determine the type of version control
   int DetermineType(const char* cmd, const char* type);
@@ -66,12 +59,6 @@ private:
   std::string UpdateCommand;
   int UpdateType;
 
-  int DetectVCS(const char* dir);
+  int DetectVCS(const std::string& dir);
   bool SelectVCS();
 };
-
-#if defined(__sgi) && !defined(__GNUC__)
-# pragma reset woff 1375 /* base class destructor not virtual */
-#endif
-
-#endif

@@ -1,24 +1,14 @@
-#.rst:
-# Qt4Macros
-# ---------
-#
-#
-#
-# This file is included by FindQt4.cmake, don't include it directly.
+# Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+# file Copyright.txt or https://cmake.org/licensing for details.
 
-#=============================================================================
-# Copyright 2005-2009 Kitware, Inc.
-#
-# Distributed under the OSI-approved BSD License (the "License");
-# see accompanying file Copyright.txt for details.
-#
-# This software is distributed WITHOUT ANY WARRANTY; without even the
-# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the License for more information.
-#=============================================================================
-# (To distribute this file outside of CMake, substitute the full
-#  License text for the above reference.)
+#[=======================================================================[.rst:
+Qt4Macros
+---------
 
+
+
+This file is included by FindQt4.cmake, don't include it directly.
+#]=======================================================================]
 
 ######################################
 #
@@ -65,8 +55,8 @@ macro (QT4_MAKE_OUTPUT_FILE infile prefix ext outfile )
   else()
     file(RELATIVE_PATH rel ${CMAKE_CURRENT_SOURCE_DIR} ${infile})
   endif()
-  if(WIN32 AND rel MATCHES "^[a-zA-Z]:") # absolute path
-    string(REGEX REPLACE "^([a-zA-Z]):(.*)$" "\\1_\\2" rel "${rel}")
+  if(WIN32 AND rel MATCHES "^([a-zA-Z]):(.*)$") # absolute path
+    set(rel "${CMAKE_MATCH_1}_${CMAKE_MATCH_2}")
   endif()
   set(_outfile "${CMAKE_CURRENT_BINARY_DIR}/${rel}")
   string(REPLACE ".." "__" _outfile ${_outfile})
@@ -135,32 +125,35 @@ function (QT4_CREATE_MOC_COMMAND infile outfile moc_flags moc_options moc_target
     set(targetincludes)
     set(targetdefines)
   else()
-    file(WRITE ${_moc_parameters_file} "${_moc_parameters}\n")
+    set(CMAKE_CONFIGURABLE_FILE_CONTENT "${_moc_parameters}")
+    configure_file("${CMAKE_ROOT}/Modules/CMakeConfigurableFile.in"
+                   "${_moc_parameters_file}" @ONLY)
   endif()
 
   set(_moc_extra_parameters_file @${_moc_parameters_file})
   add_custom_command(OUTPUT ${outfile}
                       COMMAND Qt4::moc ${_moc_extra_parameters_file}
-                      DEPENDS ${infile}
+                      DEPENDS ${infile} ${_moc_parameters_file}
                       ${_moc_working_dir}
                       VERBATIM)
 endfunction ()
 
 
 macro (QT4_GENERATE_MOC infile outfile )
-# get include dirs and flags
-   QT4_GET_MOC_FLAGS(moc_flags)
-   get_filename_component(abs_infile ${infile} ABSOLUTE)
-   set(_outfile "${outfile}")
-   if(NOT IS_ABSOLUTE "${outfile}")
-     set(_outfile "${CMAKE_CURRENT_BINARY_DIR}/${outfile}")
-   endif()
+  # get include dirs and flags
+  QT4_GET_MOC_FLAGS(moc_flags)
+  get_filename_component(abs_infile ${infile} ABSOLUTE)
+  set(_outfile "${outfile}")
+  if(NOT IS_ABSOLUTE "${outfile}")
+    set(_outfile "${CMAKE_CURRENT_BINARY_DIR}/${outfile}")
+  endif()
 
-   if ("x${ARGV2}" STREQUAL "xTARGET")
-      set(moc_target ${ARGV3})
-   endif()
-   QT4_CREATE_MOC_COMMAND(${abs_infile} ${_outfile} "${moc_flags}" "" "${moc_target}")
-   set_source_files_properties(${outfile} PROPERTIES SKIP_AUTOMOC TRUE)  # dont run automoc on this file
+  if (${ARGC} GREATER 3 AND "x${ARGV2}" STREQUAL "xTARGET")
+    set(moc_target ${ARGV3})
+  endif()
+  QT4_CREATE_MOC_COMMAND(${abs_infile} ${_outfile} "${moc_flags}" "" "${moc_target}")
+  set_property(SOURCE ${outfile} PROPERTY SKIP_AUTOMOC TRUE)  # don't run automoc on this file
+  set_property(SOURCE ${outfile} PROPERTY SKIP_AUTOUIC TRUE)  # don't run autouic on this file
 endmacro ()
 
 
@@ -175,6 +168,8 @@ macro (QT4_WRAP_CPP outfiles )
     get_filename_component(it ${it} ABSOLUTE)
     QT4_MAKE_OUTPUT_FILE(${it} moc_ cxx outfile)
     QT4_CREATE_MOC_COMMAND(${it} ${outfile} "${moc_flags}" "${moc_options}" "${moc_target}")
+    set_property(SOURCE ${outfile} PROPERTY SKIP_AUTOMOC TRUE)  # don't run automoc on this file
+    set_property(SOURCE ${outfile} PROPERTY SKIP_AUTOUIC TRUE)  # don't run autouic on this file
     set(${outfiles} ${${outfiles}} ${outfile})
   endforeach()
 
@@ -194,6 +189,8 @@ macro (QT4_WRAP_UI outfiles )
       COMMAND Qt4::uic
       ARGS ${ui_options} -o ${outfile} ${infile}
       MAIN_DEPENDENCY ${infile} VERBATIM)
+    set_property(SOURCE ${outfile} PROPERTY SKIP_AUTOMOC TRUE)  # don't run automoc on this file
+    set_property(SOURCE ${outfile} PROPERTY SKIP_AUTOUIC TRUE)  # don't run autouic on this file
     set(${outfiles} ${${outfiles}} ${outfile})
   endforeach ()
 
@@ -230,7 +227,7 @@ macro (QT4_ADD_RESOURCES outfiles )
       # let's make a configured file and add it as a dependency so cmake is run
       # again when dependencies need to be recomputed.
       QT4_MAKE_OUTPUT_FILE("${infile}" "" "qrc.depends" out_depends)
-      configure_file("${infile}" "${out_depends}" COPY_ONLY)
+      configure_file("${infile}" "${out_depends}" COPYONLY)
     else()
       # The .qrc file does not exist (yet). Let's add a dependency and hope
       # that it will be generated later
@@ -242,6 +239,8 @@ macro (QT4_ADD_RESOURCES outfiles )
       ARGS ${rcc_options} -name ${outfilename} -o ${outfile} ${infile}
       MAIN_DEPENDENCY ${infile}
       DEPENDS ${_RC_DEPENDS} "${out_depends}" VERBATIM)
+    set_property(SOURCE ${outfile} PROPERTY SKIP_AUTOMOC TRUE)  # don't run automoc on this file
+    set_property(SOURCE ${outfile} PROPERTY SKIP_AUTOUIC TRUE)  # don't run autouic on this file
     set(${outfiles} ${${outfiles}} ${outfile})
   endforeach ()
 
@@ -254,19 +253,19 @@ macro(QT4_ADD_DBUS_INTERFACE _sources _interface _basename)
   set(_impl   "${CMAKE_CURRENT_BINARY_DIR}/${_basename}.cpp")
   set(_moc    "${CMAKE_CURRENT_BINARY_DIR}/${_basename}.moc")
 
-  get_source_file_property(_nonamespace ${_interface} NO_NAMESPACE)
+  get_property(_nonamespace SOURCE ${_interface} PROPERTY NO_NAMESPACE)
   if(_nonamespace)
     set(_params -N -m)
   else()
     set(_params -m)
   endif()
 
-  get_source_file_property(_classname ${_interface} CLASSNAME)
+  get_property(_classname SOURCE ${_interface} PROPERTY CLASSNAME)
   if(_classname)
     set(_params ${_params} -c ${_classname})
   endif()
 
-  get_source_file_property(_include ${_interface} INCLUDE)
+  get_property(_include SOURCE ${_interface} PROPERTY INCLUDE)
   if(_include)
     set(_params ${_params} -i ${_include})
   endif()
@@ -275,7 +274,8 @@ macro(QT4_ADD_DBUS_INTERFACE _sources _interface _basename)
       COMMAND Qt4::qdbusxml2cpp ${_params} -p ${_basename} ${_infile}
       DEPENDS ${_infile} VERBATIM)
 
-  set_source_files_properties("${_impl}" PROPERTIES SKIP_AUTOMOC TRUE)
+  set_property(SOURCE ${_impl} PROPERTY SKIP_AUTOMOC TRUE)  # don't run automoc on this file
+  set_property(SOURCE ${_impl} PROPERTY SKIP_AUTOUIC TRUE)  # don't run autouic on this file
 
   QT4_GENERATE_MOC("${_header}" "${_moc}")
 
@@ -327,7 +327,10 @@ endmacro()
 macro(QT4_ADD_DBUS_ADAPTOR _sources _xml_file _include _parentClass) # _optionalBasename _optionalClassName)
   get_filename_component(_infile ${_xml_file} ABSOLUTE)
 
-  set(_optionalBasename "${ARGV4}")
+  unset(_optionalBasename)
+  if(${ARGC} GREATER 4)
+    set(_optionalBasename "${ARGV4}")
+  endif()
   if (_optionalBasename)
     set(_basename ${_optionalBasename} )
   else ()
@@ -335,7 +338,10 @@ macro(QT4_ADD_DBUS_ADAPTOR _sources _xml_file _include _parentClass) # _optional
     string(TOLOWER ${_basename} _basename)
   endif ()
 
-  set(_optionalClassName "${ARGV5}")
+  unset(_optionalClassName)
+  if(${ARGC} GREATER 5)
+    set(_optionalClassName "${ARGV5}")
+  endif()
   set(_header "${CMAKE_CURRENT_BINARY_DIR}/${_basename}.h")
   set(_impl   "${CMAKE_CURRENT_BINARY_DIR}/${_basename}.cpp")
   set(_moc    "${CMAKE_CURRENT_BINARY_DIR}/${_basename}.moc")
@@ -353,7 +359,8 @@ macro(QT4_ADD_DBUS_ADAPTOR _sources _xml_file _include _parentClass) # _optional
   endif()
 
   QT4_GENERATE_MOC("${_header}" "${_moc}")
-  set_source_files_properties("${_impl}" PROPERTIES SKIP_AUTOMOC TRUE)
+  set_property(SOURCE ${_impl} PROPERTY SKIP_AUTOMOC TRUE)  # don't run automoc on this file
+  set_property(SOURCE ${_impl} PROPERTY SKIP_AUTOUIC TRUE)  # don't run autouic on this file
   MACRO_ADD_FILE_DEPENDENCIES("${_impl}" "${_moc}")
 
   list(APPEND ${_sources} "${_impl}" "${_header}" "${_moc}")
@@ -377,7 +384,7 @@ macro(QT4_AUTOMOC)
     # cmake is run for the very first time on them -> however the .cpp files might
     # exist at a later run. at that time we need to skip them, so that we don't add two
     # different rules for the same moc file
-    get_source_file_property(_skip ${_abs_FILE} SKIP_AUTOMOC)
+    get_property(_skip SOURCE ${_abs_FILE} PROPERTY SKIP_AUTOMOC)
 
     if ( NOT _skip AND EXISTS ${_abs_FILE} )
 
@@ -407,62 +414,64 @@ endmacro()
 
 
 macro(QT4_CREATE_TRANSLATION _qm_files)
-   QT4_EXTRACT_OPTIONS(_lupdate_files _lupdate_options _lupdate_target ${ARGN})
-   set(_my_sources)
-   set(_my_dirs)
-   set(_my_tsfiles)
-   set(_ts_pro)
-   foreach (_file ${_lupdate_files})
-     get_filename_component(_ext ${_file} EXT)
-     get_filename_component(_abs_FILE ${_file} ABSOLUTE)
-     if(_ext MATCHES "ts")
-       list(APPEND _my_tsfiles ${_abs_FILE})
-     else()
-       if(NOT _ext)
-         list(APPEND _my_dirs ${_abs_FILE})
-       else()
-         list(APPEND _my_sources ${_abs_FILE})
-       endif()
-     endif()
-   endforeach()
-   foreach(_ts_file ${_my_tsfiles})
-     if(_my_sources)
-       # make a .pro file to call lupdate on, so we don't make our commands too
-       # long for some systems
-       get_filename_component(_ts_name ${_ts_file} NAME_WE)
-       set(_ts_pro ${CMAKE_CURRENT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/${_ts_name}_lupdate.pro)
-       set(_pro_srcs)
-       foreach(_pro_src ${_my_sources})
-         set(_pro_srcs "${_pro_srcs} \\\n  \"${_pro_src}\"")
-       endforeach()
-       set(_pro_includes)
-       get_directory_property(_inc_DIRS INCLUDE_DIRECTORIES)
-       list(REMOVE_DUPLICATES _inc_DIRS)
-       foreach(_pro_include ${_inc_DIRS})
-         get_filename_component(_abs_include "${_pro_include}" ABSOLUTE)
-         set(_pro_includes "${_pro_includes} \\\n  \"${_abs_include}\"")
-       endforeach()
-       file(WRITE ${_ts_pro} "SOURCES =${_pro_srcs}\nINCLUDEPATH =${_pro_includes}\n")
-     endif()
-     add_custom_command(OUTPUT ${_ts_file}
+  QT4_EXTRACT_OPTIONS(_lupdate_files _lupdate_options _lupdate_target ${ARGN})
+  set(_my_sources)
+  set(_my_dirs)
+  set(_my_tsfiles)
+  set(_ts_pro)
+  foreach (_file ${_lupdate_files})
+    get_filename_component(_ext ${_file} EXT)
+    get_filename_component(_abs_FILE ${_file} ABSOLUTE)
+    if(_ext MATCHES "ts")
+      list(APPEND _my_tsfiles ${_abs_FILE})
+    else()
+      if(NOT _ext)
+        list(APPEND _my_dirs ${_abs_FILE})
+      else()
+        list(APPEND _my_sources ${_abs_FILE})
+      endif()
+    endif()
+  endforeach()
+  foreach(_ts_file ${_my_tsfiles})
+    if(_my_sources)
+      # make a .pro file to call lupdate on, so we don't make our commands too
+      # long for some systems
+      get_filename_component(_ts_name ${_ts_file} NAME)
+      set(_ts_pro ${CMAKE_CURRENT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/${_ts_name}_lupdate.pro)
+      set(_pro_srcs)
+      foreach(_pro_src ${_my_sources})
+        string(APPEND _pro_srcs " \\\n  \"${_pro_src}\"")
+      endforeach()
+      set(_pro_includes)
+      get_directory_property(_inc_DIRS INCLUDE_DIRECTORIES)
+      list(REMOVE_DUPLICATES _inc_DIRS)
+      foreach(_pro_include ${_inc_DIRS})
+        get_filename_component(_abs_include "${_pro_include}" ABSOLUTE)
+        string(APPEND _pro_includes " \\\n  \"${_abs_include}\"")
+      endforeach()
+      file(GENERATE OUTPUT ${_ts_pro} CONTENT "SOURCES =${_pro_srcs}\nINCLUDEPATH =${_pro_includes}\n")
+    endif()
+    add_custom_command(OUTPUT ${_ts_file}
         COMMAND Qt4::lupdate
         ARGS ${_lupdate_options} ${_ts_pro} ${_my_dirs} -ts ${_ts_file}
         DEPENDS ${_my_sources} ${_ts_pro} VERBATIM)
-   endforeach()
-   QT4_ADD_TRANSLATION(${_qm_files} ${_my_tsfiles})
+  endforeach()
+  QT4_ADD_TRANSLATION(${_qm_files} ${_my_tsfiles})
 endmacro()
 
 
 macro(QT4_ADD_TRANSLATION _qm_files)
   foreach (_current_FILE ${ARGN})
     get_filename_component(_abs_FILE ${_current_FILE} ABSOLUTE)
-    get_filename_component(qm ${_abs_FILE} NAME_WE)
+    get_filename_component(qm ${_abs_FILE} NAME)
+    # everything before the last dot has to be considered the file name (including other dots)
+    string(REGEX REPLACE "\\.[^.]*$" "" FILE_NAME ${qm})
     get_source_file_property(output_location ${_abs_FILE} OUTPUT_LOCATION)
     if(output_location)
       file(MAKE_DIRECTORY "${output_location}")
-      set(qm "${output_location}/${qm}.qm")
+      set(qm "${output_location}/${FILE_NAME}.qm")
     else()
-      set(qm "${CMAKE_CURRENT_BINARY_DIR}/${qm}.qm")
+      set(qm "${CMAKE_CURRENT_BINARY_DIR}/${FILE_NAME}.qm")
     endif()
 
     add_custom_command(OUTPUT ${qm}

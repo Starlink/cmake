@@ -1,421 +1,325 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
-
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
-
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmCTestTestHandler.h"
-#include "cmCTestMultiProcessHandler.h"
-#include "cmCTestBatchTestHandler.h"
-#include "cmCTest.h"
-#include "cmCTestRunTest.h"
-#include "cmake.h"
-#include "cmGeneratedFileStream.h"
-#include <cmsys/Process.h>
-#include <cmsys/RegularExpression.hxx>
+
+#include <algorithm>
+#include <chrono>
+#include <cmath>
+#include <cstddef> // IWYU pragma: keep
+#include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <ctime>
+#include <functional>
+#include <iomanip>
+#include <iterator>
+#include <set>
+#include <sstream>
+#include <utility>
+
+#include <cm/memory>
+#include <cm/string_view>
+#include <cmext/algorithm>
+#include <cmext/string_view>
+
+#include "cmsys/FStream.hxx"
 #include <cmsys/Base64.h>
 #include <cmsys/Directory.hxx>
-#include <cmsys/FStream.hxx>
-#include "cmMakefile.h"
-#include "cmGlobalGenerator.h"
-#include "cmLocalGenerator.h"
-#include "cmCommand.h"
-#include "cmSystemTools.h"
-#include "cmXMLSafe.h"
+#include <cmsys/RegularExpression.hxx>
+
 #include "cm_utf8.h"
 
-#include <stdlib.h>
-#include <math.h>
-#include <float.h>
+#include "cmCTest.h"
+#include "cmCTestMultiProcessHandler.h"
+#include "cmCTestResourceGroupsLexerHelper.h"
+#include "cmCTestTestMeasurementXMLParser.h"
+#include "cmDuration.h"
+#include "cmExecutionStatus.h"
+#include "cmGeneratedFileStream.h"
+#include "cmGlobalGenerator.h"
+#include "cmMakefile.h"
+#include "cmState.h"
+#include "cmStateSnapshot.h"
+#include "cmStringAlgorithms.h"
+#include "cmSystemTools.h"
+#include "cmTimestamp.h"
+#include "cmValue.h"
+#include "cmWorkingDirectory.h"
+#include "cmXMLWriter.h"
+#include "cmake.h"
 
-#include <set>
+namespace {
 
-//----------------------------------------------------------------------
-class cmCTestSubdirCommand : public cmCommand
+class cmCTestCommand
 {
 public:
-  /**
-   * This is a virtual constructor for the command.
-   */
-  virtual cmCommand* Clone()
-    {
-    cmCTestSubdirCommand* c = new cmCTestSubdirCommand;
-    c->TestHandler = this->TestHandler;
-    return c;
+  cmCTestCommand(cmCTestTestHandler* testHandler)
+    : TestHandler(testHandler)
+  {
+  }
+
+  virtual ~cmCTestCommand() = default;
+  cmCTestCommand(const cmCTestCommand&) = default;
+  cmCTestCommand& operator=(const cmCTestCommand&) = default;
+
+  bool operator()(std::vector<cmListFileArgument> const& args,
+                  cmExecutionStatus& status)
+  {
+    cmMakefile& mf = status.GetMakefile();
+    std::vector<std::string> expandedArguments;
+    if (!mf.ExpandArguments(args, expandedArguments)) {
+      // There was an error expanding arguments.  It was already
+      // reported, so we can skip this command without error.
+      return true;
     }
+    return this->InitialPass(expandedArguments, status);
+  }
 
-  /**
-   * This is called when the command is first encountered in
-   * the CMakeLists.txt file.
-   */
   virtual bool InitialPass(std::vector<std::string> const& args,
-                           cmExecutionStatus &);
-
-  /**
-   * The name of the command as specified in CMakeList.txt.
-   */
-  virtual const char* GetName() const { return "subdirs";}
-
-  cmTypeMacro(cmCTestSubdirCommand, cmCommand);
+                           cmExecutionStatus& status) = 0;
 
   cmCTestTestHandler* TestHandler;
 };
 
-//----------------------------------------------------------------------
-bool cmCTestSubdirCommand
-::InitialPass(std::vector<std::string> const& args, cmExecutionStatus &)
+bool ReadSubdirectory(std::string fname, cmExecutionStatus& status)
 {
-  if(args.size() < 1 )
-    {
-    this->SetError("called with incorrect number of arguments");
-    return false;
-    }
-  std::vector<std::string>::const_iterator it;
-  std::string cwd = cmSystemTools::GetCurrentWorkingDirectory();
-  for ( it = args.begin(); it != args.end(); ++ it )
-    {
-    std::string fname;
-
-    if(cmSystemTools::FileIsFullPath(it->c_str()))
-      {
-      fname = *it;
-      }
-    else
-      {
-      fname = cwd;
-      fname += "/";
-      fname += *it;
-      }
-
-    if ( !cmSystemTools::FileIsDirectory(fname.c_str()) )
-      {
-      // No subdirectory? So what...
-      continue;
-      }
-    cmSystemTools::ChangeDirectory(fname.c_str());
-    const char* testFilename;
-    if( cmSystemTools::FileExists("CTestTestfile.cmake") )
-      {
-      // does the CTestTestfile.cmake exist ?
-      testFilename = "CTestTestfile.cmake";
-      }
-    else if( cmSystemTools::FileExists("DartTestfile.txt") )
-      {
-      // does the DartTestfile.txt exist ?
-      testFilename = "DartTestfile.txt";
-      }
-    else
-      {
-      // No CTestTestfile? Who cares...
-      continue;
-      }
-    fname += "/";
-    fname += testFilename;
-    bool readit =
-      this->Makefile->ReadListFile(this->Makefile->GetCurrentListFile(),
-                                   fname.c_str());
-    cmSystemTools::ChangeDirectory(cwd.c_str());
-    if(!readit)
-      {
-      std::string m = "Could not find include file: ";
-      m += fname;
-      this->SetError(m.c_str());
-      return false;
-      }
-    }
-  cmSystemTools::ChangeDirectory(cwd.c_str());
-  return true;
-}
-
-//----------------------------------------------------------------------
-class cmCTestAddSubdirectoryCommand : public cmCommand
-{
-public:
-  /**
-   * This is a virtual constructor for the command.
-   */
-  virtual cmCommand* Clone()
-    {
-    cmCTestAddSubdirectoryCommand* c = new cmCTestAddSubdirectoryCommand;
-    c->TestHandler = this->TestHandler;
-    return c;
-    }
-
-  /**
-   * This is called when the command is first encountered in
-   * the CMakeLists.txt file.
-   */
-  virtual bool InitialPass(std::vector<std::string> const& args,
-                           cmExecutionStatus &);
-
-  /**
-   * The name of the command as specified in CMakeList.txt.
-   */
-  virtual const char* GetName() const { return "add_subdirectory";}
-
-  cmTypeMacro(cmCTestAddSubdirectoryCommand, cmCommand);
-
-  cmCTestTestHandler* TestHandler;
-};
-
-//----------------------------------------------------------------------
-bool cmCTestAddSubdirectoryCommand
-::InitialPass(std::vector<std::string> const& args, cmExecutionStatus &)
-{
-  if(args.size() < 1 )
-    {
-    this->SetError("called with incorrect number of arguments");
-    return false;
-    }
-
-  std::string cwd = cmSystemTools::GetCurrentWorkingDirectory();
-  cmSystemTools::ChangeDirectory(cwd.c_str());
-  std::string fname = cwd;
-  fname += "/";
-  fname += args[1];
-
-  if ( !cmSystemTools::FileExists(fname.c_str()) )
-    {
+  if (!cmSystemTools::FileExists(fname)) {
     // No subdirectory? So what...
     return true;
+  }
+  bool readit = false;
+  {
+    cmWorkingDirectory workdir(fname);
+    if (workdir.Failed()) {
+      status.SetError("Failed to change directory to " + fname + " : " +
+                      std::strerror(workdir.GetLastResult()));
+      return false;
     }
-  cmSystemTools::ChangeDirectory(fname.c_str());
-  const char* testFilename;
-  if( cmSystemTools::FileExists("CTestTestfile.cmake") )
-    {
-    // does the CTestTestfile.cmake exist ?
-    testFilename = "CTestTestfile.cmake";
+    const char* testFilename;
+    if (cmSystemTools::FileExists("CTestTestfile.cmake")) {
+      // does the CTestTestfile.cmake exist ?
+      testFilename = "CTestTestfile.cmake";
+    } else if (cmSystemTools::FileExists("DartTestfile.txt")) {
+      // does the DartTestfile.txt exist ?
+      testFilename = "DartTestfile.txt";
+    } else {
+      // No CTestTestfile? Who cares...
+      return true;
     }
-  else if( cmSystemTools::FileExists("DartTestfile.txt") )
-    {
-    // does the DartTestfile.txt exist ?
-    testFilename = "DartTestfile.txt";
-    }
-  else
-    {
-    // No CTestTestfile? Who cares...
-    cmSystemTools::ChangeDirectory(cwd.c_str());
-    return true;
-    }
-  fname += "/";
-  fname += testFilename;
-  bool readit =
-    this->Makefile->ReadListFile(this->Makefile->GetCurrentListFile(),
-                                 fname.c_str());
-  cmSystemTools::ChangeDirectory(cwd.c_str());
-  if(!readit)
-    {
-    std::string m = "Could not find include file: ";
-    m += fname;
-    this->SetError(m.c_str());
+    fname += "/";
+    fname += testFilename;
+    readit = status.GetMakefile().ReadDependentFile(fname);
+  }
+  if (!readit) {
+    status.SetError(cmStrCat("Could not find include file: ", fname));
     return false;
-    }
+  }
   return true;
 }
 
-//----------------------------------------------------------------------
-class cmCTestAddTestCommand : public cmCommand
+bool cmCTestSubdirCommand(std::vector<std::string> const& args,
+                          cmExecutionStatus& status)
+{
+  if (args.empty()) {
+    status.SetError("called with incorrect number of arguments");
+    return false;
+  }
+  std::string cwd = cmSystemTools::GetCurrentWorkingDirectory();
+  for (std::string const& arg : args) {
+    std::string fname;
+
+    if (cmSystemTools::FileIsFullPath(arg)) {
+      fname = arg;
+    } else {
+      fname = cmStrCat(cwd, '/', arg);
+    }
+
+    if (!ReadSubdirectory(std::move(fname), status)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool cmCTestAddSubdirectoryCommand(std::vector<std::string> const& args,
+                                   cmExecutionStatus& status)
+{
+  if (args.empty()) {
+    status.SetError("called with incorrect number of arguments");
+    return false;
+  }
+
+  std::string fname =
+    cmStrCat(cmSystemTools::GetCurrentWorkingDirectory(), '/', args[0]);
+
+  return ReadSubdirectory(std::move(fname), status);
+}
+
+class cmCTestAddTestCommand : public cmCTestCommand
 {
 public:
-  /**
-   * This is a virtual constructor for the command.
-   */
-  virtual cmCommand* Clone()
-    {
-    cmCTestAddTestCommand* c = new cmCTestAddTestCommand;
-    c->TestHandler = this->TestHandler;
-    return c;
-    }
+  using cmCTestCommand::cmCTestCommand;
 
   /**
    * This is called when the command is first encountered in
    * the CMakeLists.txt file.
    */
-  virtual bool InitialPass(std::vector<std::string> const&,
-                           cmExecutionStatus &);
-
-  /**
-   * The name of the command as specified in CMakeList.txt.
-   */
-  virtual const char* GetName() const { return "add_test";}
-
-  cmTypeMacro(cmCTestAddTestCommand, cmCommand);
-
-  cmCTestTestHandler* TestHandler;
+  bool InitialPass(std::vector<std::string> const& /*args*/,
+                   cmExecutionStatus& /*unused*/) override;
 };
 
-//----------------------------------------------------------------------
-bool cmCTestAddTestCommand
-::InitialPass(std::vector<std::string> const& args, cmExecutionStatus &)
+bool cmCTestAddTestCommand::InitialPass(std::vector<std::string> const& args,
+                                        cmExecutionStatus& status)
 {
-  if ( args.size() < 2 )
-    {
-    this->SetError("called with incorrect number of arguments");
+  if (args.size() < 2) {
+    status.SetError("called with incorrect number of arguments");
     return false;
-    }
+  }
   return this->TestHandler->AddTest(args);
 }
 
-//----------------------------------------------------------------------
-class cmCTestSetTestsPropertiesCommand : public cmCommand
+class cmCTestSetTestsPropertiesCommand : public cmCTestCommand
 {
 public:
-  /**
-   * This is a virtual constructor for the command.
-   */
-  virtual cmCommand* Clone()
-    {
-    cmCTestSetTestsPropertiesCommand* c
-      = new cmCTestSetTestsPropertiesCommand;
-    c->TestHandler = this->TestHandler;
-    return c;
-    }
+  using cmCTestCommand::cmCTestCommand;
 
   /**
    * This is called when the command is first encountered in
    * the CMakeLists.txt file.
-  */
-  virtual bool InitialPass(std::vector<std::string> const&,
-                           cmExecutionStatus &);
-
-  /**
-   * The name of the command as specified in CMakeList.txt.
    */
-  virtual const char* GetName() const { return "set_tests_properties";}
-
-  cmTypeMacro(cmCTestSetTestsPropertiesCommand, cmCommand);
-
-  cmCTestTestHandler* TestHandler;
+  bool InitialPass(std::vector<std::string> const& /*args*/,
+                   cmExecutionStatus& /*unused*/) override;
 };
 
-//----------------------------------------------------------------------
-bool cmCTestSetTestsPropertiesCommand
-::InitialPass(std::vector<std::string> const& args, cmExecutionStatus &)
+bool cmCTestSetTestsPropertiesCommand::InitialPass(
+  std::vector<std::string> const& args, cmExecutionStatus& /*unused*/)
 {
   return this->TestHandler->SetTestsProperties(args);
 }
 
-//----------------------------------------------------------------------
+class cmCTestSetDirectoryPropertiesCommand : public cmCTestCommand
+{
+public:
+  using cmCTestCommand::cmCTestCommand;
+
+  /**
+   * This is called when the command is first encountered in
+   * the CMakeLists.txt file.
+   */
+  bool InitialPass(std::vector<std::string> const& /*unused*/,
+                   cmExecutionStatus& /*unused*/) override;
+};
+
+bool cmCTestSetDirectoryPropertiesCommand::InitialPass(
+  std::vector<std::string> const& args, cmExecutionStatus&)
+{
+  return this->TestHandler->SetDirectoryProperties(args);
+}
+
 // get the next number in a string with numbers separated by ,
 // pos is the start of the search and pos2 is the end of the search
 // pos becomes pos2 after a call to GetNextNumber.
 // -1 is returned at the end of the list.
-inline int GetNextNumber(std::string const& in,
-                         int& val,
+inline int GetNextNumber(std::string const& in, int& val,
                          std::string::size_type& pos,
                          std::string::size_type& pos2)
 {
   pos2 = in.find(',', pos);
-  if(pos2 != in.npos)
-    {
-    if(pos2-pos == 0)
-      {
+  if (pos2 != std::string::npos) {
+    if (pos2 - pos == 0) {
       val = -1;
-      }
-    else
-      {
-      val = atoi(in.substr(pos, pos2-pos).c_str());
-      }
-    pos = pos2+1;
+    } else {
+      val = atoi(in.substr(pos, pos2 - pos).c_str());
+    }
+    pos = pos2 + 1;
     return 1;
-    }
-  else
-    {
-    if(in.size()-pos == 0)
-      {
-       val = -1;
-      }
-    else
-      {
-      val = atoi(in.substr(pos, in.size()-pos).c_str());
-      }
-    return 0;
-    }
+  }
+  if (in.size() - pos == 0) {
+    val = -1;
+  } else {
+    val = atoi(in.substr(pos, in.size() - pos).c_str());
+  }
+  return 0;
 }
 
-//----------------------------------------------------------------------
 // get the next number in a string with numbers separated by ,
 // pos is the start of the search and pos2 is the end of the search
 // pos becomes pos2 after a call to GetNextNumber.
 // -1 is returned at the end of the list.
-inline int GetNextRealNumber(std::string const& in,
-                             double& val,
+inline int GetNextRealNumber(std::string const& in, double& val,
                              std::string::size_type& pos,
                              std::string::size_type& pos2)
 {
   pos2 = in.find(',', pos);
-  if(pos2 != in.npos)
-    {
-    if(pos2-pos == 0)
-      {
+  if (pos2 != std::string::npos) {
+    if (pos2 - pos == 0) {
       val = -1;
-      }
-    else
-      {
-      val = atof(in.substr(pos, pos2-pos).c_str());
-      }
-    pos = pos2+1;
+    } else {
+      val = atof(in.substr(pos, pos2 - pos).c_str());
+    }
+    pos = pos2 + 1;
     return 1;
-    }
-  else
-    {
-    if(in.size()-pos == 0)
-      {
-       val = -1;
-      }
-    else
-      {
-      val = atof(in.substr(pos, in.size()-pos).c_str());
-      }
-    return 0;
-    }
+  }
+  if (in.size() - pos == 0) {
+    val = -1;
+  } else {
+    val = atof(in.substr(pos, in.size() - pos).c_str());
+  }
+  return 0;
 }
 
+} // namespace
 
-//----------------------------------------------------------------------
 cmCTestTestHandler::cmCTestTestHandler()
 {
   this->UseUnion = false;
 
-  this->UseIncludeLabelRegExpFlag   = false;
-  this->UseExcludeLabelRegExpFlag   = false;
-  this->UseIncludeRegExpFlag   = false;
-  this->UseExcludeRegExpFlag   = false;
-  this->UseExcludeRegExpFirst  = false;
+  this->UseIncludeRegExpFlag = false;
+  this->UseExcludeRegExpFlag = false;
+  this->UseExcludeRegExpFirst = false;
+  this->UseResourceSpec = false;
 
   this->CustomMaximumPassedTestOutputSize = 1 * 1024;
   this->CustomMaximumFailedTestOutputSize = 300 * 1024;
 
   this->MemCheck = false;
 
-  this->LogFile = 0;
+  this->LogFile = nullptr;
 
-  // regex to detect <DartMeasurement>...</DartMeasurement>
-  this->DartStuff.compile(
-    "(<DartMeasurement.*/DartMeasurement[a-zA-Z]*>)");
-  // regex to detect each individual <DartMeasurement>...</DartMeasurement>
-  this->DartStuff1.compile(
-    "(<DartMeasurement[^<]*</DartMeasurement[a-zA-Z]*>)");
+  // Support for JUnit XML output.
+  this->JUnitXMLFileName = "";
+
+  // Regular expressions to scan test output for custom measurements.
+
+  // Capture the whole section of test output from the first opening
+  // <(CTest|Dart)Measurement*> tag to the last </(CTest|Dart)Measurement*>
+  // closing tag.
+  this->AllTestMeasurementsRegex.compile(
+    "(<(CTest|Dart)Measurement.*/(CTest|Dart)Measurement[a-zA-Z]*>)");
+
+  // Capture a single <(CTest|Dart)Measurement*> XML element.
+  this->SingleTestMeasurementRegex.compile(
+    "(<(CTest|Dart)Measurement[^<]*</(CTest|Dart)Measurement[a-zA-Z]*>)");
+
+  // Capture content from <CTestDetails>...</CTestDetails>
+  this->CustomCompletionStatusRegex.compile(
+    "<CTestDetails>(.*)</CTestDetails>");
+
+  // Capture content from <CTestLabel>...</CTestLabel>
+  this->CustomLabelRegex.compile("<CTestLabel>(.*)</CTestLabel>");
 }
 
-//----------------------------------------------------------------------
 void cmCTestTestHandler::Initialize()
 {
   this->Superclass::Initialize();
 
-  this->ElapsedTestingTime = -1;
+  this->ElapsedTestingTime = cmDuration();
 
   this->TestResults.clear();
 
   this->CustomTestsIgnore.clear();
-  this->StartTest = "";
-  this->EndTest = "";
+  this->StartTest.clear();
+  this->EndTest.clear();
 
   this->CustomPreTest.clear();
   this->CustomPostTest.clear();
@@ -424,483 +328,628 @@ void cmCTestTestHandler::Initialize()
 
   this->TestsToRun.clear();
 
-  this->UseIncludeLabelRegExpFlag = false;
-  this->UseExcludeLabelRegExpFlag = false;
   this->UseIncludeRegExpFlag = false;
   this->UseExcludeRegExpFlag = false;
   this->UseExcludeRegExpFirst = false;
-  this->IncludeLabelRegularExpression = "";
-  this->ExcludeLabelRegularExpression = "";
-  this->IncludeRegExp = "";
-  this->ExcludeRegExp = "";
+  this->IncludeLabelRegularExpressions.clear();
+  this->ExcludeLabelRegularExpressions.clear();
+  this->IncludeRegExp.clear();
+  this->ExcludeRegExp.clear();
+  this->ExcludeFixtureRegExp.clear();
+  this->ExcludeFixtureSetupRegExp.clear();
+  this->ExcludeFixtureCleanupRegExp.clear();
 
-  TestsToRunString = "";
+  this->TestsToRunString.clear();
   this->UseUnion = false;
   this->TestList.clear();
 }
 
-//----------------------------------------------------------------------
-void cmCTestTestHandler::PopulateCustomVectors(cmMakefile *mf)
+void cmCTestTestHandler::PopulateCustomVectors(cmMakefile* mf)
 {
   this->CTest->PopulateCustomVector(mf, "CTEST_CUSTOM_PRE_TEST",
-                                this->CustomPreTest);
+                                    this->CustomPreTest);
   this->CTest->PopulateCustomVector(mf, "CTEST_CUSTOM_POST_TEST",
-                                this->CustomPostTest);
-  this->CTest->PopulateCustomVector(mf,
-                             "CTEST_CUSTOM_TESTS_IGNORE",
-                             this->CustomTestsIgnore);
-  this->CTest->PopulateCustomInteger(mf,
-                             "CTEST_CUSTOM_MAXIMUM_PASSED_TEST_OUTPUT_SIZE",
-                             this->CustomMaximumPassedTestOutputSize);
-  this->CTest->PopulateCustomInteger(mf,
-                             "CTEST_CUSTOM_MAXIMUM_FAILED_TEST_OUTPUT_SIZE",
-                             this->CustomMaximumFailedTestOutputSize);
+                                    this->CustomPostTest);
+  this->CTest->PopulateCustomVector(mf, "CTEST_CUSTOM_TESTS_IGNORE",
+                                    this->CustomTestsIgnore);
+  this->CTest->PopulateCustomInteger(
+    mf, "CTEST_CUSTOM_MAXIMUM_PASSED_TEST_OUTPUT_SIZE",
+    this->CustomMaximumPassedTestOutputSize);
+  this->CTest->PopulateCustomInteger(
+    mf, "CTEST_CUSTOM_MAXIMUM_FAILED_TEST_OUTPUT_SIZE",
+    this->CustomMaximumFailedTestOutputSize);
 }
 
-//----------------------------------------------------------------------
 int cmCTestTestHandler::PreProcessHandler()
 {
-  if ( !this->ExecuteCommands(this->CustomPreTest) )
-    {
+  if (!this->ExecuteCommands(this->CustomPreTest)) {
     cmCTestLog(this->CTest, ERROR_MESSAGE,
-      "Problem executing pre-test command(s)." << std::endl);
+               "Problem executing pre-test command(s)." << std::endl);
     return 0;
-    }
+  }
   return 1;
 }
 
-//----------------------------------------------------------------------
 int cmCTestTestHandler::PostProcessHandler()
 {
-  if ( !this->ExecuteCommands(this->CustomPostTest) )
-    {
+  if (!this->ExecuteCommands(this->CustomPostTest)) {
     cmCTestLog(this->CTest, ERROR_MESSAGE,
-      "Problem executing post-test command(s)." << std::endl);
+               "Problem executing post-test command(s)." << std::endl);
     return 0;
-    }
+  }
   return 1;
 }
 
-//----------------------------------------------------------------------
-//clearly it would be nice if this were broken up into a few smaller
-//functions and commented...
 int cmCTestTestHandler::ProcessHandler()
 {
-  // Update internal data structure from generic one
-  this->SetTestsToRunInformation(this->GetOption("TestsToRunInformation"));
-  this->SetUseUnion(cmSystemTools::IsOn(this->GetOption("UseUnion")));
-  if(cmSystemTools::IsOn(this->GetOption("ScheduleRandom")))
-    {
-    this->CTest->SetScheduleType("Random");
-    }
-  if(this->GetOption("ParallelLevel"))
-    {
-    this->CTest->SetParallelLevel(atoi(this->GetOption("ParallelLevel")));
-    }
-
-  const char* val;
-  val = this->GetOption("LabelRegularExpression");
-  if ( val )
-    {
-    this->UseIncludeLabelRegExpFlag = true;
-    this->IncludeLabelRegExp = val;
-    }
-  val = this->GetOption("ExcludeLabelRegularExpression");
-  if ( val )
-    {
-    this->UseExcludeLabelRegExpFlag = true;
-    this->ExcludeLabelRegularExpression = val;
-    }
-  val = this->GetOption("IncludeRegularExpression");
-  if ( val )
-    {
-    this->UseIncludeRegExp();
-    this->SetIncludeRegExp(val);
-    }
-  val = this->GetOption("ExcludeRegularExpression");
-  if ( val )
-    {
-    this->UseExcludeRegExp();
-    this->SetExcludeRegExp(val);
-    }
-  this->SetRerunFailed(cmSystemTools::IsOn(this->GetOption("RerunFailed")));
+  if (!this->ProcessOptions()) {
+    return -1;
+  }
 
   this->TestResults.clear();
 
-  cmCTestLog(this->CTest, HANDLER_OUTPUT,
-             (this->MemCheck ? "Memory check" : "Test")
-             << " project " << cmSystemTools::GetCurrentWorkingDirectory()
-             << std::endl);
-  if ( ! this->PreProcessHandler() )
-    {
+  cmCTestOptionalLog(this->CTest, HANDLER_OUTPUT,
+                     (this->MemCheck ? "Memory check" : "Test")
+                       << " project "
+                       << cmSystemTools::GetCurrentWorkingDirectory()
+                       << std::endl,
+                     this->Quiet);
+  if (!this->PreProcessHandler()) {
     return -1;
-    }
+  }
 
   cmGeneratedFileStream mLogFile;
   this->StartLogFile((this->MemCheck ? "DynamicAnalysis" : "Test"), mLogFile);
   this->LogFile = &mLogFile;
 
-  std::vector<cmStdString> passed;
-  std::vector<cmStdString> failed;
-  int total;
+  std::vector<std::string> passed;
+  std::vector<std::string> failed;
 
-  //start the real time clock
-  double clock_start, clock_finish;
-  clock_start = cmSystemTools::GetTime();
+  // start the real time clock
+  auto clock_start = std::chrono::steady_clock::now();
 
-  this->ProcessDirectory(passed, failed);
-
-  clock_finish = cmSystemTools::GetTime();
-
-  total = int(passed.size()) + int(failed.size());
-
-  if (total == 0)
-    {
-    if ( !this->CTest->GetShowOnly() && !this->CTest->ShouldPrintLabels() )
-      {
-      cmCTestLog(this->CTest, ERROR_MESSAGE, "No tests were found!!!"
-        << std::endl);
-      }
-    }
-  else
-    {
-    if (this->HandlerVerbose && passed.size() &&
-      (this->UseIncludeRegExpFlag || this->UseExcludeRegExpFlag))
-      {
-      cmCTestLog(this->CTest, HANDLER_VERBOSE_OUTPUT, std::endl
-        << "The following tests passed:" << std::endl);
-      for(std::vector<cmStdString>::iterator j = passed.begin();
-          j != passed.end(); ++j)
-        {
-        cmCTestLog(this->CTest, HANDLER_VERBOSE_OUTPUT, "\t" << *j
-          << std::endl);
-        }
-      }
-
-    float percent = float(passed.size()) * 100.0f / float(total);
-    if ( failed.size() > 0 &&  percent > 99)
-      {
-      percent = 99;
-      }
-
-    cmCTestLog(this->CTest, HANDLER_OUTPUT, std::endl
-               << static_cast<int>(percent + .5) << "% tests passed, "
-               << failed.size() << " tests failed out of "
-               << total << std::endl);
-    if(this->CTest->GetLabelSummary())
-      {
-      this->PrintLabelSummary();
-      }
-    char realBuf[1024];
-    sprintf(realBuf, "%6.2f sec", (double)(clock_finish - clock_start));
-    cmCTestLog(this->CTest, HANDLER_OUTPUT, "\nTotal Test time (real) = "
-               << realBuf << "\n" );
-
-    if (failed.size())
-      {
-      cmGeneratedFileStream ofs;
-      cmCTestLog(this->CTest, HANDLER_OUTPUT, std::endl
-                 << "The following tests FAILED:" << std::endl);
-      this->StartLogFile("TestsFailed", ofs);
-
-      typedef std::set<cmCTestTestHandler::cmCTestTestResult,
-                       cmCTestTestResultLess> SetOfTests;
-      SetOfTests resultsSet(this->TestResults.begin(),
-                            this->TestResults.end());
-
-      for(SetOfTests::iterator ftit = resultsSet.begin();
-          ftit != resultsSet.end(); ++ftit)
-        {
-        if ( ftit->Status != cmCTestTestHandler::COMPLETED )
-          {
-          ofs << ftit->TestCount << ":" << ftit->Name << std::endl;
-          cmCTestLog(this->CTest, HANDLER_OUTPUT, "\t" << std::setw(3)
-                     << ftit->TestCount << " - "
-                     << ftit->Name.c_str() << " ("
-                     << this->GetTestStatus(ftit->Status) << ")"
-                     << std::endl);
-          }
-        }
-      }
-    }
-
-  if ( this->CTest->GetProduceXML() )
-    {
-    cmGeneratedFileStream xmlfile;
-    if( !this->StartResultingXML(
-          (this->MemCheck ? cmCTest::PartMemCheck : cmCTest::PartTest),
-        (this->MemCheck ? "DynamicAnalysis" : "Test"), xmlfile) )
-      {
-      cmCTestLog(this->CTest, ERROR_MESSAGE, "Cannot create "
-        << (this->MemCheck ? "memory check" : "testing")
-        << " XML file" << std::endl);
-      this->LogFile = 0;
-      return 1;
-      }
-    this->GenerateDartOutput(xmlfile);
-    }
-
-  if ( ! this->PostProcessHandler() )
-    {
-    this->LogFile = 0;
+  if (!this->ProcessDirectory(passed, failed)) {
     return -1;
+  }
+
+  auto clock_finish = std::chrono::steady_clock::now();
+
+  bool noTestsFoundError = false;
+  if (passed.size() + failed.size() == 0) {
+    if (!this->CTest->GetShowOnly() && !this->CTest->ShouldPrintLabels() &&
+        this->CTest->GetNoTestsMode() != cmCTest::NoTests::Ignore) {
+      cmCTestLog(this->CTest, ERROR_MESSAGE,
+                 "No tests were found!!!" << std::endl);
+      if (this->CTest->GetNoTestsMode() == cmCTest::NoTests::Error) {
+        noTestsFoundError = true;
+      }
+    }
+  } else {
+    if (this->HandlerVerbose && !passed.empty() &&
+        (this->UseIncludeRegExpFlag || this->UseExcludeRegExpFlag)) {
+      cmCTestOptionalLog(this->CTest, HANDLER_VERBOSE_OUTPUT,
+                         std::endl
+                           << "The following tests passed:" << std::endl,
+                         this->Quiet);
+      for (std::string const& j : passed) {
+        cmCTestOptionalLog(this->CTest, HANDLER_VERBOSE_OUTPUT,
+                           "\t" << j << std::endl, this->Quiet);
+      }
     }
 
-  if ( !failed.empty() )
-    {
-    this->LogFile = 0;
-    return -1;
+    SetOfTests resultsSet(this->TestResults.begin(), this->TestResults.end());
+    std::vector<cmCTestTestHandler::cmCTestTestResult> disabledTests;
+
+    for (cmCTestTestResult const& ft : resultsSet) {
+      if (cmHasLiteralPrefix(ft.CompletionStatus, "SKIP_") ||
+          ft.CompletionStatus == "Disabled") {
+        disabledTests.push_back(ft);
+      }
     }
-  this->LogFile = 0;
+
+    cmDuration durationInSecs = clock_finish - clock_start;
+    this->LogTestSummary(passed, failed, durationInSecs);
+
+    this->LogDisabledTests(disabledTests);
+
+    this->LogFailedTests(failed, resultsSet);
+  }
+
+  if (!this->GenerateXML()) {
+    return 1;
+  }
+
+  if (!this->WriteJUnitXML()) {
+    return 1;
+  }
+
+  if (!this->PostProcessHandler()) {
+    this->LogFile = nullptr;
+    return -1;
+  }
+
+  if (!failed.empty()) {
+    this->LogFile = nullptr;
+    return -1;
+  }
+
+  if (noTestsFoundError) {
+    this->LogFile = nullptr;
+    return -1;
+  }
+
+  this->LogFile = nullptr;
   return 0;
 }
 
-//----------------------------------------------------------------------
-void cmCTestTestHandler::PrintLabelSummary()
+/* Given a multi-option value `parts`, compile those parts into
+ * regular expressions in `expressions`. Skip empty values.
+ * Returns true if there were any expressions.
+ */
+static bool BuildLabelRE(const std::vector<std::string>& parts,
+                         std::vector<cmsys::RegularExpression>& expressions)
 {
-  cmCTestTestHandler::ListOfTests::iterator it = this->TestList.begin();
-  cmCTestTestHandler::TestResultsVector::iterator ri =
-    this->TestResults.begin();
-  std::map<cmStdString, double> labelTimes;
-  std::set<cmStdString> labels;
-  // initialize maps
-  std::string::size_type maxlen = 0;
-  for(; it != this->TestList.end(); ++it)
-    {
-    cmCTestTestProperties& p = *it;
-    if(p.Labels.size() != 0)
-      {
-      for(std::vector<std::string>::iterator l = p.Labels.begin();
-          l !=  p.Labels.end(); ++l)
-        {
-        if((*l).size() > maxlen)
-          {
-          maxlen = (*l).size();
-          }
-        labels.insert(*l);
-        labelTimes[*l] = 0;
-        }
-      }
+  expressions.clear();
+  for (const auto& p : parts) {
+    if (!p.empty()) {
+      expressions.emplace_back(p);
     }
-  ri = this->TestResults.begin();
-  // fill maps
-  for(; ri != this->TestResults.end(); ++ri)
-    {
-    cmCTestTestResult &result = *ri;
-    cmCTestTestProperties& p = *result.Properties;
-    if(p.Labels.size() != 0)
-      {
-      for(std::vector<std::string>::iterator l = p.Labels.begin();
-          l !=  p.Labels.end(); ++l)
-        {
-        labelTimes[*l] += result.ExecutionTime;
-        }
-      }
-    }
-  // now print times
-  if(labels.size())
-    {
-    cmCTestLog(this->CTest, HANDLER_OUTPUT, "\nLabel Time Summary:");
-    }
-  for(std::set<cmStdString>::const_iterator i = labels.begin();
-      i != labels.end(); ++i)
-    {
-    std::string label = *i;
-    label.resize(maxlen +3, ' ');
-    char buf[1024];
-    sprintf(buf, "%6.2f sec", labelTimes[*i]);
-    cmCTestLog(this->CTest, HANDLER_OUTPUT, "\n"
-               << label << " = " << buf );
-    if ( this->LogFile )
-      {
-      *this->LogFile << "\n" << *i << " = "
-                     << buf << "\n";
-      }
-    }
-  if(labels.size())
-    {
-    if(this->LogFile)
-      {
-      *this->LogFile << "\n";
-      }
-    cmCTestLog(this->CTest, HANDLER_OUTPUT, "\n");
-    }
-
+  }
+  return !expressions.empty();
 }
 
-//----------------------------------------------------------------------
+bool cmCTestTestHandler::ProcessOptions()
+{
+  // Update internal data structure from generic one
+  this->SetTestsToRunInformation(this->GetOption("TestsToRunInformation"));
+  this->SetUseUnion(cmIsOn(this->GetOption("UseUnion")));
+  if (cmIsOn(this->GetOption("ScheduleRandom"))) {
+    this->CTest->SetScheduleType("Random");
+  }
+  if (cmValue repeat = this->GetOption("Repeat")) {
+    cmsys::RegularExpression repeatRegex(
+      "^(UNTIL_FAIL|UNTIL_PASS|AFTER_TIMEOUT):([0-9]+)$");
+    if (repeatRegex.find(repeat)) {
+      std::string const& count = repeatRegex.match(2);
+      unsigned long n = 1;
+      cmStrToULong(count, &n); // regex guarantees success
+      this->RepeatCount = static_cast<int>(n);
+      if (this->RepeatCount > 1) {
+        std::string const& mode = repeatRegex.match(1);
+        if (mode == "UNTIL_FAIL") {
+          this->RepeatMode = cmCTest::Repeat::UntilFail;
+        } else if (mode == "UNTIL_PASS") {
+          this->RepeatMode = cmCTest::Repeat::UntilPass;
+        } else if (mode == "AFTER_TIMEOUT") {
+          this->RepeatMode = cmCTest::Repeat::AfterTimeout;
+        }
+      }
+    } else {
+      cmCTestLog(this->CTest, ERROR_MESSAGE,
+                 "Repeat option invalid value: " << repeat << std::endl);
+      return false;
+    }
+  }
+  if (this->GetOption("ParallelLevel")) {
+    this->CTest->SetParallelLevel(std::stoi(this->GetOption("ParallelLevel")));
+  }
+
+  if (this->GetOption("StopOnFailure")) {
+    this->CTest->SetStopOnFailure(true);
+  }
+
+  BuildLabelRE(this->GetMultiOption("LabelRegularExpression"),
+               this->IncludeLabelRegularExpressions);
+  BuildLabelRE(this->GetMultiOption("ExcludeLabelRegularExpression"),
+               this->ExcludeLabelRegularExpressions);
+  cmValue val = this->GetOption("IncludeRegularExpression");
+  if (val) {
+    this->UseIncludeRegExp();
+    this->SetIncludeRegExp(val);
+  }
+  val = this->GetOption("ExcludeRegularExpression");
+  if (val) {
+    this->UseExcludeRegExp();
+    this->SetExcludeRegExp(val);
+  }
+  val = this->GetOption("ExcludeFixtureRegularExpression");
+  if (val) {
+    this->ExcludeFixtureRegExp = *val;
+  }
+  val = this->GetOption("ExcludeFixtureSetupRegularExpression");
+  if (val) {
+    this->ExcludeFixtureSetupRegExp = *val;
+  }
+  val = this->GetOption("ExcludeFixtureCleanupRegularExpression");
+  if (val) {
+    this->ExcludeFixtureCleanupRegExp = *val;
+  }
+  val = this->GetOption("ResourceSpecFile");
+  if (val) {
+    this->ResourceSpecFile = *val;
+  }
+  this->SetRerunFailed(cmIsOn(this->GetOption("RerunFailed")));
+
+  return true;
+}
+
+void cmCTestTestHandler::LogTestSummary(const std::vector<std::string>& passed,
+                                        const std::vector<std::string>& failed,
+                                        const cmDuration& durationInSecs)
+{
+  std::size_t total = passed.size() + failed.size();
+
+  float percent = float(passed.size()) * 100.0f / float(total);
+  if (!failed.empty() && percent > 99) {
+    percent = 99;
+  }
+
+  std::string passColorCode;
+  std::string failedColorCode;
+  if (failed.empty()) {
+    passColorCode = this->CTest->GetColorCode(cmCTest::Color::GREEN);
+  } else {
+    failedColorCode = this->CTest->GetColorCode(cmCTest::Color::RED);
+  }
+  cmCTestLog(this->CTest, HANDLER_OUTPUT,
+             std::endl
+               << passColorCode << std::lround(percent) << "% tests passed"
+               << this->CTest->GetColorCode(cmCTest::Color::CLEAR_COLOR)
+               << ", " << failedColorCode << failed.size() << " tests failed"
+               << this->CTest->GetColorCode(cmCTest::Color::CLEAR_COLOR)
+               << " out of " << total << std::endl);
+  if ((!this->CTest->GetLabelsForSubprojects().empty() &&
+       this->CTest->GetSubprojectSummary())) {
+    this->PrintLabelOrSubprojectSummary(true);
+  }
+  if (this->CTest->GetLabelSummary()) {
+    this->PrintLabelOrSubprojectSummary(false);
+  }
+  char realBuf[1024];
+  snprintf(realBuf, sizeof(realBuf), "%6.2f sec", durationInSecs.count());
+  cmCTestOptionalLog(this->CTest, HANDLER_OUTPUT,
+                     "\nTotal Test time (real) = " << realBuf << "\n",
+                     this->Quiet);
+}
+
+void cmCTestTestHandler::LogDisabledTests(
+  const std::vector<cmCTestTestResult>& disabledTests)
+{
+  if (!disabledTests.empty()) {
+    cmGeneratedFileStream ofs;
+    cmCTestLog(this->CTest, HANDLER_OUTPUT,
+               std::endl
+                 << "The following tests did not run:" << std::endl);
+    this->StartLogFile("TestsDisabled", ofs);
+
+    const char* disabled_reason;
+    cmCTestLog(this->CTest, HANDLER_OUTPUT,
+               this->CTest->GetColorCode(cmCTest::Color::BLUE));
+    for (cmCTestTestResult const& dt : disabledTests) {
+      ofs << dt.TestCount << ":" << dt.Name << std::endl;
+      if (dt.CompletionStatus == "Disabled") {
+        disabled_reason = "Disabled";
+      } else {
+        disabled_reason = "Skipped";
+      }
+      cmCTestLog(this->CTest, HANDLER_OUTPUT,
+                 "\t" << std::setw(3) << dt.TestCount << " - " << dt.Name
+                      << " (" << disabled_reason << ")" << std::endl);
+    }
+    cmCTestLog(this->CTest, HANDLER_OUTPUT,
+               this->CTest->GetColorCode(cmCTest::Color::CLEAR_COLOR));
+  }
+}
+
+void cmCTestTestHandler::LogFailedTests(const std::vector<std::string>& failed,
+                                        const SetOfTests& resultsSet)
+{
+  if (!failed.empty()) {
+    cmGeneratedFileStream ofs;
+    cmCTestLog(this->CTest, HANDLER_OUTPUT,
+               std::endl
+                 << "The following tests FAILED:" << std::endl);
+    this->StartLogFile("TestsFailed", ofs);
+
+    for (cmCTestTestResult const& ft : resultsSet) {
+      if (ft.Status != cmCTestTestHandler::COMPLETED &&
+          !cmHasLiteralPrefix(ft.CompletionStatus, "SKIP_") &&
+          ft.CompletionStatus != "Disabled") {
+        ofs << ft.TestCount << ":" << ft.Name << std::endl;
+        auto testColor = cmCTest::Color::RED;
+        if (this->GetTestStatus(ft) == "Not Run") {
+          testColor = cmCTest::Color::YELLOW;
+        }
+        cmCTestLog(
+          this->CTest, HANDLER_OUTPUT,
+          "\t" << this->CTest->GetColorCode(testColor) << std::setw(3)
+               << ft.TestCount << " - " << ft.Name << " ("
+               << this->GetTestStatus(ft) << ")"
+               << this->CTest->GetColorCode(cmCTest::Color::CLEAR_COLOR)
+               << std::endl);
+      }
+    }
+  }
+}
+
+bool cmCTestTestHandler::GenerateXML()
+{
+  if (this->CTest->GetProduceXML()) {
+    cmGeneratedFileStream xmlfile;
+    if (!this->StartResultingXML(
+          (this->MemCheck ? cmCTest::PartMemCheck : cmCTest::PartTest),
+          (this->MemCheck ? "DynamicAnalysis" : "Test"), xmlfile)) {
+      cmCTestLog(this->CTest, ERROR_MESSAGE,
+                 "Cannot create "
+                   << (this->MemCheck ? "memory check" : "testing")
+                   << " XML file" << std::endl);
+      this->LogFile = nullptr;
+      return false;
+    }
+    cmXMLWriter xml(xmlfile);
+    this->GenerateCTestXML(xml);
+  }
+
+  if (this->MemCheck) {
+    cmGeneratedFileStream xmlfile;
+    if (!this->StartResultingXML(cmCTest::PartTest, "DynamicAnalysis-Test",
+                                 xmlfile)) {
+      cmCTestLog(this->CTest, ERROR_MESSAGE,
+                 "Cannot create testing XML file" << std::endl);
+      this->LogFile = nullptr;
+      return false;
+    }
+    cmXMLWriter xml(xmlfile);
+    // Explicitly call this class' `GenerateCTestXML` method to make `Test.xml`
+    // as well.
+    this->cmCTestTestHandler::GenerateCTestXML(xml);
+  }
+
+  return true;
+}
+
+void cmCTestTestHandler::PrintLabelOrSubprojectSummary(bool doSubProject)
+{
+  // collect subproject labels
+  std::vector<std::string> subprojects =
+    this->CTest->GetLabelsForSubprojects();
+  std::map<std::string, double> labelTimes;
+  std::map<std::string, int> labelCounts;
+  std::set<std::string> labels;
+  std::string::size_type maxlen = 0;
+  // initialize maps
+  for (cmCTestTestProperties& p : this->TestList) {
+    for (std::string const& l : p.Labels) {
+      // first check to see if the current label is a subproject label
+      bool isSubprojectLabel = false;
+      auto subproject = std::find(subprojects.begin(), subprojects.end(), l);
+      if (subproject != subprojects.end()) {
+        isSubprojectLabel = true;
+      }
+      // if we are doing sub projects and this label is one, then use it
+      // if we are not doing sub projects and the label is not one use it
+      if (doSubProject == isSubprojectLabel) {
+        if (l.size() > maxlen) {
+          maxlen = l.size();
+        }
+        labels.insert(l);
+        labelTimes[l] = 0;
+        labelCounts[l] = 0;
+      }
+    }
+  }
+  // fill maps
+  for (cmCTestTestResult& result : this->TestResults) {
+    cmCTestTestProperties& p = *result.Properties;
+    for (std::string const& l : p.Labels) {
+      // only use labels found in labels
+      if (cm::contains(labels, l)) {
+        labelTimes[l] +=
+          result.ExecutionTime.count() * result.Properties->Processors;
+        ++labelCounts[l];
+      }
+    }
+  }
+  // if no labels are found return and print nothing
+  if (labels.empty()) {
+    return;
+  }
+  // now print times
+  if (doSubProject) {
+    cmCTestOptionalLog(this->CTest, HANDLER_OUTPUT,
+                       "\nSubproject Time Summary:", this->Quiet);
+  } else {
+    cmCTestOptionalLog(this->CTest, HANDLER_OUTPUT,
+                       "\nLabel Time Summary:", this->Quiet);
+  }
+  for (std::string const& i : labels) {
+    std::string label = i;
+    label.resize(maxlen + 3, ' ');
+
+    char buf[1024];
+    snprintf(buf, sizeof(buf), "%6.2f sec*proc", labelTimes[i]);
+
+    std::ostringstream labelCountStr;
+    labelCountStr << "(" << labelCounts[i] << " test";
+    if (labelCounts[i] > 1) {
+      labelCountStr << "s";
+    }
+    labelCountStr << ")";
+    cmCTestOptionalLog(this->CTest, HANDLER_OUTPUT,
+                       "\n"
+                         << label << " = " << buf << " "
+                         << labelCountStr.str(),
+                       this->Quiet);
+    if (this->LogFile) {
+      *this->LogFile << "\n" << i << " = " << buf << "\n";
+    }
+  }
+  if (this->LogFile) {
+    *this->LogFile << "\n";
+  }
+  cmCTestOptionalLog(this->CTest, HANDLER_OUTPUT, "\n", this->Quiet);
+}
+
+/**
+ * Check if the labels (from a test) match all the expressions.
+ *
+ * Each of the RE's must match at least one label
+ * (e.g. all of the REs must match **some** label,
+ * in order for the filter to apply to the test).
+ */
+static bool MatchLabelsAgainstFilterRE(
+  const std::vector<std::string>& labels,
+  const std::vector<cmsys::RegularExpression>& expressions)
+{
+  for (const auto& re : expressions) {
+    // check to see if the label regular expression matches
+    bool found = false; // assume it does not match
+    cmsys::RegularExpressionMatch match;
+    // loop over all labels and look for match
+    for (std::string const& l : labels) {
+      if (re.find(l.c_str(), match)) {
+        found = true;
+        break;
+      }
+    }
+    // if no match was found, exclude the test
+    if (!found) {
+      return false;
+    }
+  }
+  return true;
+}
+
 void cmCTestTestHandler::CheckLabelFilterInclude(cmCTestTestProperties& it)
 {
   // if not using Labels to filter then return
-  if (!this->UseIncludeLabelRegExpFlag )
-    {
+  if (this->IncludeLabelRegularExpressions.empty()) {
     return;
-    }
+  }
   // if there are no labels and we are filtering by labels
   // then exclude the test as it does not have the label
-  if(it.Labels.size() == 0 )
-    {
+  if (it.Labels.empty()) {
     it.IsInBasedOnREOptions = false;
     return;
-    }
-  // check to see if the label regular expression matches
-  bool found = false;  // assume it does not match
-  // loop over all labels and look for match
-  for(std::vector<std::string>::iterator l = it.Labels.begin();
-      l !=  it.Labels.end(); ++l)
-    {
-    if(this->IncludeLabelRegularExpression.find(*l))
-      {
-      found = true;
-      }
-    }
+  }
   // if no match was found, exclude the test
-  if(!found)
-    {
+  if (!MatchLabelsAgainstFilterRE(it.Labels,
+                                  this->IncludeLabelRegularExpressions)) {
     it.IsInBasedOnREOptions = false;
-    }
+  }
 }
 
-
-//----------------------------------------------------------------------
 void cmCTestTestHandler::CheckLabelFilterExclude(cmCTestTestProperties& it)
 {
   // if not using Labels to filter then return
-  if (!this->UseExcludeLabelRegExpFlag )
-    {
+  if (this->ExcludeLabelRegularExpressions.empty()) {
     return;
-    }
+  }
   // if there are no labels and we are excluding by labels
   // then do nothing as a no label can not be a match
-  if(it.Labels.size() == 0 )
-    {
+  if (it.Labels.empty()) {
     return;
-    }
-  // check to see if the label regular expression matches
-  bool found = false;  // assume it does not match
-  // loop over all labels and look for match
-  for(std::vector<std::string>::iterator l = it.Labels.begin();
-      l !=  it.Labels.end(); ++l)
-    {
-    if(this->ExcludeLabelRegularExpression.find(*l))
-      {
-      found = true;
-      }
-    }
+  }
   // if match was found, exclude the test
-  if(found)
-    {
+  if (MatchLabelsAgainstFilterRE(it.Labels,
+                                 this->ExcludeLabelRegularExpressions)) {
     it.IsInBasedOnREOptions = false;
-    }
+  }
 }
 
-//----------------------------------------------------------------------
 void cmCTestTestHandler::CheckLabelFilter(cmCTestTestProperties& it)
 {
   this->CheckLabelFilterInclude(it);
   this->CheckLabelFilterExclude(it);
 }
 
-//----------------------------------------------------------------------
-void cmCTestTestHandler::ComputeTestList()
+bool cmCTestTestHandler::ComputeTestList()
 {
   this->TestList.clear(); // clear list of test
-  this->GetListOfTests();
+  if (!this->GetListOfTests()) {
+    return false;
+  }
 
-  if (this->RerunFailed)
-    {
+  if (this->RerunFailed) {
     this->ComputeTestListForRerunFailed();
-    return;
-    }
+    return true;
+  }
 
   cmCTestTestHandler::ListOfTests::size_type tmsize = this->TestList.size();
   // how many tests are in based on RegExp?
   int inREcnt = 0;
-  cmCTestTestHandler::ListOfTests::iterator it;
-  for ( it = this->TestList.begin(); it != this->TestList.end(); it ++ )
-    {
-    this->CheckLabelFilter(*it);
-    if (it->IsInBasedOnREOptions)
-      {
-      inREcnt ++;
-      }
+  for (cmCTestTestProperties& tp : this->TestList) {
+    this->CheckLabelFilter(tp);
+    if (tp.IsInBasedOnREOptions) {
+      inREcnt++;
     }
+  }
   // expand the test list based on the union flag
-  if (this->UseUnion)
-    {
-    this->ExpandTestsToRunInformation((int)tmsize);
-    }
-  else
-    {
+  if (this->UseUnion) {
+    this->ExpandTestsToRunInformation(static_cast<int>(tmsize));
+  } else {
     this->ExpandTestsToRunInformation(inREcnt);
-    }
+  }
   // Now create a final list of tests to run
   int cnt = 0;
   inREcnt = 0;
-  std::string last_directory = "";
+  std::string last_directory;
   ListOfTests finalList;
-  for ( it = this->TestList.begin(); it != this->TestList.end(); it ++ )
-    {
-    cnt ++;
-    if (it->IsInBasedOnREOptions)
-      {
+  for (cmCTestTestProperties& tp : this->TestList) {
+    cnt++;
+    if (tp.IsInBasedOnREOptions) {
       inREcnt++;
-      }
-
-    if (this->UseUnion)
-      {
-      // if it is not in the list and not in the regexp then skip
-      if ((this->TestsToRun.size() &&
-           std::find(this->TestsToRun.begin(), this->TestsToRun.end(), cnt)
-           == this->TestsToRun.end()) && !it->IsInBasedOnREOptions)
-        {
-        continue;
-        }
-      }
-    else
-      {
-      // is this test in the list of tests to run? If not then skip it
-      if ((this->TestsToRun.size() &&
-           std::find(this->TestsToRun.begin(),
-                     this->TestsToRun.end(), inREcnt)
-           == this->TestsToRun.end()) || !it->IsInBasedOnREOptions)
-        {
-        continue;
-        }
-      }
-    it->Index = cnt;  // save the index into the test list for this test
-    finalList.push_back(*it);
     }
+
+    if (this->UseUnion) {
+      // if it is not in the list and not in the regexp then skip
+      if ((!this->TestsToRun.empty() &&
+           !cm::contains(this->TestsToRun, cnt)) &&
+          !tp.IsInBasedOnREOptions) {
+        continue;
+      }
+    } else {
+      // is this test in the list of tests to run? If not then skip it
+      if ((!this->TestsToRun.empty() &&
+           !cm::contains(this->TestsToRun, inREcnt)) ||
+          !tp.IsInBasedOnREOptions) {
+        continue;
+      }
+    }
+    tp.Index = cnt; // save the index into the test list for this test
+    finalList.push_back(tp);
+  }
+
+  this->UpdateForFixtures(finalList);
+
   // Save the total number of tests before exclusions
   this->TotalNumberOfTests = this->TestList.size();
   // Set the TestList to the final list of all test
   this->TestList = finalList;
 
   this->UpdateMaxTestNameWidth();
+  return true;
 }
 
 void cmCTestTestHandler::ComputeTestListForRerunFailed()
 {
   this->ExpandTestsToRunInformationForRerunFailed();
 
-  cmCTestTestHandler::ListOfTests::iterator it;
   ListOfTests finalList;
   int cnt = 0;
-  for ( it = this->TestList.begin(); it != this->TestList.end(); it ++ )
-    {
-    cnt ++;
+  for (cmCTestTestProperties& tp : this->TestList) {
+    cnt++;
 
     // if this test is not in our list of tests to run, then skip it.
-    if ((this->TestsToRun.size() &&
-         std::find(this->TestsToRun.begin(), this->TestsToRun.end(), cnt)
-         == this->TestsToRun.end()))
-      {
+    if (!this->TestsToRun.empty() && !cm::contains(this->TestsToRun, cnt)) {
       continue;
-      }
-
-    it->Index = cnt;
-    finalList.push_back(*it);
     }
+
+    tp.Index = cnt;
+    finalList.push_back(tp);
+  }
+
+  this->UpdateForFixtures(finalList);
 
   // Save the total number of tests before exclusions
   this->TotalNumberOfTests = this->TestList.size();
@@ -911,161 +960,393 @@ void cmCTestTestHandler::ComputeTestListForRerunFailed()
   this->UpdateMaxTestNameWidth();
 }
 
+void cmCTestTestHandler::UpdateForFixtures(ListOfTests& tests) const
+{
+  cmCTestOptionalLog(this->CTest, HANDLER_VERBOSE_OUTPUT,
+                     "Updating test list for fixtures" << std::endl,
+                     this->Quiet);
+
+  // Prepare regular expression evaluators
+  std::string setupRegExp(this->ExcludeFixtureRegExp);
+  std::string cleanupRegExp(this->ExcludeFixtureRegExp);
+  if (!this->ExcludeFixtureSetupRegExp.empty()) {
+    if (setupRegExp.empty()) {
+      setupRegExp = this->ExcludeFixtureSetupRegExp;
+    } else {
+      setupRegExp.append("(" + setupRegExp + ")|(" +
+                         this->ExcludeFixtureSetupRegExp + ")");
+    }
+  }
+  if (!this->ExcludeFixtureCleanupRegExp.empty()) {
+    if (cleanupRegExp.empty()) {
+      cleanupRegExp = this->ExcludeFixtureCleanupRegExp;
+    } else {
+      cleanupRegExp.append("(" + cleanupRegExp + ")|(" +
+                           this->ExcludeFixtureCleanupRegExp + ")");
+    }
+  }
+  cmsys::RegularExpression excludeSetupRegex(setupRegExp);
+  cmsys::RegularExpression excludeCleanupRegex(cleanupRegExp);
+
+  // Prepare some maps to help us find setup and cleanup tests for
+  // any given fixture
+  using TestIterator = ListOfTests::const_iterator;
+  using FixtureDependencies = std::multimap<std::string, TestIterator>;
+  using FixtureDepsIterator = FixtureDependencies::const_iterator;
+  FixtureDependencies fixtureSetups;
+  FixtureDependencies fixtureCleanups;
+
+  for (auto it = this->TestList.begin(); it != this->TestList.end(); ++it) {
+    const cmCTestTestProperties& p = *it;
+
+    for (std::string const& deps : p.FixturesSetup) {
+      fixtureSetups.insert(std::make_pair(deps, it));
+    }
+
+    for (std::string const& deps : p.FixturesCleanup) {
+      fixtureCleanups.insert(std::make_pair(deps, it));
+    }
+  }
+
+  // Prepare fast lookup of tests already included in our list of tests
+  std::set<std::string> addedTests;
+  for (cmCTestTestProperties const& p : tests) {
+    addedTests.insert(p.Name);
+  }
+
+  // These are lookups of fixture name to a list of indices into the final
+  // tests array for tests which require that fixture and tests which are
+  // setups for that fixture. They are needed at the end to populate
+  // dependencies of the cleanup tests in our final list of tests.
+  std::map<std::string, std::vector<size_t>> fixtureRequirements;
+  std::map<std::string, std::vector<size_t>> setupFixturesAdded;
+
+  // Use integer index for iteration because we append to
+  // the tests vector as we go
+  size_t fixtureTestsAdded = 0;
+  std::set<std::string> addedFixtures;
+  for (size_t i = 0; i < tests.size(); ++i) {
+    // Skip disabled tests
+    if (tests[i].Disabled) {
+      continue;
+    }
+
+    // There are two things to do for each test:
+    //   1. For every fixture required by this test, record that fixture as
+    //      being required and create dependencies on that fixture's setup
+    //      tests.
+    //   2. Record all setup tests in the final test list so we can later make
+    //      cleanup tests in the test list depend on their associated setup
+    //      tests to enforce correct ordering.
+
+    // 1. Handle fixture requirements
+    //
+    // Must copy the set of fixtures required because we may invalidate
+    // the tests array by appending to it
+    std::set<std::string> fixtures = tests[i].FixturesRequired;
+    for (std::string const& requiredFixtureName : fixtures) {
+      if (requiredFixtureName.empty()) {
+        continue;
+      }
+
+      fixtureRequirements[requiredFixtureName].push_back(i);
+
+      // Add dependencies to this test for all of the setup tests
+      // associated with the required fixture. If any of those setup
+      // tests fail, this test should not run. We make the fixture's
+      // cleanup tests depend on this test case later.
+      std::pair<FixtureDepsIterator, FixtureDepsIterator> setupRange =
+        fixtureSetups.equal_range(requiredFixtureName);
+      for (auto sIt = setupRange.first; sIt != setupRange.second; ++sIt) {
+        const std::string& setupTestName = sIt->second->Name;
+        tests[i].RequireSuccessDepends.insert(setupTestName);
+        if (!cm::contains(tests[i].Depends, setupTestName)) {
+          tests[i].Depends.push_back(setupTestName);
+        }
+      }
+
+      // Append any fixture setup/cleanup tests to our test list if they
+      // are not already in it (they could have been in the original
+      // set of tests passed to us at the outset or have already been
+      // added from a previously checked test). A fixture isn't required
+      // to have setup/cleanup tests.
+      if (!addedFixtures.insert(requiredFixtureName).second) {
+        // Already seen this fixture, no need to check it again
+        continue;
+      }
+
+      // Only add setup tests if this fixture has not been excluded
+      if (setupRegExp.empty() ||
+          !excludeSetupRegex.find(requiredFixtureName)) {
+        std::pair<FixtureDepsIterator, FixtureDepsIterator> fixtureRange =
+          fixtureSetups.equal_range(requiredFixtureName);
+        for (auto it = fixtureRange.first; it != fixtureRange.second; ++it) {
+          ListOfTests::const_iterator lotIt = it->second;
+          const cmCTestTestProperties& p = *lotIt;
+
+          if (!addedTests.insert(p.Name).second) {
+            // Already have p in our test list
+            continue;
+          }
+
+          // This is a test not yet in our list, so add it and
+          // update its index to reflect where it was in the original
+          // full list of all tests (needed to track individual tests
+          // across ctest runs for re-run failed, etc.)
+          tests.push_back(p);
+          tests.back().Index =
+            1 + static_cast<int>(std::distance(this->TestList.begin(), lotIt));
+          ++fixtureTestsAdded;
+
+          cmCTestOptionalLog(this->CTest, HANDLER_VERBOSE_OUTPUT,
+                             "Added setup test "
+                               << p.Name << " required by fixture "
+                               << requiredFixtureName << std::endl,
+                             this->Quiet);
+        }
+      }
+
+      // Only add cleanup tests if this fixture has not been excluded
+      if (cleanupRegExp.empty() ||
+          !excludeCleanupRegex.find(requiredFixtureName)) {
+        std::pair<FixtureDepsIterator, FixtureDepsIterator> fixtureRange =
+          fixtureCleanups.equal_range(requiredFixtureName);
+        for (auto it = fixtureRange.first; it != fixtureRange.second; ++it) {
+          ListOfTests::const_iterator lotIt = it->second;
+          const cmCTestTestProperties& p = *lotIt;
+
+          if (!addedTests.insert(p.Name).second) {
+            // Already have p in our test list
+            continue;
+          }
+
+          // This is a test not yet in our list, so add it and
+          // update its index to reflect where it was in the original
+          // full list of all tests (needed to track individual tests
+          // across ctest runs for re-run failed, etc.)
+          tests.push_back(p);
+          tests.back().Index =
+            1 + static_cast<int>(std::distance(this->TestList.begin(), lotIt));
+          ++fixtureTestsAdded;
+
+          cmCTestOptionalLog(this->CTest, HANDLER_VERBOSE_OUTPUT,
+                             "Added cleanup test "
+                               << p.Name << " required by fixture "
+                               << requiredFixtureName << std::endl,
+                             this->Quiet);
+        }
+      }
+    }
+
+    // 2. Record all setup fixtures included in the final list of tests
+    for (std::string const& setupFixtureName : tests[i].FixturesSetup) {
+      if (setupFixtureName.empty()) {
+        continue;
+      }
+
+      setupFixturesAdded[setupFixtureName].push_back(i);
+    }
+  }
+
+  // Now that we have the final list of tests, we can update all cleanup
+  // tests to depend on those tests which require that fixture and on any
+  // setup tests for that fixture. The latter is required to handle the
+  // pathological case where setup and cleanup tests are in the test set
+  // but no other test has that fixture as a requirement.
+  for (cmCTestTestProperties& p : tests) {
+    const std::set<std::string>& cleanups = p.FixturesCleanup;
+    for (std::string const& fixture : cleanups) {
+      // This cleanup test could be part of the original test list that was
+      // passed in. It is then possible that no other test requires the
+      // fIt fixture, so we have to check for this.
+      auto cIt = fixtureRequirements.find(fixture);
+      if (cIt != fixtureRequirements.end()) {
+        const std::vector<size_t>& indices = cIt->second;
+        for (size_t index : indices) {
+          const std::string& reqTestName = tests[index].Name;
+          if (!cm::contains(p.Depends, reqTestName)) {
+            p.Depends.push_back(reqTestName);
+          }
+        }
+      }
+
+      // Ensure fixture cleanup tests always run after their setup tests, even
+      // if no other test cases require the fixture
+      cIt = setupFixturesAdded.find(fixture);
+      if (cIt != setupFixturesAdded.end()) {
+        const std::vector<size_t>& indices = cIt->second;
+        for (size_t index : indices) {
+          const std::string& setupTestName = tests[index].Name;
+          if (!cm::contains(p.Depends, setupTestName)) {
+            p.Depends.push_back(setupTestName);
+          }
+        }
+      }
+    }
+  }
+
+  cmCTestOptionalLog(this->CTest, HANDLER_VERBOSE_OUTPUT,
+                     "Added " << fixtureTestsAdded
+                              << " tests to meet fixture requirements"
+                              << std::endl,
+                     this->Quiet);
+}
+
 void cmCTestTestHandler::UpdateMaxTestNameWidth()
 {
   std::string::size_type max = this->CTest->GetMaxTestNameWidth();
-  for ( cmCTestTestHandler::ListOfTests::iterator it = this->TestList.begin();
-        it != this->TestList.end(); it ++ )
-    {
-    cmCTestTestProperties& p = *it;
-    if(max < p.Name.size())
-      {
+  for (cmCTestTestProperties& p : this->TestList) {
+    if (max < p.Name.size()) {
       max = p.Name.size();
-      }
     }
-  if(static_cast<std::string::size_type>(this->CTest->GetMaxTestNameWidth())
-     != max)
-    {
+  }
+  if (static_cast<std::string::size_type>(
+        this->CTest->GetMaxTestNameWidth()) != max) {
     this->CTest->SetMaxTestNameWidth(static_cast<int>(max));
-    }
+  }
 }
 
-bool cmCTestTestHandler::GetValue(const char* tag,
-                                  int& value,
+bool cmCTestTestHandler::GetValue(const char* tag, int& value,
                                   std::istream& fin)
 {
   std::string line;
   bool ret = true;
   cmSystemTools::GetLineFromStream(fin, line);
-  if(line == tag)
-    {
+  if (line == tag) {
     fin >> value;
     ret = cmSystemTools::GetLineFromStream(fin, line); // read blank line
-    }
-  else
-    {
+  } else {
     cmCTestLog(this->CTest, ERROR_MESSAGE,
-               "parse error: missing tag: "
-               << tag << " found [" << line << "]" << std::endl);
+               "parse error: missing tag: " << tag << " found [" << line << "]"
+                                            << std::endl);
     ret = false;
-    }
+  }
   return ret;
 }
 
-bool cmCTestTestHandler::GetValue(const char* tag,
-                                  double& value,
+bool cmCTestTestHandler::GetValue(const char* tag, double& value,
                                   std::istream& fin)
 {
   std::string line;
   cmSystemTools::GetLineFromStream(fin, line);
   bool ret = true;
-  if(line == tag)
-    {
+  if (line == tag) {
     fin >> value;
     ret = cmSystemTools::GetLineFromStream(fin, line); // read blank line
-    }
-  else
-    {
+  } else {
     cmCTestLog(this->CTest, ERROR_MESSAGE,
-               "parse error: missing tag: "
-               << tag << " found [" << line << "]" << std::endl);
+               "parse error: missing tag: " << tag << " found [" << line << "]"
+                                            << std::endl);
     ret = false;
-    }
+  }
   return ret;
 }
 
-bool cmCTestTestHandler::GetValue(const char* tag,
-                                  bool& value,
+bool cmCTestTestHandler::GetValue(const char* tag, bool& value,
                                   std::istream& fin)
 {
   std::string line;
   cmSystemTools::GetLineFromStream(fin, line);
   bool ret = true;
-  if(line == tag)
-    {
+  if (line == tag) {
 #ifdef __HAIKU__
     int tmp = 0;
     fin >> tmp;
     value = false;
-    if(tmp)
-      {
+    if (tmp) {
       value = true;
-      }
+    }
 #else
     fin >> value;
 #endif
     ret = cmSystemTools::GetLineFromStream(fin, line); // read blank line
-    }
-  else
-    {
+  } else {
     cmCTestLog(this->CTest, ERROR_MESSAGE,
-               "parse error: missing tag: "
-               << tag << " found [" << line << "]" << std::endl);
+               "parse error: missing tag: " << tag << " found [" << line << "]"
+                                            << std::endl);
     ret = false;
-    }
+  }
   return ret;
 }
 
-bool cmCTestTestHandler::GetValue(const char* tag,
-                                  size_t& value,
+bool cmCTestTestHandler::GetValue(const char* tag, size_t& value,
                                   std::istream& fin)
 {
   std::string line;
   cmSystemTools::GetLineFromStream(fin, line);
   bool ret = true;
-  if(line == tag)
-    {
+  if (line == tag) {
     fin >> value;
     ret = cmSystemTools::GetLineFromStream(fin, line); // read blank line
-    }
-  else
-    {
+  } else {
     cmCTestLog(this->CTest, ERROR_MESSAGE,
-               "parse error: missing tag: "
-               << tag << " found [" << line.c_str() << "]" << std::endl);
+               "parse error: missing tag: " << tag << " found [" << line << "]"
+                                            << std::endl);
     ret = false;
-    }
+  }
   return ret;
 }
 
-bool cmCTestTestHandler::GetValue(const char* tag,
-                                  std::string& value,
+bool cmCTestTestHandler::GetValue(const char* tag, std::string& value,
                                   std::istream& fin)
 {
   std::string line;
   cmSystemTools::GetLineFromStream(fin, line);
   bool ret = true;
-  if(line == tag)
-    {
-    ret =  cmSystemTools::GetLineFromStream(fin, value);
-    }
-  else
-    {
+  if (line == tag) {
+    ret = cmSystemTools::GetLineFromStream(fin, value);
+  } else {
     cmCTestLog(this->CTest, ERROR_MESSAGE,
-               "parse error: missing tag: "
-               << tag << " found [" << line << "]" << std::endl);
+               "parse error: missing tag: " << tag << " found [" << line << "]"
+                                            << std::endl);
     ret = false;
-    }
+  }
   return ret;
 }
 
-//---------------------------------------------------------------------
-void cmCTestTestHandler::ProcessDirectory(std::vector<cmStdString> &passed,
-                                         std::vector<cmStdString> &failed)
+bool cmCTestTestHandler::ProcessDirectory(std::vector<std::string>& passed,
+                                          std::vector<std::string>& failed)
 {
-  this->ComputeTestList();
-  this->StartTest = this->CTest->CurrentTime();
-  this->StartTestTime = static_cast<unsigned int>(cmSystemTools::GetTime());
-  double elapsed_time_start = cmSystemTools::GetTime();
+  if (!this->ComputeTestList()) {
+    return false;
+  }
 
-  cmCTestMultiProcessHandler* parallel = this->CTest->GetBatchJobs() ?
-    new cmCTestBatchTestHandler : new cmCTestMultiProcessHandler;
+  this->StartTest = this->CTest->CurrentTime();
+  this->StartTestTime = std::chrono::system_clock::now();
+  auto elapsed_time_start = std::chrono::steady_clock::now();
+
+  auto parallel = cm::make_unique<cmCTestMultiProcessHandler>();
   parallel->SetCTest(this->CTest);
   parallel->SetParallelLevel(this->CTest->GetParallelLevel());
   parallel->SetTestHandler(this);
+  if (this->RepeatMode != cmCTest::Repeat::Never) {
+    parallel->SetRepeatMode(this->RepeatMode, this->RepeatCount);
+  } else {
+    parallel->SetRepeatMode(this->CTest->GetRepeatMode(),
+                            this->CTest->GetRepeatCount());
+  }
+  parallel->SetQuiet(this->Quiet);
+  if (this->TestLoad > 0) {
+    parallel->SetTestLoad(this->TestLoad);
+  } else {
+    parallel->SetTestLoad(this->CTest->GetTestLoad());
+  }
+  if (!this->ResourceSpecFile.empty()) {
+    this->UseResourceSpec = true;
+    auto result = this->ResourceSpec.ReadFromJSONFile(this->ResourceSpecFile);
+    if (result != cmCTestResourceSpec::ReadFileResult::READ_OK) {
+      cmCTestLog(this->CTest, ERROR_MESSAGE,
+                 "Could not read/parse resource spec file "
+                   << this->ResourceSpecFile << ": "
+                   << cmCTestResourceSpec::ResultToString(result)
+                   << std::endl);
+      return false;
+    }
+    parallel->InitResourceAllocator(this->ResourceSpec);
+  }
 
-  *this->LogFile << "Start testing: "
-    << this->CTest->CurrentTime() << std::endl
+  *this->LogFile
+    << "Start testing: " << this->CTest->CurrentTime() << std::endl
     << "----------------------------------------------------------"
     << std::endl;
 
@@ -1073,609 +1354,509 @@ void cmCTestTestHandler::ProcessDirectory(std::vector<cmStdString> &passed,
   cmCTestMultiProcessHandler::PropertiesMap properties;
 
   bool randomSchedule = this->CTest->GetScheduleType() == "Random";
-  if(randomSchedule)
-    {
-    srand((unsigned)time(0));
-    }
+  if (randomSchedule) {
+    srand(static_cast<unsigned>(time(nullptr)));
+  }
 
-  for (ListOfTests::iterator it = this->TestList.begin();
-       it != this->TestList.end(); ++it)
-    {
-    cmCTestTestProperties& p = *it;
+  for (cmCTestTestProperties& p : this->TestList) {
     cmCTestMultiProcessHandler::TestSet depends;
 
-    if(randomSchedule)
-      {
+    if (randomSchedule) {
       p.Cost = static_cast<float>(rand());
-      }
+    }
 
-    if(p.Timeout == 0 && this->CTest->GetGlobalTimeout() != 0)
-      {
+    if (p.Timeout == cmDuration::zero() &&
+        this->CTest->GetGlobalTimeout() != cmDuration::zero()) {
       p.Timeout = this->CTest->GetGlobalTimeout();
-      }
+    }
 
-    if(p.Depends.size())
-      {
-      for(std::vector<std::string>::iterator i = p.Depends.begin();
-          i != p.Depends.end(); ++i)
-        {
-        for(ListOfTests::iterator it2 = this->TestList.begin();
-            it2 != this->TestList.end(); ++it2)
-          {
-          if(it2->Name == *i)
-            {
-            depends.insert(it2->Index);
+    if (!p.Depends.empty()) {
+      for (std::string const& i : p.Depends) {
+        for (cmCTestTestProperties const& it2 : this->TestList) {
+          if (it2.Name == i) {
+            depends.insert(it2.Index);
             break; // break out of test loop as name can only match 1
-            }
           }
         }
       }
-    tests[it->Index] = depends;
-    properties[it->Index] = &*it;
     }
+    tests[p.Index] = depends;
+    properties[p.Index] = &p;
+  }
   parallel->SetTests(tests, properties);
   parallel->SetPassFailVectors(&passed, &failed);
   this->TestResults.clear();
   parallel->SetTestResults(&this->TestResults);
+  parallel->CheckResourcesAvailable();
 
-  if(this->CTest->ShouldPrintLabels())
-    {
+  if (this->CTest->ShouldPrintLabels()) {
     parallel->PrintLabels();
-    }
-  else if(this->CTest->GetShowOnly())
-    {
+  } else if (this->CTest->GetShowOnly()) {
     parallel->PrintTestList();
-    }
-  else
-    {
+  } else {
     parallel->RunTests();
-    }
-  delete parallel;
+  }
   this->EndTest = this->CTest->CurrentTime();
-  this->EndTestTime = static_cast<unsigned int>(cmSystemTools::GetTime());
-  this->ElapsedTestingTime = cmSystemTools::GetTime() - elapsed_time_start;
-  *this->LogFile << "End testing: "
-     << this->CTest->CurrentTime() << std::endl;
+  this->EndTestTime = std::chrono::system_clock::now();
+  this->ElapsedTestingTime =
+    std::chrono::steady_clock::now() - elapsed_time_start;
+  *this->LogFile << "End testing: " << this->CTest->CurrentTime() << std::endl;
+
+  return true;
 }
 
-//----------------------------------------------------------------------
-void cmCTestTestHandler::GenerateTestCommand(std::vector<std::string>&, int)
+void cmCTestTestHandler::GenerateTestCommand(
+  std::vector<std::string>& /*unused*/, int /*unused*/)
 {
 }
 
-//----------------------------------------------------------------------
-void cmCTestTestHandler::GenerateDartOutput(std::ostream& os)
+void cmCTestTestHandler::GenerateCTestXML(cmXMLWriter& xml)
 {
-  if ( !this->CTest->GetProduceXML() )
-    {
+  if (!this->CTest->GetProduceXML()) {
     return;
-    }
+  }
 
-  this->CTest->StartXML(os, this->AppendXML);
-  os << "<Testing>\n"
-    << "\t<StartDateTime>" << this->StartTest << "</StartDateTime>\n"
-    << "\t<StartTestTime>" << this->StartTestTime << "</StartTestTime>\n"
-    << "\t<TestList>\n";
-  cmCTestTestHandler::TestResultsVector::size_type cc;
-  for ( cc = 0; cc < this->TestResults.size(); cc ++ )
-    {
-    cmCTestTestResult *result = &this->TestResults[cc];
-    std::string testPath = result->Path + "/" + result->Name;
-    os << "\t\t<Test>" << cmXMLSafe(
-      this->CTest->GetShortPathToFile(testPath.c_str()))
-      << "</Test>" << std::endl;
-    }
-  os << "\t</TestList>\n";
-  for ( cc = 0; cc < this->TestResults.size(); cc ++ )
-    {
-    cmCTestTestResult *result = &this->TestResults[cc];
-    this->WriteTestResultHeader(os, result);
-    os << "\t\t<Results>" << std::endl;
-    if ( result->Status != cmCTestTestHandler::NOT_RUN )
-      {
-      if ( result->Status != cmCTestTestHandler::COMPLETED ||
-        result->ReturnValue )
-        {
-        os << "\t\t\t<NamedMeasurement type=\"text/string\" "
-          "name=\"Exit Code\"><Value>"
-          << cmXMLSafe(this->GetTestStatus(result->Status))
-          << "</Value>"
-          "</NamedMeasurement>\n"
-          << "\t\t\t<NamedMeasurement type=\"text/string\" "
-          "name=\"Exit Value\"><Value>"
-          << result->ReturnValue
-          << "</Value></NamedMeasurement>"
-          << std::endl;
-        }
-      os << result->RegressionImages;
-      os << "\t\t\t<NamedMeasurement type=\"numeric/double\" "
-        << "name=\"Execution Time\"><Value>"
-        << result->ExecutionTime
-        << "</Value></NamedMeasurement>\n";
-      if(result->Reason.size())
-        {
+  this->CTest->StartXML(xml, this->AppendXML);
+  this->CTest->GenerateSubprojectsOutput(xml);
+  xml.StartElement("Testing");
+  xml.Element("StartDateTime", this->StartTest);
+  xml.Element("StartTestTime", this->StartTestTime);
+  xml.StartElement("TestList");
+  for (cmCTestTestResult const& result : this->TestResults) {
+    std::string testPath = result.Path + "/" + result.Name;
+    xml.Element("Test", this->CTest->GetShortPathToFile(testPath));
+  }
+  xml.EndElement(); // TestList
+  for (cmCTestTestResult& result : this->TestResults) {
+    this->WriteTestResultHeader(xml, result);
+    xml.StartElement("Results");
+
+    if (result.Status != cmCTestTestHandler::NOT_RUN) {
+      if (result.Status != cmCTestTestHandler::COMPLETED ||
+          result.ReturnValue) {
+        xml.StartElement("NamedMeasurement");
+        xml.Attribute("type", "text/string");
+        xml.Attribute("name", "Exit Code");
+        xml.Element("Value", this->GetTestStatus(result));
+        xml.EndElement(); // NamedMeasurement
+
+        xml.StartElement("NamedMeasurement");
+        xml.Attribute("type", "text/string");
+        xml.Attribute("name", "Exit Value");
+        xml.Element("Value", result.ReturnValue);
+        xml.EndElement(); // NamedMeasurement
+      }
+      this->RecordCustomTestMeasurements(xml, result.TestMeasurementsOutput);
+      xml.StartElement("NamedMeasurement");
+      xml.Attribute("type", "numeric/double");
+      xml.Attribute("name", "Execution Time");
+      xml.Element("Value", result.ExecutionTime.count());
+      xml.EndElement(); // NamedMeasurement
+      if (!result.Reason.empty()) {
         const char* reasonType = "Pass Reason";
-        if(result->Status != cmCTestTestHandler::COMPLETED &&
-           result->Status != cmCTestTestHandler::NOT_RUN)
-          {
+        if (result.Status != cmCTestTestHandler::COMPLETED) {
           reasonType = "Fail Reason";
-          }
-        os << "\t\t\t<NamedMeasurement type=\"text/string\" "
-           << "name=\"" << reasonType << "\"><Value>"
-           << cmXMLSafe(result->Reason)
-           << "</Value></NamedMeasurement>\n";
         }
-      os
-        << "\t\t\t<NamedMeasurement type=\"text/string\" "
-        << "name=\"Completion Status\"><Value>"
-        << cmXMLSafe(result->CompletionStatus)
-        << "</Value></NamedMeasurement>\n";
+        xml.StartElement("NamedMeasurement");
+        xml.Attribute("type", "text/string");
+        xml.Attribute("name", reasonType);
+        xml.Element("Value", result.Reason);
+        xml.EndElement(); // NamedMeasurement
       }
-    os
-      << "\t\t\t<NamedMeasurement type=\"text/string\" "
-      << "name=\"Command Line\"><Value>"
-      << cmXMLSafe(result->FullCommandLine)
-      << "</Value></NamedMeasurement>\n";
-    std::map<cmStdString,cmStdString>::iterator measureIt;
-    for ( measureIt = result->Properties->Measurements.begin();
-      measureIt != result->Properties->Measurements.end();
-      ++ measureIt )
-      {
-      os
-        << "\t\t\t<NamedMeasurement type=\"text/string\" "
-        << "name=\"" << measureIt->first.c_str() << "\"><Value>"
-        << cmXMLSafe(measureIt->second)
-        << "</Value></NamedMeasurement>\n";
-      }
-    os
-      << "\t\t\t<Measurement>\n"
-      << "\t\t\t\t<Value"
-      << (result->CompressOutput ?
-      " encoding=\"base64\" compression=\"gzip\">"
-      : ">");
-    os << cmXMLSafe(result->Output);
-    os
-      << "</Value>\n"
-      << "\t\t\t</Measurement>\n"
-      << "\t\t</Results>\n";
-
-    this->AttachFiles(os, result);
-    this->WriteTestResultFooter(os, result);
     }
 
-  os << "\t<EndDateTime>" << this->EndTest << "</EndDateTime>\n"
-     << "\t<EndTestTime>" << this->EndTestTime << "</EndTestTime>\n"
-     << "<ElapsedMinutes>"
-     << static_cast<int>(this->ElapsedTestingTime/6)/10.0
-     << "</ElapsedMinutes>"
-    << "</Testing>" << std::endl;
-  this->CTest->EndXML(os);
+    xml.StartElement("NamedMeasurement");
+    xml.Attribute("type", "numeric/double");
+    xml.Attribute("name", "Processors");
+    xml.Element("Value", result.Properties->Processors);
+    xml.EndElement(); // NamedMeasurement
+
+    xml.StartElement("NamedMeasurement");
+    xml.Attribute("type", "text/string");
+    xml.Attribute("name", "Completion Status");
+    if (result.CustomCompletionStatus.empty()) {
+      xml.Element("Value", result.CompletionStatus);
+    } else {
+      xml.Element("Value", result.CustomCompletionStatus);
+    }
+    xml.EndElement(); // NamedMeasurement
+
+    xml.StartElement("NamedMeasurement");
+    xml.Attribute("type", "text/string");
+    xml.Attribute("name", "Command Line");
+    xml.Element("Value", result.FullCommandLine);
+    xml.EndElement(); // NamedMeasurement
+
+    xml.StartElement("NamedMeasurement");
+    xml.Attribute("type", "text/string");
+    xml.Attribute("name", "Environment");
+    xml.Element("Value", result.Environment);
+    xml.EndElement(); // NamedMeasurement
+    for (auto const& measure : result.Properties->Measurements) {
+      xml.StartElement("NamedMeasurement");
+      xml.Attribute("type", "text/string");
+      xml.Attribute("name", measure.first);
+      xml.Element("Value", measure.second);
+      xml.EndElement(); // NamedMeasurement
+    }
+    xml.StartElement("Measurement");
+    xml.StartElement("Value");
+    if (result.CompressOutput) {
+      xml.Attribute("encoding", "base64");
+      xml.Attribute("compression", "gzip");
+    }
+    xml.Content(result.Output);
+    xml.EndElement(); // Value
+    xml.EndElement(); // Measurement
+    xml.EndElement(); // Results
+
+    this->AttachFiles(xml, result);
+    this->WriteTestResultFooter(xml, result);
+  }
+
+  xml.Element("EndDateTime", this->EndTest);
+  xml.Element("EndTestTime", this->EndTestTime);
+  xml.Element(
+    "ElapsedMinutes",
+    std::chrono::duration_cast<std::chrono::minutes>(this->ElapsedTestingTime)
+      .count());
+  xml.EndElement(); // Testing
+  this->CTest->EndXML(xml);
 }
 
-//----------------------------------------------------------------------------
-void cmCTestTestHandler::WriteTestResultHeader(std::ostream& os,
-                                               cmCTestTestResult* result)
+void cmCTestTestHandler::WriteTestResultHeader(cmXMLWriter& xml,
+                                               cmCTestTestResult const& result)
 {
-  os << "\t<Test Status=\"";
-  if ( result->Status == cmCTestTestHandler::COMPLETED )
-    {
-    os << "passed";
-    }
-  else if ( result->Status == cmCTestTestHandler::NOT_RUN )
-    {
-    os << "notrun";
-    }
-  else
-    {
-    os << "failed";
-    }
-  std::string testPath = result->Path + "/" + result->Name;
-  os << "\">\n"
-     << "\t\t<Name>" << cmXMLSafe(result->Name) << "</Name>\n"
-     << "\t\t<Path>" << cmXMLSafe(
-       this->CTest->GetShortPathToFile(result->Path.c_str())) << "</Path>\n"
-     << "\t\t<FullName>" << cmXMLSafe(
-       this->CTest->GetShortPathToFile(testPath.c_str())) << "</FullName>\n"
-     << "\t\t<FullCommandLine>"
-     << cmXMLSafe(result->FullCommandLine)
-     << "</FullCommandLine>\n";
+  xml.StartElement("Test");
+  if (result.Status == cmCTestTestHandler::COMPLETED) {
+    xml.Attribute("Status", "passed");
+  } else if (result.Status == cmCTestTestHandler::NOT_RUN) {
+    xml.Attribute("Status", "notrun");
+  } else {
+    xml.Attribute("Status", "failed");
+  }
+  std::string testPath = result.Path + "/" + result.Name;
+  xml.Element("Name", result.Name);
+  xml.Element("Path", this->CTest->GetShortPathToFile(result.Path));
+  xml.Element("FullName", this->CTest->GetShortPathToFile(testPath));
+  xml.Element("FullCommandLine", result.FullCommandLine);
 }
 
-//----------------------------------------------------------------------------
-void cmCTestTestHandler::WriteTestResultFooter(std::ostream& os,
-                                               cmCTestTestResult* result)
+void cmCTestTestHandler::WriteTestResultFooter(cmXMLWriter& xml,
+                                               cmCTestTestResult const& result)
 {
-  if(!result->Properties->Labels.empty())
-    {
-    os << "\t\t<Labels>\n";
-    std::vector<std::string> const& labels = result->Properties->Labels;
-    for(std::vector<std::string>::const_iterator li = labels.begin();
-        li != labels.end(); ++li)
-      {
-      os << "\t\t\t<Label>" << cmXMLSafe(*li) << "</Label>\n";
-      }
-    os << "\t\t</Labels>\n";
+  if (!result.Properties->Labels.empty()) {
+    xml.StartElement("Labels");
+    std::vector<std::string> const& labels = result.Properties->Labels;
+    for (std::string const& label : labels) {
+      xml.Element("Label", label);
     }
+    xml.EndElement(); // Labels
+  }
 
-  os
-    << "\t</Test>" << std::endl;
+  xml.EndElement(); // Test
 }
 
-//----------------------------------------------------------------------
-void cmCTestTestHandler::AttachFiles(std::ostream& os,
-                                     cmCTestTestResult* result)
+void cmCTestTestHandler::AttachFiles(cmXMLWriter& xml,
+                                     cmCTestTestResult& result)
 {
-  if(result->Status != cmCTestTestHandler::COMPLETED
-     && result->Properties->AttachOnFail.size())
-    {
-    result->Properties->AttachedFiles.insert(
-      result->Properties->AttachedFiles.end(),
-      result->Properties->AttachOnFail.begin(),
-      result->Properties->AttachOnFail.end());
-    }
-  for(std::vector<std::string>::const_iterator file =
-      result->Properties->AttachedFiles.begin();
-      file != result->Properties->AttachedFiles.end(); ++file)
-    {
-    std::string base64 = this->CTest->Base64GzipEncodeFile(*file);
-    std::string fname = cmSystemTools::GetFilenameName(*file);
-    os << "\t\t<NamedMeasurement name=\"Attached File\" encoding=\"base64\" "
-      "compression=\"tar/gzip\" filename=\"" << fname << "\" type=\"file\">"
-      "\n\t\t\t<Value>\n\t\t\t"
-      << base64
-      << "\n\t\t\t</Value>\n\t\t</NamedMeasurement>\n";
-    }
+  if (result.Status != cmCTestTestHandler::COMPLETED &&
+      !result.Properties->AttachOnFail.empty()) {
+    result.Properties->AttachedFiles.insert(
+      result.Properties->AttachedFiles.end(),
+      result.Properties->AttachOnFail.begin(),
+      result.Properties->AttachOnFail.end());
+  }
+  for (std::string const& file : result.Properties->AttachedFiles) {
+    this->AttachFile(xml, file, "");
+  }
 }
 
-//----------------------------------------------------------------------
-int cmCTestTestHandler::ExecuteCommands(std::vector<cmStdString>& vec)
+void cmCTestTestHandler::AttachFile(cmXMLWriter& xml, std::string const& file,
+                                    std::string const& name)
 {
-  std::vector<cmStdString>::iterator it;
-  for ( it = vec.begin(); it != vec.end(); ++it )
-    {
+  const std::string& base64 = this->CTest->Base64GzipEncodeFile(file);
+  std::string const fname = cmSystemTools::GetFilenameName(file);
+  xml.StartElement("NamedMeasurement");
+  std::string measurement_name = name;
+  if (measurement_name.empty()) {
+    measurement_name = "Attached File";
+  }
+  xml.Attribute("name", measurement_name);
+  xml.Attribute("encoding", "base64");
+  xml.Attribute("compression", "tar/gzip");
+  xml.Attribute("filename", fname);
+  xml.Attribute("type", "file");
+  xml.Element("Value", base64);
+  xml.EndElement(); // NamedMeasurement
+}
+
+int cmCTestTestHandler::ExecuteCommands(std::vector<std::string>& vec)
+{
+  for (std::string const& it : vec) {
     int retVal = 0;
-    cmCTestLog(this->CTest, HANDLER_VERBOSE_OUTPUT, "Run command: " << *it
-      << std::endl);
-    if ( !cmSystemTools::RunSingleCommand(it->c_str(), 0, &retVal, 0,
-                                          cmSystemTools::OUTPUT_MERGE
-        /*this->Verbose*/) || retVal != 0 )
-      {
-      cmCTestLog(this->CTest, ERROR_MESSAGE, "Problem running command: "
-        << *it << std::endl);
+    cmCTestOptionalLog(this->CTest, HANDLER_VERBOSE_OUTPUT,
+                       "Run command: " << it << std::endl, this->Quiet);
+    if (!cmSystemTools::RunSingleCommand(it, nullptr, nullptr, &retVal,
+                                         nullptr, cmSystemTools::OUTPUT_MERGE
+                                         /*this->Verbose*/) ||
+        retVal != 0) {
+      cmCTestLog(this->CTest, ERROR_MESSAGE,
+                 "Problem running command: " << it << std::endl);
       return 0;
-      }
     }
+  }
   return 1;
 }
 
-
-//----------------------------------------------------------------------
 // Find the appropriate executable to run for a test
-std::string cmCTestTestHandler::FindTheExecutable(const char *exe)
+std::string cmCTestTestHandler::FindTheExecutable(const std::string& exe)
 {
   std::string resConfig;
   std::vector<std::string> extraPaths;
   std::vector<std::string> failedPaths;
-  if(strcmp(exe, "NOT_AVAILABLE") == 0)
-    {
+  if (exe == "NOT_AVAILABLE") {
     return exe;
-    }
-  return cmCTestTestHandler::FindExecutable(this->CTest,
-                                            exe, resConfig,
-                                            extraPaths,
-                                            failedPaths);
+  }
+  return cmCTestTestHandler::FindExecutable(this->CTest, exe, resConfig,
+                                            extraPaths, failedPaths);
 }
 
 // add additional configurations to the search path
-void cmCTestTestHandler
-::AddConfigurations(cmCTest *ctest,
-                    std::vector<std::string> &attempted,
-                    std::vector<std::string> &attemptedConfigs,
-                    std::string filepath,
-                    std::string &filename)
+void cmCTestTestHandler::AddConfigurations(
+  cmCTest* ctest, std::vector<std::string>& attempted,
+  std::vector<std::string>& attemptedConfigs, std::string filepath,
+  std::string& filename)
 {
   std::string tempPath;
 
-  if (filepath.size() &&
-      filepath[filepath.size()-1] != '/')
-    {
+  if (!filepath.empty() && filepath[filepath.size() - 1] != '/') {
     filepath += "/";
-    }
+  }
   tempPath = filepath + filename;
   attempted.push_back(tempPath);
-  attemptedConfigs.push_back("");
+  attemptedConfigs.emplace_back();
 
-  if(ctest->GetConfigType().size())
-    {
-    tempPath = filepath;
-    tempPath += ctest->GetConfigType();
-    tempPath += "/";
-    tempPath += filename;
+  if (!ctest->GetConfigType().empty()) {
+    tempPath = cmStrCat(filepath, ctest->GetConfigType(), '/', filename);
     attempted.push_back(tempPath);
     attemptedConfigs.push_back(ctest->GetConfigType());
     // If the file is an OSX bundle then the configtype
     // will be at the start of the path
-    tempPath = ctest->GetConfigType();
-    tempPath += "/";
-    tempPath += filepath;
-    tempPath += filename;
+    tempPath = cmStrCat(ctest->GetConfigType(), '/', filepath, filename);
     attempted.push_back(tempPath);
     attemptedConfigs.push_back(ctest->GetConfigType());
-    }
-  else
-    {
+  } else {
     // no config specified - try some options...
-    tempPath = filepath;
-    tempPath += "Release/";
-    tempPath += filename;
+    tempPath = cmStrCat(filepath, "Release/", filename);
     attempted.push_back(tempPath);
-    attemptedConfigs.push_back("Release");
-    tempPath = filepath;
-    tempPath += "Debug/";
-    tempPath += filename;
+    attemptedConfigs.emplace_back("Release");
+    tempPath = cmStrCat(filepath, "Debug/", filename);
     attempted.push_back(tempPath);
-    attemptedConfigs.push_back("Debug");
-    tempPath = filepath;
-    tempPath += "MinSizeRel/";
-    tempPath += filename;
+    attemptedConfigs.emplace_back("Debug");
+    tempPath = cmStrCat(filepath, "MinSizeRel/", filename);
     attempted.push_back(tempPath);
-    attemptedConfigs.push_back("MinSizeRel");
-    tempPath = filepath;
-    tempPath += "RelWithDebInfo/";
-    tempPath += filename;
+    attemptedConfigs.emplace_back("MinSizeRel");
+    tempPath = cmStrCat(filepath, "RelWithDebInfo/", filename);
     attempted.push_back(tempPath);
-    attemptedConfigs.push_back("RelWithDebInfo");
-    tempPath = filepath;
-    tempPath += "Deployment/";
-    tempPath += filename;
+    attemptedConfigs.emplace_back("RelWithDebInfo");
+    tempPath = cmStrCat(filepath, "Deployment/", filename);
     attempted.push_back(tempPath);
-    attemptedConfigs.push_back("Deployment");
-    tempPath = filepath;
-    tempPath += "Development/";
-    tempPath += filename;
+    attemptedConfigs.emplace_back("Deployment");
+    tempPath = cmStrCat(filepath, "Development/", filename);
     attempted.push_back(tempPath);
-    attemptedConfigs.push_back("Deployment");
-    }
+    attemptedConfigs.emplace_back("Deployment");
+  }
 }
 
-
-//----------------------------------------------------------------------
 // Find the appropriate executable to run for a test
-std::string cmCTestTestHandler
-::FindExecutable(cmCTest *ctest,
-                 const char *testCommand,
-                 std::string &resultingConfig,
-                 std::vector<std::string> &extraPaths,
-                 std::vector<std::string> &failed)
+std::string cmCTestTestHandler::FindExecutable(
+  cmCTest* ctest, const std::string& testCommand, std::string& resultingConfig,
+  std::vector<std::string>& extraPaths, std::vector<std::string>& failed)
 {
   // now run the compiled test if we can find it
   std::vector<std::string> attempted;
   std::vector<std::string> attemptedConfigs;
   std::string tempPath;
-  std::string filepath =
-    cmSystemTools::GetFilenamePath(testCommand);
-  std::string filename =
-    cmSystemTools::GetFilenameName(testCommand);
+  std::string filepath = cmSystemTools::GetFilenamePath(testCommand);
+  std::string filename = cmSystemTools::GetFilenameName(testCommand);
 
-  cmCTestTestHandler::AddConfigurations(ctest, attempted,
-                                        attemptedConfigs,
-                                        filepath,filename);
+  cmCTestTestHandler::AddConfigurations(ctest, attempted, attemptedConfigs,
+                                        filepath, filename);
 
   // even if a fullpath was specified also try it relative to the current
   // directory
-  if (filepath.size() && filepath[0] == '/')
-    {
-    std::string localfilepath = filepath.substr(1,filepath.size()-1);
-    cmCTestTestHandler::AddConfigurations(ctest, attempted,
-                                          attemptedConfigs,
-                                          localfilepath,filename);
-    }
-
+  if (!filepath.empty() && filepath[0] == '/') {
+    std::string localfilepath = filepath.substr(1, filepath.size() - 1);
+    cmCTestTestHandler::AddConfigurations(ctest, attempted, attemptedConfigs,
+                                          localfilepath, filename);
+  }
 
   // if extraPaths are provided and we were not passed a full path, try them,
   // try any extra paths
-  if (filepath.size() == 0)
-    {
-    for (unsigned int i = 0; i < extraPaths.size(); ++i)
-      {
-      std::string filepathExtra =
-        cmSystemTools::GetFilenamePath(extraPaths[i]);
-      std::string filenameExtra =
-        cmSystemTools::GetFilenameName(extraPaths[i]);
-      cmCTestTestHandler::AddConfigurations(ctest,attempted,
-                                            attemptedConfigs,
-                                            filepathExtra,
-                                            filenameExtra);
-      }
+  if (filepath.empty()) {
+    for (std::string const& extraPath : extraPaths) {
+      std::string filepathExtra = cmSystemTools::GetFilenamePath(extraPath);
+      std::string filenameExtra = cmSystemTools::GetFilenameName(extraPath);
+      cmCTestTestHandler::AddConfigurations(ctest, attempted, attemptedConfigs,
+                                            filepathExtra, filenameExtra);
     }
+  }
 
   // store the final location in fullPath
   std::string fullPath;
 
   // now look in the paths we specified above
-  for(unsigned int ai=0;
-      ai < attempted.size() && fullPath.size() == 0; ++ai)
-    {
+  for (unsigned int ai = 0; ai < attempted.size() && fullPath.empty(); ++ai) {
     // first check without exe extension
-    if(cmSystemTools::FileExists(attempted[ai].c_str())
-       && !cmSystemTools::FileIsDirectory(attempted[ai].c_str()))
-      {
-      fullPath = cmSystemTools::CollapseFullPath(attempted[ai].c_str());
+    if (cmSystemTools::FileExists(attempted[ai]) &&
+        !cmSystemTools::FileIsDirectory(attempted[ai])) {
+      fullPath = cmSystemTools::CollapseFullPath(attempted[ai]);
       resultingConfig = attemptedConfigs[ai];
-      }
+    }
     // then try with the exe extension
-    else
-      {
-      failed.push_back(attempted[ai].c_str());
-      tempPath = attempted[ai];
-      tempPath += cmSystemTools::GetExecutableExtension();
-      if(cmSystemTools::FileExists(tempPath.c_str())
-         && !cmSystemTools::FileIsDirectory(tempPath.c_str()))
-        {
-        fullPath = cmSystemTools::CollapseFullPath(tempPath.c_str());
+    else {
+      failed.push_back(attempted[ai]);
+      tempPath =
+        cmStrCat(attempted[ai], cmSystemTools::GetExecutableExtension());
+      if (cmSystemTools::FileExists(tempPath) &&
+          !cmSystemTools::FileIsDirectory(tempPath)) {
+        fullPath = cmSystemTools::CollapseFullPath(tempPath);
         resultingConfig = attemptedConfigs[ai];
-        }
-      else
-        {
-        failed.push_back(tempPath.c_str());
-        }
+      } else {
+        failed.push_back(tempPath);
       }
     }
+  }
 
   // if everything else failed, check the users path, but only if a full path
   // wasn't specified
-  if (fullPath.size() == 0 && filepath.size() == 0)
-    {
+  if (fullPath.empty() && filepath.empty()) {
     std::string path = cmSystemTools::FindProgram(filename.c_str());
-    if (path != "")
-      {
-      resultingConfig = "";
+    if (!path.empty()) {
+      resultingConfig.clear();
       return path;
-      }
     }
-  if(fullPath.size() == 0)
-    {
+  }
+  if (fullPath.empty()) {
     cmCTestLog(ctest, HANDLER_OUTPUT,
-               "Could not find executable " << testCommand << "\n"
-               << "Looked in the following places:\n");
-    for(std::vector<std::string>::iterator i = failed.begin();
-        i != failed.end(); ++i)
-      {
-      cmCTestLog(ctest, HANDLER_OUTPUT,
-                 i->c_str() << "\n");
-      }
+               "Could not find executable "
+                 << testCommand << "\n"
+                 << "Looked in the following places:\n");
+    for (std::string const& f : failed) {
+      cmCTestLog(ctest, HANDLER_OUTPUT, f << "\n");
     }
+  }
 
   return fullPath;
 }
 
-
-//----------------------------------------------------------------------
-void cmCTestTestHandler::GetListOfTests()
+bool cmCTestTestHandler::ParseResourceGroupsProperty(
+  const std::string& val,
+  std::vector<std::vector<cmCTestTestResourceRequirement>>& resourceGroups)
 {
-  if ( !this->IncludeLabelRegExp.empty() )
-    {
-    this->IncludeLabelRegularExpression.
-      compile(this->IncludeLabelRegExp.c_str());
-    }
-  if ( !this->IncludeLabelRegExp.empty() )
-    {
-    this->ExcludeLabelRegularExpression.
-      compile(this->ExcludeLabelRegExp.c_str());
-    }
-  if ( !this->IncludeRegExp.empty() )
-    {
-    this->IncludeTestsRegularExpression.compile(this->IncludeRegExp.c_str());
-    }
-  if ( !this->ExcludeRegExp.empty() )
-    {
-    this->ExcludeTestsRegularExpression.compile(this->ExcludeRegExp.c_str());
-    }
-  cmCTestLog(this->CTest, HANDLER_VERBOSE_OUTPUT,
-    "Constructing a list of tests" << std::endl);
-  cmake cm;
-  cmGlobalGenerator gg;
-  gg.SetCMakeInstance(&cm);
-  cmsys::auto_ptr<cmLocalGenerator> lg(gg.CreateLocalGenerator());
-  cmMakefile *mf = lg->GetMakefile();
-  mf->AddDefinition("CTEST_CONFIGURATION_TYPE",
-    this->CTest->GetConfigType().c_str());
-
-  // Add handler for ADD_TEST
-  cmCTestAddTestCommand* newCom1 = new cmCTestAddTestCommand;
-  newCom1->TestHandler = this;
-  cm.AddCommand(newCom1);
-
-  // Add handler for SUBDIRS
-  cmCTestSubdirCommand* newCom2 =
-    new cmCTestSubdirCommand;
-  newCom2->TestHandler = this;
-  cm.AddCommand(newCom2);
-
-  // Add handler for ADD_SUBDIRECTORY
-  cmCTestAddSubdirectoryCommand* newCom3 =
-    new cmCTestAddSubdirectoryCommand;
-  newCom3->TestHandler = this;
-  cm.AddCommand(newCom3);
-
-  // Add handler for SET_SOURCE_FILES_PROPERTIES
-  cmCTestSetTestsPropertiesCommand* newCom4
-    = new cmCTestSetTestsPropertiesCommand;
-  newCom4->TestHandler = this;
-  cm.AddCommand(newCom4);
-
-  const char* testFilename;
-  if( cmSystemTools::FileExists("CTestTestfile.cmake") )
-    {
-    // does the CTestTestfile.cmake exist ?
-    testFilename = "CTestTestfile.cmake";
-    }
-  else if( cmSystemTools::FileExists("DartTestfile.txt") )
-    {
-    // does the DartTestfile.txt exist ?
-    testFilename = "DartTestfile.txt";
-    }
-  else
-    {
-    return;
-    }
-
-  if ( !mf->ReadListFile(0, testFilename) )
-    {
-    return;
-    }
-  if ( cmSystemTools::GetErrorOccuredFlag() )
-    {
-    return;
-    }
-  cmCTestLog(this->CTest, HANDLER_VERBOSE_OUTPUT,
-    "Done constructing a list of tests" << std::endl);
+  cmCTestResourceGroupsLexerHelper lexer(resourceGroups);
+  return lexer.ParseString(val);
 }
 
-//----------------------------------------------------------------------
+bool cmCTestTestHandler::GetListOfTests()
+{
+  if (!this->IncludeRegExp.empty()) {
+    this->IncludeTestsRegularExpression.compile(this->IncludeRegExp);
+  }
+  if (!this->ExcludeRegExp.empty()) {
+    this->ExcludeTestsRegularExpression.compile(this->ExcludeRegExp);
+  }
+  cmCTestOptionalLog(this->CTest, HANDLER_VERBOSE_OUTPUT,
+                     "Constructing a list of tests" << std::endl, this->Quiet);
+  cmake cm(cmake::RoleScript, cmState::CTest);
+  cm.SetHomeDirectory("");
+  cm.SetHomeOutputDirectory("");
+  cm.GetCurrentSnapshot().SetDefaultDefinitions();
+  cmGlobalGenerator gg(&cm);
+  cmMakefile mf(&gg, cm.GetCurrentSnapshot());
+  mf.AddDefinition("CTEST_CONFIGURATION_TYPE", this->CTest->GetConfigType());
+
+  // Add handler for ADD_TEST
+  cm.GetState()->AddBuiltinCommand("add_test", cmCTestAddTestCommand(this));
+
+  // Add handler for SUBDIRS
+  cm.GetState()->AddBuiltinCommand("subdirs", cmCTestSubdirCommand);
+
+  // Add handler for ADD_SUBDIRECTORY
+  cm.GetState()->AddBuiltinCommand("add_subdirectory",
+                                   cmCTestAddSubdirectoryCommand);
+
+  // Add handler for SET_TESTS_PROPERTIES
+  cm.GetState()->AddBuiltinCommand("set_tests_properties",
+                                   cmCTestSetTestsPropertiesCommand(this));
+
+  // Add handler for SET_DIRECTORY_PROPERTIES
+  cm.GetState()->RemoveBuiltinCommand("set_directory_properties");
+  cm.GetState()->AddBuiltinCommand("set_directory_properties",
+                                   cmCTestSetDirectoryPropertiesCommand(this));
+
+  const char* testFilename;
+  if (cmSystemTools::FileExists("CTestTestfile.cmake")) {
+    // does the CTestTestfile.cmake exist ?
+    testFilename = "CTestTestfile.cmake";
+  } else if (cmSystemTools::FileExists("DartTestfile.txt")) {
+    // does the DartTestfile.txt exist ?
+    testFilename = "DartTestfile.txt";
+  } else {
+    return true;
+  }
+
+  if (!mf.ReadListFile(testFilename)) {
+    return false;
+  }
+  if (cmSystemTools::GetErrorOccuredFlag()) {
+    // SEND_ERROR or FATAL_ERROR in CTestTestfile or TEST_INCLUDE_FILES
+    return false;
+  }
+  cmValue specFile = mf.GetDefinition("CTEST_RESOURCE_SPEC_FILE");
+  if (this->ResourceSpecFile.empty() && specFile) {
+    this->ResourceSpecFile = *specFile;
+  }
+  cmCTestOptionalLog(this->CTest, HANDLER_VERBOSE_OUTPUT,
+                     "Done constructing a list of tests" << std::endl,
+                     this->Quiet);
+  return true;
+}
+
 void cmCTestTestHandler::UseIncludeRegExp()
 {
   this->UseIncludeRegExpFlag = true;
 }
 
-//----------------------------------------------------------------------
 void cmCTestTestHandler::UseExcludeRegExp()
 {
   this->UseExcludeRegExpFlag = true;
-  this->UseExcludeRegExpFirst = this->UseIncludeRegExpFlag ? false : true;
+  this->UseExcludeRegExpFirst = !this->UseIncludeRegExpFlag;
 }
 
-//----------------------------------------------------------------------
-const char* cmCTestTestHandler::GetTestStatus(int status)
+std::string cmCTestTestHandler::GetTestStatus(cmCTestTestResult const& result)
 {
-  static const char statuses[][100] = {
-    "Not Run",
-    "Timeout",
-    "SEGFAULT",
-    "ILLEGAL",
-    "INTERRUPT",
-    "NUMERICAL",
-    "OTHER_FAULT",
-    "Failed",
-    "BAD_COMMAND",
-    "Completed"
-  };
-
-  if ( status < cmCTestTestHandler::NOT_RUN ||
-       status > cmCTestTestHandler::COMPLETED )
-    {
+  static const char* statuses[] = { "Not Run",     "Timeout",   "SEGFAULT",
+                                    "ILLEGAL",     "INTERRUPT", "NUMERICAL",
+                                    "OTHER_FAULT", "Failed",    "BAD_COMMAND",
+                                    "Completed" };
+  int status = result.Status;
+  if (status < cmCTestTestHandler::NOT_RUN ||
+      status > cmCTestTestHandler::COMPLETED) {
     return "No Status";
-    }
+  }
+  if (status == cmCTestTestHandler::OTHER_FAULT) {
+    return result.ExceptionStatus;
+  }
   return statuses[status];
 }
 
-//----------------------------------------------------------------------
 void cmCTestTestHandler::ExpandTestsToRunInformation(size_t numTests)
 {
-  if (this->TestsToRunString.empty())
-    {
+  if (this->TestsToRunString.empty()) {
     return;
-    }
+  }
 
   int start;
   int end = -1;
@@ -1683,60 +1864,50 @@ void cmCTestTestHandler::ExpandTestsToRunInformation(size_t numTests)
   std::string::size_type pos = 0;
   std::string::size_type pos2;
   // read start
-  if(GetNextNumber(this->TestsToRunString, start, pos, pos2))
-    {
+  if (GetNextNumber(this->TestsToRunString, start, pos, pos2)) {
     // read end
-    if(GetNextNumber(this->TestsToRunString, end, pos, pos2))
-      {
+    if (GetNextNumber(this->TestsToRunString, end, pos, pos2)) {
       // read stride
-      if(GetNextRealNumber(this->TestsToRunString, stride, pos, pos2))
-        {
-        int val =0;
+      if (GetNextRealNumber(this->TestsToRunString, stride, pos, pos2)) {
+        int val = 0;
         // now read specific numbers
-        while(GetNextNumber(this->TestsToRunString, val, pos, pos2))
-          {
+        while (GetNextNumber(this->TestsToRunString, val, pos, pos2)) {
           this->TestsToRun.push_back(val);
-          }
-        this->TestsToRun.push_back(val);
         }
+        this->TestsToRun.push_back(val);
       }
     }
+  }
 
   // if start is not specified then we assume we start at 1
-  if(start == -1)
-    {
+  if (start == -1) {
     start = 1;
-    }
+  }
 
   // if end isnot specified then we assume we end with the last test
-  if(end == -1)
-    {
+  if (end == -1) {
     end = static_cast<int>(numTests);
-    }
+  }
 
   // if the stride wasn't specified then it defaults to 1
-  if(stride == -1)
-    {
+  if (stride == -1) {
     stride = 1;
-    }
+  }
 
   // if we have a range then add it
-  if(end != -1 && start != -1 && stride > 0)
-    {
+  if (end != -1 && start != -1 && stride > 0) {
     int i = 0;
-    while (i*stride + start <= end)
-      {
-      this->TestsToRun.push_back(static_cast<int>(i*stride+start));
+    while (i * stride + start <= end) {
+      this->TestsToRun.push_back(static_cast<int>(i * stride + start));
       ++i;
-      }
     }
+  }
 
   // sort the array
   std::sort(this->TestsToRun.begin(), this->TestsToRun.end(),
-    std::less<int>());
+            std::less<int>());
   // remove duplicates
-  std::vector<int>::iterator new_end =
-    std::unique(this->TestsToRun.begin(), this->TestsToRun.end());
+  auto new_end = std::unique(this->TestsToRun.begin(), this->TestsToRun.end());
   this->TestsToRun.erase(new_end, this->TestsToRun.end());
 }
 
@@ -1746,333 +1917,189 @@ void cmCTestTestHandler::ExpandTestsToRunInformationForRerunFailed()
   std::string dirName = this->CTest->GetBinaryDir() + "/Testing/Temporary";
 
   cmsys::Directory directory;
-  if (directory.Load(dirName.c_str()) == 0)
-    {
-    cmCTestLog(this->CTest, ERROR_MESSAGE, "Unable to read the contents of "
-      << dirName << std::endl);
+  if (!directory.Load(dirName)) {
+    cmCTestLog(this->CTest, ERROR_MESSAGE,
+               "Unable to read the contents of " << dirName << std::endl);
     return;
-    }
+  }
 
-  int numFiles = static_cast<int>
-    (cmsys::Directory::GetNumberOfFilesInDirectory(dirName.c_str()));
+  int numFiles =
+    static_cast<int>(cmsys::Directory::GetNumberOfFilesInDirectory(dirName));
   std::string pattern = "LastTestsFailed";
-  std::string logName = "";
+  std::string logName;
 
-  for (int i = 0; i < numFiles; ++i)
-    {
+  for (int i = 0; i < numFiles; ++i) {
     std::string fileName = directory.GetFile(i);
     // bcc crashes if we attempt a normal substring comparison,
     // hence the following workaround
     std::string fileNameSubstring = fileName.substr(0, pattern.length());
-    if (fileNameSubstring.compare(pattern) != 0)
-      {
+    if (fileNameSubstring != pattern) {
       continue;
-      }
-    if (logName == "")
-      {
+    }
+    if (logName.empty()) {
       logName = fileName;
-      }
-    else
-      {
+    } else {
       // if multiple matching logs were found we use the most recently
       // modified one.
       int res;
-      cmSystemTools::FileTimeCompare(logName.c_str(), fileName.c_str(), &res);
-      if (res == -1)
-        {
+      cmSystemTools::FileTimeCompare(logName, fileName, &res);
+      if (res == -1) {
         logName = fileName;
-        }
       }
     }
+  }
 
-  std::string lastTestsFailedLog = this->CTest->GetBinaryDir()
-    + "/Testing/Temporary/" + logName;
+  std::string lastTestsFailedLog =
+    this->CTest->GetBinaryDir() + "/Testing/Temporary/" + logName;
 
-  if ( !cmSystemTools::FileExists(lastTestsFailedLog.c_str()) )
-    {
-    if ( !this->CTest->GetShowOnly() && !this->CTest->ShouldPrintLabels() )
-      {
-      cmCTestLog(this->CTest, ERROR_MESSAGE, lastTestsFailedLog
-        << " does not exist!" << std::endl);
-      }
+  if (!cmSystemTools::FileExists(lastTestsFailedLog)) {
+    if (!this->CTest->GetShowOnly() && !this->CTest->ShouldPrintLabels()) {
+      cmCTestLog(this->CTest, ERROR_MESSAGE,
+                 lastTestsFailedLog << " does not exist!" << std::endl);
+    }
     return;
-    }
+  }
 
   // parse the list of tests to rerun from LastTestsFailed.log
   cmsys::ifstream ifs(lastTestsFailedLog.c_str());
-  if ( ifs )
-    {
+  if (ifs) {
     std::string line;
     std::string::size_type pos;
-    while ( cmSystemTools::GetLineFromStream(ifs, line) )
-      {
+    while (cmSystemTools::GetLineFromStream(ifs, line)) {
       pos = line.find(':', 0);
-      if (pos == line.npos)
-        {
+      if (pos == std::string::npos) {
         continue;
-        }
-
-      int val = atoi(line.substr(0, pos).c_str());
-      this->TestsToRun.push_back(val);
       }
+
+      line.erase(pos);
+      int val = atoi(line.c_str());
+      this->TestsToRun.push_back(val);
+    }
     ifs.close();
-    }
-  else if ( !this->CTest->GetShowOnly() && !this->CTest->ShouldPrintLabels() )
-    {
-    cmCTestLog(this->CTest, ERROR_MESSAGE, "Problem reading file: "
-      << lastTestsFailedLog.c_str() <<
-      " while generating list of previously failed tests." << std::endl);
-    }
+  } else if (!this->CTest->GetShowOnly() &&
+             !this->CTest->ShouldPrintLabels()) {
+    cmCTestLog(this->CTest, ERROR_MESSAGE,
+               "Problem reading file: "
+                 << lastTestsFailedLog
+                 << " while generating list of previously failed tests."
+                 << std::endl);
+  }
 }
 
-//----------------------------------------------------------------------
-// Just for convenience
-#define SPACE_REGEX "[ \t\r\n]"
-//----------------------------------------------------------------------
-std::string cmCTestTestHandler::GenerateRegressionImages(
-  const std::string& xml)
+void cmCTestTestHandler::RecordCustomTestMeasurements(cmXMLWriter& xml,
+                                                      std::string content)
 {
-  cmsys::RegularExpression twoattributes(
-    "<DartMeasurement"
-    SPACE_REGEX "*(name|type|encoding|compression)=\"([^\"]*)\""
-    SPACE_REGEX "*(name|type|encoding|compression)=\"([^\"]*)\""
-    SPACE_REGEX "*>([^<]*)</DartMeasurement>");
-  cmsys::RegularExpression threeattributes(
-    "<DartMeasurement"
-    SPACE_REGEX "*(name|type|encoding|compression)=\"([^\"]*)\""
-    SPACE_REGEX "*(name|type|encoding|compression)=\"([^\"]*)\""
-    SPACE_REGEX "*(name|type|encoding|compression)=\"([^\"]*)\""
-    SPACE_REGEX "*>([^<]*)</DartMeasurement>");
-  cmsys::RegularExpression fourattributes(
-    "<DartMeasurement"
-    SPACE_REGEX "*(name|type|encoding|compression)=\"([^\"]*)\""
-    SPACE_REGEX "*(name|type|encoding|compression)=\"([^\"]*)\""
-    SPACE_REGEX "*(name|type|encoding|compression)=\"([^\"]*)\""
-    SPACE_REGEX "*(name|type|encoding|compression)=\"([^\"]*)\""
-    SPACE_REGEX "*>([^<]*)</DartMeasurement>");
-  cmsys::RegularExpression cdatastart(
-    "<DartMeasurement"
-    SPACE_REGEX "*(name|type|encoding|compression)=\"([^\"]*)\""
-    SPACE_REGEX "*(name|type|encoding|compression)=\"([^\"]*)\""
-    SPACE_REGEX "*>"
-    SPACE_REGEX "*<!\\[CDATA\\[");
-  cmsys::RegularExpression cdataend(
-    "]]>"
-    SPACE_REGEX "*</DartMeasurement>");
-  cmsys::RegularExpression measurementfile(
-    "<DartMeasurementFile"
-    SPACE_REGEX "*(name|type|encoding|compression)=\"([^\"]*)\""
-    SPACE_REGEX "*(name|type|encoding|compression)=\"([^\"]*)\""
-    SPACE_REGEX "*>([^<]*)</DartMeasurementFile>");
+  while (this->SingleTestMeasurementRegex.find(content)) {
+    // Extract regex match from content and parse it as an XML element.
+    auto measurement_str = this->SingleTestMeasurementRegex.match(1);
+    auto parser = cmCTestTestMeasurementXMLParser();
+    parser.Parse(measurement_str.c_str());
 
-  cmOStringStream ostr;
-  bool done = false;
-  std::string cxml = xml;
-  while ( ! done )
-    {
-    if ( twoattributes.find(cxml) )
-      {
-      ostr
-        << "\t\t\t<NamedMeasurement"
-        << " " << twoattributes.match(1) << "=\""
-        << twoattributes.match(2) << "\""
-        << " " << twoattributes.match(3) << "=\""
-        << twoattributes.match(4) << "\""
-        << "><Value>" << twoattributes.match(5)
-        << "</Value></NamedMeasurement>"
-        << std::endl;
-      cxml.erase(twoattributes.start(),
-        twoattributes.end() - twoattributes.start());
-      }
-    else if ( threeattributes.find(cxml) )
-      {
-      ostr
-        << "\t\t\t<NamedMeasurement"
-        << " " << threeattributes.match(1) << "=\""
-        << threeattributes.match(2) << "\""
-        << " " << threeattributes.match(3) << "=\""
-        << threeattributes.match(4) << "\""
-        << " " << threeattributes.match(5) << "=\""
-        << threeattributes.match(6) << "\""
-        << "><Value>" << threeattributes.match(7)
-        << "</Value></NamedMeasurement>"
-        << std::endl;
-      cxml.erase(threeattributes.start(),
-        threeattributes.end() - threeattributes.start());
-      }
-    else if ( fourattributes.find(cxml) )
-      {
-      ostr
-        << "\t\t\t<NamedMeasurement"
-        << " " << fourattributes.match(1) << "=\""
-        << fourattributes.match(2) << "\""
-        << " " << fourattributes.match(3) << "=\""
-        << fourattributes.match(4) << "\""
-        << " " << fourattributes.match(5) << "=\""
-        << fourattributes.match(6) << "\""
-        << " " << fourattributes.match(7) << "=\""
-        << fourattributes.match(8) << "\""
-        << "><Value>" << fourattributes.match(9)
-        << "</Value></NamedMeasurement>"
-        << std::endl;
-      cxml.erase(fourattributes.start(),
-        fourattributes.end() - fourattributes.start());
-      }
-    else if ( cdatastart.find(cxml) && cdataend.find(cxml) )
-      {
-      ostr
-        << "\t\t\t<NamedMeasurement"
-        << " " << cdatastart.match(1) << "=\""
-        << cdatastart.match(2) << "\""
-        << " " << cdatastart.match(3) << "=\""
-        << cdatastart.match(4) << "\""
-        << "><Value><![CDATA["
-        << cxml.substr(cdatastart.end(), cdataend.start() - cdatastart.end())
-        << "]]></Value></NamedMeasurement>"
-        << std::endl;
-      cxml.erase(cdatastart.start(),
-        cdataend.end() - cdatastart.start());
-      }
-    else if ( measurementfile.find(cxml) )
-      {
-      const std::string& filename =
-        cmCTest::CleanString(measurementfile.match(5));
-      if ( cmSystemTools::FileExists(filename.c_str()) )
-        {
-        long len = cmSystemTools::FileLength(filename.c_str());
-        if ( len == 0 )
-          {
-          std::string k1 = measurementfile.match(1);
-          std::string v1 = measurementfile.match(2);
-          std::string k2 = measurementfile.match(3);
-          std::string v2 = measurementfile.match(4);
-          if ( cmSystemTools::LowerCase(k1) == "type" )
-            {
-            v1 = "text/string";
-            }
-          if ( cmSystemTools::LowerCase(k2) == "type" )
-            {
-            v2 = "text/string";
-            }
-
-          ostr
-            << "\t\t\t<NamedMeasurement"
-            << " " << k1 << "=\"" << v1 << "\""
-            << " " << k2 << "=\"" << v2 << "\""
-            << " encoding=\"none\""
-            << "><Value>Image " << filename.c_str()
-            << " is empty</Value></NamedMeasurement>";
-          }
-        else
-          {
-          cmsys::ifstream ifs(filename.c_str(), std::ios::in
+    if (parser.ElementName == "CTestMeasurement" ||
+        parser.ElementName == "DartMeasurement") {
+      xml.StartElement("NamedMeasurement");
+      xml.Attribute("type", parser.MeasurementType);
+      xml.Attribute("name", parser.MeasurementName);
+      xml.Element("Value", parser.CharacterData);
+      xml.EndElement();
+    } else if (parser.ElementName == "CTestMeasurementFile" ||
+               parser.ElementName == "DartMeasurementFile") {
+      const std::string& filename = cmCTest::CleanString(parser.CharacterData);
+      if (!cmSystemTools::FileExists(filename)) {
+        xml.StartElement("NamedMeasurement");
+        xml.Attribute("name", parser.MeasurementName);
+        xml.Attribute("text", "text/string");
+        xml.Element("Value", "File " + filename + " not found");
+        xml.EndElement();
+        cmCTestOptionalLog(
+          this->CTest, HANDLER_OUTPUT,
+          "File \"" << filename << "\" not found." << std::endl, this->Quiet);
+      } else {
+        long len = cmSystemTools::FileLength(filename);
+        if (len == 0) {
+          xml.StartElement("NamedMeasurement");
+          xml.Attribute("name", parser.MeasurementName);
+          xml.Attribute("type", "text/string");
+          xml.Attribute("encoding", "none");
+          xml.Element("Value", "Image " + filename + " is empty");
+          xml.EndElement();
+        } else {
+          if (parser.MeasurementType == "file") {
+            // Treat this measurement like an "ATTACHED_FILE" when the type
+            // is explicitly "file" (not an image).
+            this->AttachFile(xml, filename, parser.MeasurementName);
+          } else {
+            cmsys::ifstream ifs(filename.c_str(),
+                                std::ios::in
 #ifdef _WIN32
-                            | std::ios::binary
+                                  | std::ios::binary
 #endif
             );
-          unsigned char *file_buffer = new unsigned char [ len + 1 ];
-          ifs.read(reinterpret_cast<char*>(file_buffer), len);
-          unsigned char *encoded_buffer
-            = new unsigned char [ static_cast<int>(
-                static_cast<double>(len) * 1.5 + 5.0) ];
+            auto file_buffer = cm::make_unique<unsigned char[]>(len + 1);
+            ifs.read(reinterpret_cast<char*>(file_buffer.get()), len);
+            auto encoded_buffer = cm::make_unique<unsigned char[]>(
+              static_cast<int>(static_cast<double>(len) * 1.5 + 5.0));
 
-          unsigned long rlen
-            = cmsysBase64_Encode(file_buffer, len, encoded_buffer, 1);
-          unsigned long cc;
+            size_t rlen = cmsysBase64_Encode(file_buffer.get(), len,
+                                             encoded_buffer.get(), 1);
 
-          ostr
-            << "\t\t\t<NamedMeasurement"
-            << " " << measurementfile.match(1) << "=\""
-            << measurementfile.match(2) << "\""
-            << " " << measurementfile.match(3) << "=\""
-            << measurementfile.match(4) << "\""
-            << " encoding=\"base64\""
-            << ">" << std::endl << "\t\t\t\t<Value>";
-          for ( cc = 0; cc < rlen; cc ++ )
-            {
-            ostr << encoded_buffer[cc];
-            if ( cc % 60 == 0 && cc )
-              {
-              ostr << std::endl;
+            xml.StartElement("NamedMeasurement");
+            xml.Attribute("name", parser.MeasurementName);
+            xml.Attribute("type", parser.MeasurementType);
+            xml.Attribute("encoding", "base64");
+            std::ostringstream ostr;
+            for (size_t cc = 0; cc < rlen; cc++) {
+              ostr << encoded_buffer[cc];
+              if (cc % 60 == 0 && cc) {
+                ostr << std::endl;
               }
             }
-          ostr
-            << "</Value>" << std::endl << "\t\t\t</NamedMeasurement>"
-            << std::endl;
-          delete [] file_buffer;
-          delete [] encoded_buffer;
+            xml.Element("Value", ostr.str());
+            xml.EndElement(); // NamedMeasurement
           }
         }
-      else
-        {
-        int idx = 4;
-        if ( measurementfile.match(1) == "name" )
-          {
-          idx = 2;
-          }
-        ostr
-          << "\t\t\t<NamedMeasurement"
-          << " name=\"" << measurementfile.match(idx) << "\""
-          << " text=\"text/string\""
-          << "><Value>File " << filename.c_str()
-          << " not found</Value></NamedMeasurement>"
-          << std::endl;
-        cmCTestLog(this->CTest, HANDLER_OUTPUT, "File \"" << filename.c_str()
-          << "\" not found." << std::endl);
-        }
-      cxml.erase(measurementfile.start(),
-        measurementfile.end() - measurementfile.start());
-      }
-    else
-      {
-      done = true;
       }
     }
-  return ostr.str();
+
+    // Remove this element from content.
+    cmSystemTools::ReplaceString(content, measurement_str.c_str(), "");
+  }
 }
 
-//----------------------------------------------------------------------
-void cmCTestTestHandler::SetIncludeRegExp(const char *arg)
+void cmCTestTestHandler::SetIncludeRegExp(const std::string& arg)
 {
   this->IncludeRegExp = arg;
 }
 
-//----------------------------------------------------------------------
-void cmCTestTestHandler::SetExcludeRegExp(const char *arg)
+void cmCTestTestHandler::SetExcludeRegExp(const std::string& arg)
 {
   this->ExcludeRegExp = arg;
 }
 
-//----------------------------------------------------------------------
-void cmCTestTestHandler::SetTestsToRunInformation(const char* in)
+void cmCTestTestHandler::SetTestsToRunInformation(cmValue in)
 {
-  if ( !in )
-    {
+  if (!in) {
     return;
-    }
-  this->TestsToRunString = in;
+  }
+  this->TestsToRunString = *in;
   // if the argument is a file, then read it and use the contents as the
   // string
-  if(cmSystemTools::FileExists(in))
-    {
-    cmsys::ifstream fin(in);
+  if (cmSystemTools::FileExists(in)) {
+    cmsys::ifstream fin(in->c_str());
     unsigned long filelen = cmSystemTools::FileLength(in);
-    char* buff = new char[filelen+1];
-    fin.getline(buff, filelen);
+    auto buff = cm::make_unique<char[]>(filelen + 1);
+    fin.getline(buff.get(), filelen);
     buff[fin.gcount()] = 0;
-    this->TestsToRunString = buff;
-    delete [] buff;
-    }
+    this->TestsToRunString = buff.get();
+  }
 }
 
-//----------------------------------------------------------------------------
-bool cmCTestTestHandler::CleanTestOutput(std::string& output, size_t length)
+void cmCTestTestHandler::CleanTestOutput(std::string& output, size_t length)
 {
-  if(!length || length >= output.size() ||
-     output.find("CTEST_FULL_OUTPUT") != output.npos)
-    {
-    return true;
-    }
+  if (!length || length >= output.size() ||
+      output.find("CTEST_FULL_OUTPUT") != std::string::npos) {
+    return;
+  }
 
   // Truncate at given length but do not break in the middle of a multi-byte
   // UTF-8 encoding.
@@ -2080,312 +2107,439 @@ bool cmCTestTestHandler::CleanTestOutput(std::string& output, size_t length)
   char const* const end = begin + output.size();
   char const* const truncate = begin + length;
   char const* current = begin;
-  while(current < truncate)
-    {
+  while (current < truncate) {
     unsigned int ch;
-    if(const char* next = cm_utf8_decode_character(current, end, &ch))
-      {
-      if(next > truncate)
-        {
+    if (const char* next = cm_utf8_decode_character(current, end, &ch)) {
+      if (next > truncate) {
         break;
-        }
+      }
       current = next;
-      }
-    else // Bad byte will be handled by cmXMLSafe.
-      {
+    } else // Bad byte will be handled by cmXMLWriter.
+    {
       ++current;
-      }
     }
-  output = output.substr(0, current - begin);
+  }
+  output.erase(current - begin);
 
   // Append truncation message.
-  cmOStringStream msg;
+  std::ostringstream msg;
   msg << "...\n"
-    "The rest of the test output was removed since it exceeds the threshold "
-    "of " << length << " bytes.\n";
+         "The rest of the test output was removed since it exceeds the "
+         "threshold "
+         "of "
+      << length << " bytes.\n";
   output += msg.str();
-  return true;
 }
 
-//----------------------------------------------------------------------
 bool cmCTestTestHandler::SetTestsProperties(
   const std::vector<std::string>& args)
 {
   std::vector<std::string>::const_iterator it;
-  std::vector<cmStdString> tests;
+  std::vector<std::string> tests;
   bool found = false;
-  for ( it = args.begin(); it != args.end(); ++ it )
-    {
-    if ( *it == "PROPERTIES" )
-      {
+  for (it = args.begin(); it != args.end(); ++it) {
+    if (*it == "PROPERTIES") {
       found = true;
       break;
-      }
+    }
     tests.push_back(*it);
-    }
-  if ( !found )
-    {
+  }
+  if (!found) {
     return false;
-    }
-  ++ it; // skip PROPERTIES
-  for ( ; it != args.end(); ++ it )
-    {
-    std::string key = *it;
-    ++ it;
-    if ( it == args.end() )
-      {
+  }
+  ++it; // skip PROPERTIES
+  for (; it != args.end(); ++it) {
+    std::string const& key = *it;
+    ++it;
+    if (it == args.end()) {
       break;
-      }
-    std::string val = *it;
-    std::vector<cmStdString>::const_iterator tit;
-    for ( tit = tests.begin(); tit != tests.end(); ++ tit )
-      {
-      cmCTestTestHandler::ListOfTests::iterator rtit;
-      for ( rtit = this->TestList.begin();
-        rtit != this->TestList.end();
-        ++ rtit )
-        {
-        if ( *tit == rtit->Name )
-          {
-          if ( key == "WILL_FAIL" )
-            {
-            rtit->WillFail = cmSystemTools::IsOn(val.c_str());
-            }
-          if ( key == "ATTACHED_FILES" )
-            {
-            std::vector<std::string> lval;
-            cmSystemTools::ExpandListArgument(val.c_str(), lval);
+    }
+    std::string const& val = *it;
+    for (std::string const& t : tests) {
+      for (cmCTestTestProperties& rt : this->TestList) {
+        if (t == rt.Name) {
+          if (key == "_BACKTRACE_TRIPLES"_s) {
+            std::vector<std::string> triples;
+            // allow empty args in the triples
+            cmExpandList(val, triples, true);
 
-            for(std::vector<std::string>::iterator f = lval.begin();
-                f != lval.end(); ++f)
-              {
-              rtit->AttachedFiles.push_back(*f);
-              }
-            }
-          if ( key == "ATTACHED_FILES_ON_FAIL" )
-            {
-            std::vector<std::string> lval;
-            cmSystemTools::ExpandListArgument(val.c_str(), lval);
+            // Ensure we have complete triples otherwise the data is corrupt.
+            if (triples.size() % 3 == 0) {
+              cmState state(cmState::Unknown);
+              rt.Backtrace = cmListFileBacktrace();
 
-            for(std::vector<std::string>::iterator f = lval.begin();
-                f != lval.end(); ++f)
-              {
-              rtit->AttachOnFail.push_back(*f);
+              // the first entry represents the top of the trace so we need to
+              // reconstruct the backtrace in reverse
+              for (size_t i = triples.size(); i >= 3; i -= 3) {
+                cmListFileContext fc;
+                fc.FilePath = triples[i - 3];
+                long line = 0;
+                if (!cmStrToLong(triples[i - 2], &line)) {
+                  line = 0;
+                }
+                fc.Line = line;
+                fc.Name = triples[i - 1];
+                rt.Backtrace = rt.Backtrace.Push(fc);
               }
             }
-          if ( key == "RESOURCE_LOCK" )
-            {
-            std::vector<std::string> lval;
-            cmSystemTools::ExpandListArgument(val.c_str(), lval);
+          } else if (key == "WILL_FAIL"_s) {
+            rt.WillFail = cmIsOn(val);
+          } else if (key == "DISABLED"_s) {
+            rt.Disabled = cmIsOn(val);
+          } else if (key == "ATTACHED_FILES"_s) {
+            cmExpandList(val, rt.AttachedFiles);
+          } else if (key == "ATTACHED_FILES_ON_FAIL"_s) {
+            cmExpandList(val, rt.AttachOnFail);
+          } else if (key == "RESOURCE_LOCK"_s) {
+            std::vector<std::string> lval = cmExpandedList(val);
 
-            for(std::vector<std::string>::iterator f = lval.begin();
-                f != lval.end(); ++f)
-              {
-              rtit->LockedResources.insert(*f);
-              }
-            }
-          if ( key == "TIMEOUT" )
-            {
-            rtit->Timeout = atof(val.c_str());
-            rtit->ExplicitTimeout = true;
-            }
-          if ( key == "COST" )
-            {
-            rtit->Cost = static_cast<float>(atof(val.c_str()));
-            }
-          if ( key == "REQUIRED_FILES" )
-            {
-            std::vector<std::string> lval;
-            cmSystemTools::ExpandListArgument(val.c_str(), lval);
+            rt.LockedResources.insert(lval.begin(), lval.end());
+          } else if (key == "FIXTURES_SETUP"_s) {
+            std::vector<std::string> lval = cmExpandedList(val);
 
-            for(std::vector<std::string>::iterator f = lval.begin();
-                f != lval.end(); ++f)
-              {
-              rtit->RequiredFiles.push_back(*f);
-              }
+            rt.FixturesSetup.insert(lval.begin(), lval.end());
+          } else if (key == "FIXTURES_CLEANUP"_s) {
+            std::vector<std::string> lval = cmExpandedList(val);
+
+            rt.FixturesCleanup.insert(lval.begin(), lval.end());
+          } else if (key == "FIXTURES_REQUIRED"_s) {
+            std::vector<std::string> lval = cmExpandedList(val);
+
+            rt.FixturesRequired.insert(lval.begin(), lval.end());
+          } else if (key == "TIMEOUT"_s) {
+            rt.Timeout = cmDuration(atof(val.c_str()));
+            rt.ExplicitTimeout = true;
+          } else if (key == "COST"_s) {
+            rt.Cost = static_cast<float>(atof(val.c_str()));
+          } else if (key == "REQUIRED_FILES"_s) {
+            cmExpandList(val, rt.RequiredFiles);
+          } else if (key == "RUN_SERIAL"_s) {
+            rt.RunSerial = cmIsOn(val);
+          } else if (key == "FAIL_REGULAR_EXPRESSION"_s) {
+            std::vector<std::string> lval = cmExpandedList(val);
+            for (std::string const& cr : lval) {
+              rt.ErrorRegularExpressions.emplace_back(cr, cr);
             }
-          if ( key == "RUN_SERIAL" )
-            {
-            rtit->RunSerial = cmSystemTools::IsOn(val.c_str());
+          } else if (key == "SKIP_REGULAR_EXPRESSION"_s) {
+            std::vector<std::string> lval = cmExpandedList(val);
+            for (std::string const& cr : lval) {
+              rt.SkipRegularExpressions.emplace_back(cr, cr);
             }
-          if ( key == "FAIL_REGULAR_EXPRESSION" )
-            {
-            std::vector<std::string> lval;
-            cmSystemTools::ExpandListArgument(val.c_str(), lval);
-            std::vector<std::string>::iterator crit;
-            for ( crit = lval.begin(); crit != lval.end(); ++ crit )
-              {
-              rtit->ErrorRegularExpressions.push_back(
-                std::pair<cmsys::RegularExpression, std::string>(
-                  cmsys::RegularExpression(crit->c_str()),
-                  std::string(crit->c_str())));
-              }
+          } else if (key == "PROCESSORS"_s) {
+            rt.Processors = atoi(val.c_str());
+            if (rt.Processors < 1) {
+              rt.Processors = 1;
             }
-          if ( key == "PROCESSORS" )
-            {
-            rtit->Processors = atoi(val.c_str());
-            if(rtit->Processors < 1)
-              {
-              rtit->Processors = 1;
-              }
+          } else if (key == "PROCESSOR_AFFINITY"_s) {
+            rt.WantAffinity = cmIsOn(val);
+          } else if (key == "RESOURCE_GROUPS"_s) {
+            if (!ParseResourceGroupsProperty(val, rt.ResourceGroups)) {
+              return false;
             }
-          if ( key == "SKIP_RETURN_CODE" )
-            {
-            rtit->SkipReturnCode = atoi(val.c_str());
-            if(rtit->SkipReturnCode < 0 || rtit->SkipReturnCode > 255)
-              {
-              rtit->SkipReturnCode = -1;
-              }
+          } else if (key == "SKIP_RETURN_CODE"_s) {
+            rt.SkipReturnCode = atoi(val.c_str());
+            if (rt.SkipReturnCode < 0 || rt.SkipReturnCode > 255) {
+              rt.SkipReturnCode = -1;
             }
-          if ( key == "DEPENDS" )
-            {
-            std::vector<std::string> lval;
-            cmSystemTools::ExpandListArgument(val.c_str(), lval);
-            std::vector<std::string>::iterator crit;
-            for ( crit = lval.begin(); crit != lval.end(); ++ crit )
-              {
-              rtit->Depends.push_back(*crit);
-              }
-            }
-          if ( key == "ENVIRONMENT" )
-            {
-            std::vector<std::string> lval;
-            cmSystemTools::ExpandListArgument(val.c_str(), lval);
-            std::vector<std::string>::iterator crit;
-            for ( crit = lval.begin(); crit != lval.end(); ++ crit )
-              {
-              rtit->Environment.push_back(*crit);
-              }
-            }
-          if ( key == "LABELS" )
-            {
-            std::vector<std::string> lval;
-            cmSystemTools::ExpandListArgument(val.c_str(), lval);
-            std::vector<std::string>::iterator crit;
-            for ( crit = lval.begin(); crit != lval.end(); ++ crit )
-              {
-              rtit->Labels.push_back(*crit);
-              }
-            }
-          if ( key == "MEASUREMENT" )
-            {
-            size_t pos = val.find_first_of("=");
-            if ( pos != val.npos )
-              {
+          } else if (key == "DEPENDS"_s) {
+            cmExpandList(val, rt.Depends);
+          } else if (key == "ENVIRONMENT"_s) {
+            cmExpandList(val, rt.Environment);
+          } else if (key == "ENVIRONMENT_MODIFICATION"_s) {
+            cmExpandList(val, rt.EnvironmentModification);
+          } else if (key == "LABELS"_s) {
+            std::vector<std::string> Labels = cmExpandedList(val);
+            rt.Labels.insert(rt.Labels.end(), Labels.begin(), Labels.end());
+            // sort the array
+            std::sort(rt.Labels.begin(), rt.Labels.end());
+            // remove duplicates
+            auto new_end = std::unique(rt.Labels.begin(), rt.Labels.end());
+            rt.Labels.erase(new_end, rt.Labels.end());
+          } else if (key == "MEASUREMENT"_s) {
+            size_t pos = val.find_first_of('=');
+            if (pos != std::string::npos) {
               std::string mKey = val.substr(0, pos);
-              const char* mVal = val.c_str() + pos + 1;
-              rtit->Measurements[mKey] = mVal;
-              }
-            else
-              {
-              rtit->Measurements[val] = "1";
-              }
+              std::string mVal = val.substr(pos + 1);
+              rt.Measurements[mKey] = std::move(mVal);
+            } else {
+              rt.Measurements[val] = "1";
             }
-          if ( key == "PASS_REGULAR_EXPRESSION" )
-            {
-            std::vector<std::string> lval;
-            cmSystemTools::ExpandListArgument(val.c_str(), lval);
-            std::vector<std::string>::iterator crit;
-            for ( crit = lval.begin(); crit != lval.end(); ++ crit )
-              {
-              rtit->RequiredRegularExpressions.push_back(
-                std::pair<cmsys::RegularExpression, std::string>(
-                  cmsys::RegularExpression(crit->c_str()),
-                  std::string(crit->c_str())));
-              }
+          } else if (key == "PASS_REGULAR_EXPRESSION"_s) {
+            std::vector<std::string> lval = cmExpandedList(val);
+            for (std::string const& cr : lval) {
+              rt.RequiredRegularExpressions.emplace_back(cr, cr);
             }
-          if ( key == "WORKING_DIRECTORY" )
-            {
-            rtit->Directory = val;
+          } else if (key == "WORKING_DIRECTORY"_s) {
+            rt.Directory = val;
+          } else if (key == "TIMEOUT_AFTER_MATCH"_s) {
+            std::vector<std::string> propArgs = cmExpandedList(val);
+            if (propArgs.size() != 2) {
+              cmCTestLog(this->CTest, WARNING,
+                         "TIMEOUT_AFTER_MATCH expects two arguments, found "
+                           << propArgs.size() << std::endl);
+            } else {
+              rt.AlternateTimeout = cmDuration(atof(propArgs[0].c_str()));
+              std::vector<std::string> lval = cmExpandedList(propArgs[1]);
+              for (std::string const& cr : lval) {
+                rt.TimeoutRegularExpressions.emplace_back(cr, cr);
+              }
             }
           }
         }
       }
     }
+  }
   return true;
 }
 
-//----------------------------------------------------------------------
+bool cmCTestTestHandler::SetDirectoryProperties(
+  const std::vector<std::string>& args)
+{
+  std::vector<std::string>::const_iterator it;
+  std::vector<std::string> tests;
+  bool found = false;
+  for (it = args.begin(); it != args.end(); ++it) {
+    if (*it == "PROPERTIES") {
+      found = true;
+      break;
+    }
+    tests.push_back(*it);
+  }
+
+  if (!found) {
+    return false;
+  }
+  ++it; // skip PROPERTIES
+  for (; it != args.end(); ++it) {
+    std::string const& key = *it;
+    ++it;
+    if (it == args.end()) {
+      break;
+    }
+    std::string const& val = *it;
+    for (cmCTestTestProperties& rt : this->TestList) {
+      std::string cwd = cmSystemTools::GetCurrentWorkingDirectory();
+      if (cwd == rt.Directory) {
+        if (key == "LABELS"_s) {
+          std::vector<std::string> DirectoryLabels = cmExpandedList(val);
+          rt.Labels.insert(rt.Labels.end(), DirectoryLabels.begin(),
+                           DirectoryLabels.end());
+
+          // sort the array
+          std::sort(rt.Labels.begin(), rt.Labels.end());
+          // remove duplicates
+          auto new_end = std::unique(rt.Labels.begin(), rt.Labels.end());
+          rt.Labels.erase(new_end, rt.Labels.end());
+        }
+      }
+    }
+  }
+  return true;
+}
+
 bool cmCTestTestHandler::AddTest(const std::vector<std::string>& args)
 {
   const std::string& testname = args[0];
-  cmCTestLog(this->CTest, DEBUG, "Add test: " << args[0] << std::endl);
+  cmCTestOptionalLog(this->CTest, DEBUG, "Add test: " << args[0] << std::endl,
+                     this->Quiet);
 
-  if (this->UseExcludeRegExpFlag &&
-    this->UseExcludeRegExpFirst &&
-    this->ExcludeTestsRegularExpression.find(testname.c_str()))
-    {
+  if (this->UseExcludeRegExpFlag && this->UseExcludeRegExpFirst &&
+      this->ExcludeTestsRegularExpression.find(testname)) {
     return true;
-    }
-  if ( this->MemCheck )
-    {
-    std::vector<cmStdString>::iterator it;
+  }
+  if (this->MemCheck) {
+    std::vector<std::string>::iterator it;
     bool found = false;
-    for ( it = this->CustomTestsIgnore.begin();
-      it != this->CustomTestsIgnore.end(); ++ it )
-      {
-      if ( *it == testname )
-        {
+    for (it = this->CustomTestsIgnore.begin();
+         it != this->CustomTestsIgnore.end(); ++it) {
+      if (*it == testname) {
         found = true;
         break;
-        }
-      }
-    if ( found )
-      {
-      cmCTestLog(this->CTest, HANDLER_VERBOSE_OUTPUT, "Ignore memcheck: "
-        << *it << std::endl);
-      return true;
       }
     }
-  else
-    {
-    std::vector<cmStdString>::iterator it;
+    if (found) {
+      cmCTestOptionalLog(this->CTest, HANDLER_VERBOSE_OUTPUT,
+                         "Ignore memcheck: " << *it << std::endl, this->Quiet);
+      return true;
+    }
+  } else {
+    std::vector<std::string>::iterator it;
     bool found = false;
-    for ( it = this->CustomTestsIgnore.begin();
-      it != this->CustomTestsIgnore.end(); ++ it )
-      {
-      if ( *it == testname )
-        {
+    for (it = this->CustomTestsIgnore.begin();
+         it != this->CustomTestsIgnore.end(); ++it) {
+      if (*it == testname) {
         found = true;
         break;
-        }
-      }
-    if ( found )
-      {
-      cmCTestLog(this->CTest, HANDLER_VERBOSE_OUTPUT, "Ignore test: "
-        << *it << std::endl);
-      return true;
       }
     }
+    if (found) {
+      cmCTestOptionalLog(this->CTest, HANDLER_VERBOSE_OUTPUT,
+                         "Ignore test: " << *it << std::endl, this->Quiet);
+      return true;
+    }
+  }
 
   cmCTestTestProperties test;
   test.Name = testname;
   test.Args = args;
   test.Directory = cmSystemTools::GetCurrentWorkingDirectory();
-  cmCTestLog(this->CTest, DEBUG, "Set test directory: "
-    << test.Directory << std::endl);
+  cmCTestOptionalLog(this->CTest, DEBUG,
+                     "Set test directory: " << test.Directory << std::endl,
+                     this->Quiet);
 
   test.IsInBasedOnREOptions = true;
   test.WillFail = false;
+  test.Disabled = false;
   test.RunSerial = false;
-  test.Timeout = 0;
+  test.Timeout = cmDuration::zero();
   test.ExplicitTimeout = false;
   test.Cost = 0;
   test.Processors = 1;
+  test.WantAffinity = false;
   test.SkipReturnCode = -1;
   test.PreviousRuns = 0;
   if (this->UseIncludeRegExpFlag &&
-    !this->IncludeTestsRegularExpression.find(testname.c_str()))
-    {
+      (!this->IncludeTestsRegularExpression.find(testname) ||
+       (!this->UseExcludeRegExpFirst &&
+        this->ExcludeTestsRegularExpression.find(testname)))) {
     test.IsInBasedOnREOptions = false;
-    }
-  else if (this->UseExcludeRegExpFlag &&
-    !this->UseExcludeRegExpFirst &&
-    this->ExcludeTestsRegularExpression.find(testname.c_str()))
-    {
-    test.IsInBasedOnREOptions = false;
-    }
+  }
   this->TestList.push_back(test);
   return true;
 }
 
+bool cmCTestTestHandler::cmCTestTestResourceRequirement::operator==(
+  const cmCTestTestResourceRequirement& other) const
+{
+  return this->ResourceType == other.ResourceType &&
+    this->SlotsNeeded == other.SlotsNeeded &&
+    this->UnitsNeeded == other.UnitsNeeded;
+}
+
+bool cmCTestTestHandler::cmCTestTestResourceRequirement::operator!=(
+  const cmCTestTestResourceRequirement& other) const
+{
+  return !(*this == other);
+}
+
+void cmCTestTestHandler::SetJUnitXMLFileName(const std::string& filename)
+{
+  this->JUnitXMLFileName = filename;
+}
+
+bool cmCTestTestHandler::WriteJUnitXML()
+{
+  if (this->JUnitXMLFileName.empty()) {
+    return true;
+  }
+
+  // Open new XML file for writing.
+  cmGeneratedFileStream xmlfile;
+  xmlfile.SetTempExt("tmp");
+  xmlfile.Open(this->JUnitXMLFileName);
+  if (!xmlfile) {
+    cmCTestLog(this->CTest, ERROR_MESSAGE,
+               "Problem opening file: " << this->JUnitXMLFileName
+                                        << std::endl);
+    return false;
+  }
+  cmXMLWriter xml(xmlfile);
+
+  // Iterate over the test results to get the number of tests that
+  // passed, failed, etc.
+  auto num_tests = 0;
+  auto num_passed = 0;
+  auto num_failed = 0;
+  auto num_notrun = 0;
+  auto num_disabled = 0;
+  SetOfTests resultsSet(this->TestResults.begin(), this->TestResults.end());
+  for (cmCTestTestResult const& result : resultsSet) {
+    num_tests++;
+    if (result.Status == cmCTestTestHandler::COMPLETED) {
+      num_passed++;
+    } else if (result.Status == cmCTestTestHandler::NOT_RUN) {
+      if (result.CompletionStatus == "Disabled") {
+        num_disabled++;
+      } else {
+        num_notrun++;
+      }
+    } else {
+      num_failed++;
+    }
+  }
+
+  // Write <testsuite> element.
+  xml.StartDocument();
+  xml.StartElement("testsuite");
+
+  xml.Attribute("name",
+                cmCTest::SafeBuildIdField(
+                  this->CTest->GetCTestConfiguration("BuildName")));
+  xml.BreakAttributes();
+
+  xml.Attribute("tests", num_tests);
+  xml.Attribute("failures", num_failed);
+
+  // CTest disabled => JUnit disabled
+  xml.Attribute("disabled", num_disabled);
+
+  // Otherwise, CTest notrun => JUnit skipped.
+  // The distinction between JUnit disabled vs. skipped is that
+  // skipped tests can have a message associated with them
+  // (why the test was skipped).
+  xml.Attribute("skipped", num_notrun);
+
+  xml.Attribute("hostname", this->CTest->GetCTestConfiguration("Site"));
+  xml.Attribute(
+    "time",
+    std::chrono::duration_cast<std::chrono::seconds>(this->ElapsedTestingTime)
+      .count());
+  const std::time_t start_test_time_t =
+    std::chrono::system_clock::to_time_t(this->StartTestTime);
+  cmTimestamp cmts;
+  xml.Attribute("timestamp",
+                cmts.CreateTimestampFromTimeT(start_test_time_t,
+                                              "%Y-%m-%dT%H:%M:%S", false));
+
+  // Write <testcase> elements.
+  for (cmCTestTestResult const& result : resultsSet) {
+    xml.StartElement("testcase");
+    xml.Attribute("name", result.Name);
+    xml.Attribute("classname", result.Name);
+    xml.Attribute("time", result.ExecutionTime.count());
+
+    std::string status;
+    if (result.Status == cmCTestTestHandler::COMPLETED) {
+      status = "run";
+    } else if (result.Status == cmCTestTestHandler::NOT_RUN) {
+      if (result.CompletionStatus == "Disabled") {
+        status = "disabled";
+      } else {
+        status = "notrun";
+      }
+    } else {
+      status = "fail";
+    }
+    xml.Attribute("status", status);
+
+    if (status == "notrun") {
+      xml.StartElement("skipped");
+      xml.Attribute("message", result.CompletionStatus);
+      xml.EndElement(); // </skipped>
+    } else if (status == "fail") {
+      xml.StartElement("failure");
+      xml.Attribute("message", result.Reason);
+      xml.EndElement(); // </failure>
+    }
+
+    // Note: compressed test output is unconditionally disabled when
+    // --output-junit is specified.
+    xml.Element("system-out", result.Output);
+    xml.EndElement(); // </testcase>
+  }
+
+  xml.EndElement(); // </testsuite>
+  xml.EndDocument();
+
+  return true;
+}

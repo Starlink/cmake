@@ -1,50 +1,41 @@
-#.rst:
-# FindSDL_mixer
-# -------------
-#
-# Locate SDL_mixer library
-#
-# This module defines:
-#
-# ::
-#
-#   SDL_MIXER_LIBRARIES, the name of the library to link against
-#   SDL_MIXER_INCLUDE_DIRS, where to find the headers
-#   SDL_MIXER_FOUND, if false, do not try to link against
-#   SDL_MIXER_VERSION_STRING - human-readable string containing the version of SDL_mixer
-#
-#
-#
-# For backward compatiblity the following variables are also set:
-#
-# ::
-#
-#   SDLMIXER_LIBRARY (same value as SDL_MIXER_LIBRARIES)
-#   SDLMIXER_INCLUDE_DIR (same value as SDL_MIXER_INCLUDE_DIRS)
-#   SDLMIXER_FOUND (same value as SDL_MIXER_FOUND)
-#
-#
-#
-# $SDLDIR is an environment variable that would correspond to the
-# ./configure --prefix=$SDLDIR used in building SDL.
-#
-# Created by Eric Wing.  This was influenced by the FindSDL.cmake
-# module, but with modifications to recognize OS X frameworks and
-# additional Unix paths (FreeBSD, etc).
+# Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+# file Copyright.txt or https://cmake.org/licensing for details.
 
-#=============================================================================
-# Copyright 2005-2009 Kitware, Inc.
-# Copyright 2012 Benjamin Eikel
-#
-# Distributed under the OSI-approved BSD License (the "License");
-# see accompanying file Copyright.txt for details.
-#
-# This software is distributed WITHOUT ANY WARRANTY; without even the
-# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the License for more information.
-#=============================================================================
-# (To distribute this file outside of CMake, substitute the full
-#  License text for the above reference.)
+#[=======================================================================[.rst:
+FindSDL_mixer
+-------------
+
+Locate SDL_mixer library
+
+This module defines:
+
+::
+
+  SDL_MIXER_LIBRARIES, the name of the library to link against
+  SDL_MIXER_INCLUDE_DIRS, where to find the headers
+  SDL_MIXER_FOUND, if false, do not try to link against
+  SDL_MIXER_VERSION_STRING - human-readable string containing the
+                             version of SDL_mixer
+
+
+
+For backward compatibility the following variables are also set:
+
+::
+
+  SDLMIXER_LIBRARY (same value as SDL_MIXER_LIBRARIES)
+  SDLMIXER_INCLUDE_DIR (same value as SDL_MIXER_INCLUDE_DIRS)
+  SDLMIXER_FOUND (same value as SDL_MIXER_FOUND)
+
+
+
+$SDLDIR is an environment variable that would correspond to the
+./configure --prefix=$SDLDIR used in building SDL.
+
+Created by Eric Wing.  This was influenced by the FindSDL.cmake
+module, but with modifications to recognize OS X frameworks and
+additional Unix paths (FreeBSD, etc).
+#]=======================================================================]
 
 if(NOT SDL_MIXER_INCLUDE_DIR AND SDLMIXER_INCLUDE_DIR)
   set(SDL_MIXER_INCLUDE_DIR ${SDLMIXER_INCLUDE_DIR} CACHE PATH "directory cache
@@ -54,7 +45,9 @@ find_path(SDL_MIXER_INCLUDE_DIR SDL_mixer.h
   HINTS
     ENV SDLMIXERDIR
     ENV SDLDIR
-  PATH_SUFFIXES include/SDL include/SDL12 include/SDL11 include
+  PATH_SUFFIXES SDL
+                # path suffixes to search inside ENV{SDLDIR}
+                include/SDL include/SDL12 include/SDL11 include
 )
 
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
@@ -100,7 +93,7 @@ FIND_PACKAGE_HANDLE_STANDARD_ARGS(SDL_mixer
                                   REQUIRED_VARS SDL_MIXER_LIBRARIES SDL_MIXER_INCLUDE_DIRS
                                   VERSION_VAR SDL_MIXER_VERSION_STRING)
 
-# for backward compatiblity
+# for backward compatibility
 set(SDLMIXER_LIBRARY ${SDL_MIXER_LIBRARIES})
 set(SDLMIXER_INCLUDE_DIR ${SDL_MIXER_INCLUDE_DIRS})
 set(SDLMIXER_FOUND ${SDL_MIXER_FOUND})

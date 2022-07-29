@@ -1,16 +1,7 @@
+# Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+# file Copyright.txt or https://cmake.org/licensing for details.
 
-#=============================================================================
-# Copyright 2004-2009 Kitware, Inc.
-#
-# Distributed under the OSI-approved BSD License (the "License");
-# see accompanying file Copyright.txt for details.
-#
-# This software is distributed WITHOUT ANY WARRANTY; without even the
-# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the License for more information.
-#=============================================================================
-# (To distribute this file outside of CMake, substitute the full
-#  License text for the above reference.)
+include(CMakeInitializeConfigs)
 
 set(CMAKE_SHARED_LIBRARY_C_FLAGS "")            # -pic
 set(CMAKE_SHARED_LIBRARY_CREATE_C_FLAGS "-shared")       # -shared
@@ -18,7 +9,6 @@ set(CMAKE_SHARED_LIBRARY_LINK_C_FLAGS "")         # +s, flag for exe link to use
 set(CMAKE_SHARED_LIBRARY_RUNTIME_C_FLAG "")       # -rpath
 set(CMAKE_SHARED_LIBRARY_RUNTIME_C_FLAG_SEP "")   # : or empty
 set(CMAKE_INCLUDE_FLAG_C "-I")       # -I
-set(CMAKE_INCLUDE_FLAG_C_SEP "")     # , or empty
 set(CMAKE_LIBRARY_PATH_FLAG "-L")
 set(CMAKE_LIBRARY_PATH_TERMINATOR "")  # for the Digital Mars D compiler the link paths have to be terminated with a "/"
 set(CMAKE_LINK_LIBRARY_FLAG "-l")
@@ -34,6 +24,13 @@ set(CMAKE_DL_LIBS "dl")
 set(CMAKE_FIND_LIBRARY_PREFIXES "lib")
 set(CMAKE_FIND_LIBRARY_SUFFIXES ".so" ".a")
 
+set(CMAKE_AUTOGEN_ORIGIN_DEPENDS ON)
+set(CMAKE_AUTOMOC_COMPILER_PREDEFINES ON)
+if(NOT DEFINED CMAKE_AUTOMOC_PATH_PREFIX)
+  set(CMAKE_AUTOMOC_PATH_PREFIX OFF)
+endif()
+set(CMAKE_AUTOMOC_MACRO_NAMES "Q_OBJECT" "Q_GADGET" "Q_NAMESPACE" "Q_NAMESPACE_EXPORT")
+
 # basically all general purpose OSs support shared libs
 set_property(GLOBAL PROPERTY TARGET_SUPPORTS_SHARED_LIBS TRUE)
 
@@ -44,7 +41,7 @@ set (CMAKE_SKIP_INSTALL_RPATH "NO" CACHE BOOL
 
 set(CMAKE_VERBOSE_MAKEFILE FALSE CACHE BOOL "If this value is on, makefiles will be generated without the .SILENT directive, and all commands will be echoed to the console during the make.  This is useful for debugging only. With Visual Studio IDE projects all commands are done without /nologo.")
 
-if(CMAKE_GENERATOR MATCHES "Makefiles")
+if(CMAKE_GENERATOR MATCHES "Make")
   set(CMAKE_COLOR_MAKEFILE ON CACHE BOOL
     "Enable/Disable color output during build."
     )
@@ -52,17 +49,14 @@ if(CMAKE_GENERATOR MATCHES "Makefiles")
   if(DEFINED CMAKE_RULE_MESSAGES)
     set_property(GLOBAL PROPERTY RULE_MESSAGES ${CMAKE_RULE_MESSAGES})
   endif()
-  if(CMAKE_GENERATOR MATCHES "Unix Makefiles")
-    set(CMAKE_EXPORT_COMPILE_COMMANDS OFF CACHE BOOL
-      "Enable/Disable output of compile commands during generation."
-      )
-    mark_as_advanced(CMAKE_EXPORT_COMPILE_COMMANDS)
+  if(DEFINED CMAKE_TARGET_MESSAGES)
+    set_property(GLOBAL PROPERTY TARGET_MESSAGES ${CMAKE_TARGET_MESSAGES})
   endif()
 endif()
 
-if(CMAKE_GENERATOR MATCHES "Ninja")
-  set(CMAKE_EXPORT_COMPILE_COMMANDS OFF CACHE BOOL
-    "Enable/Disable output of compile commands during generation."
+if(NOT DEFINED CMAKE_EXPORT_COMPILE_COMMANDS AND CMAKE_GENERATOR MATCHES "Ninja|Unix Makefiles")
+  set(CMAKE_EXPORT_COMPILE_COMMANDS "$ENV{CMAKE_EXPORT_COMPILE_COMMANDS}"
+    CACHE BOOL "Enable/Disable output of compile commands during generation."
     )
   mark_as_advanced(CMAKE_EXPORT_COMPILE_COMMANDS)
 endif()
@@ -83,7 +77,13 @@ function(GetDefaultWindowsPrefixBase var)
   #
   if("${CMAKE_GENERATOR}" MATCHES "(Win64|IA64)")
     set(arch_hint "x64")
+  elseif("${CMAKE_GENERATOR_PLATFORM}" MATCHES "x64")
+    set(arch_hint "x64")
+  elseif("${CMAKE_GENERATOR_PLATFORM}" MATCHES "ARM64")
+    set(arch_hint "ARM64")
   elseif("${CMAKE_GENERATOR}" MATCHES "ARM")
+    set(arch_hint "ARM")
+  elseif("${CMAKE_GENERATOR_PLATFORM}" MATCHES "ARM")
     set(arch_hint "ARM")
   elseif("${CMAKE_SIZEOF_VOID_P}" STREQUAL "8")
     set(arch_hint "x64")

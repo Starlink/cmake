@@ -1,19 +1,18 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc.
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
+#pragma once
 
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
+#include "cmConfigure.h" // IWYU pragma: keep
 
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
-
-#ifndef cmCPackDragNDropGenerator_h
-#define cmCPackDragNDropGenerator_h
+#include <cstddef>
+#include <sstream>
+#include <string>
+#include <vector>
 
 #include "cmCPackGenerator.h"
+
+class cmGeneratedFileStream;
+class cmXMLWriter;
 
 /** \class cmCPackDragNDropGenerator
  * \brief A generator for OSX drag-n-drop installs
@@ -24,24 +23,59 @@ public:
   cmCPackTypeMacro(cmCPackDragNDropGenerator, cmCPackGenerator);
 
   cmCPackDragNDropGenerator();
-  virtual ~cmCPackDragNDropGenerator();
+  ~cmCPackDragNDropGenerator() override;
 
 protected:
-  virtual int InitializeInternal();
-  virtual const char* GetOutputExtension();
-  int PackageFiles();
-  bool SupportsComponentInstallation() const;
+  int InitializeInternal() override;
+  const char* GetOutputExtension() override;
+  int PackageFiles() override;
+  bool SupportsComponentInstallation() const override;
 
+  bool CopyFile(std::ostringstream& source, std::ostringstream& target);
+  bool CreateEmptyFile(std::ostringstream& target, size_t size);
+  bool RunCommand(std::ostringstream& command, std::string* output = nullptr);
 
-  bool CopyFile(cmOStringStream& source, cmOStringStream& target);
-  bool RunCommand(cmOStringStream& command, std::string* output = 0);
-
-  std::string
-  GetComponentInstallDirNameSuffix(const std::string& componentName);
+  std::string GetComponentInstallDirNameSuffix(
+    const std::string& componentName) override;
 
   int CreateDMG(const std::string& src_dir, const std::string& output_file);
 
-  std::string InstallPrefix;
-};
+private:
+  std::string slaDirectory;
+  bool singleLicense;
 
-#endif
+  struct RezDict
+  {
+    std::string Name;
+    size_t ID;
+    std::vector<unsigned char> Data;
+  };
+
+  struct RezArray
+  {
+    std::string Key;
+    std::vector<RezDict> Entries;
+  };
+
+  struct RezDoc
+  {
+    RezArray LPic = { "LPic", {} };
+    RezArray Menu = { "STR#", {} };
+    RezArray Text = { "TEXT", {} };
+    RezArray RTF = { "RTF ", {} };
+  };
+
+  void WriteRezXML(std::string const& file, RezDoc const& rez);
+  void WriteRezArray(cmXMLWriter& xml, RezArray const& array);
+  void WriteRezDict(cmXMLWriter& xml, RezDict const& dict);
+
+  bool WriteLicense(RezDoc& rez, size_t licenseNumber,
+                    std::string licenseLanguage,
+                    const std::string& licenseFile, std::string* error);
+  void EncodeLicense(RezDict& dict, std::vector<std::string> const& lines);
+  void EncodeMenu(RezDict& dict, std::vector<std::string> const& lines);
+  bool ReadFile(std::string const& file, std::vector<std::string>& lines,
+                std::string* error);
+  bool BreakLongLine(const std::string& line, std::vector<std::string>& lines,
+                     std::string* error);
+};

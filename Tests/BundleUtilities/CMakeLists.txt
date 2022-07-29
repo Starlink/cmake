@@ -1,5 +1,14 @@
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 2.8.12)
 project(BundleUtilities)
+
+if(CMAKE_GENERATOR STREQUAL "Xcode" AND
+   "${CMAKE_SYSTEM_NAME};${CMAKE_SYSTEM_PROCESSOR}" STREQUAL "Darwin;arm64")
+  # Tell Xcode to pretend the linker signed binaries so that
+  # editing with install_name_tool preserves ad-hoc signatures.
+  # See CMake Issue 21854.
+  # This option is supported by codesign on macOS 11 or higher.
+  set(CMAKE_XCODE_ATTRIBUTE_OTHER_CODE_SIGN_FLAGS "-o linker-signed")
+endif()
 
 ###### the various types of dependencies we can have
 
@@ -109,7 +118,8 @@ if(APPLE AND NOT CMAKE_SYSTEM_VERSION VERSION_LESS 9.0)
   target_link_libraries(testbundleutils3 shared-3 framework-3 ${CMAKE_DL_LIBS})
 
   set_target_properties(testbundleutils3 module3 PROPERTIES
-                        LINK_FLAGS "-Wl,-rpath,@loader_path/")
+                        LINK_FLAGS "-Wl,-rpath,@loader_path/"
+                        BUILD_WITH_INSTALL_RPATH 1)
 
   # add custom target to install and test the app
   add_custom_target(testbundleutils3_test  ALL

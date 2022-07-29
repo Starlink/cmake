@@ -1,14 +1,6 @@
-#=============================================================================
-# CMake - Cross Platform Makefile Generator
-# Copyright 2000-2013 Kitware, Inc., Insight Software Consortium
-#
-# Distributed under the OSI-approved BSD License (the "License");
-# see accompanying file Copyright.txt for details.
-#
-# This software is distributed WITHOUT ANY WARRANTY; without even the
-# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the License for more information.
-#=============================================================================
+# Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+# file Copyright.txt or https://cmake.org/licensing for details.
+
 import sys
 import os
 import re
@@ -23,13 +15,21 @@ project = 'CMake'
 copyright = '@conf_copyright@'
 version = '@conf_version@' # feature version
 release = '@conf_release@' # full version string
+pygments_style = 'colors.CMakeTemplateStyle'
 
+language = 'en'
 primary_domain = 'cmake'
+highlight_language = 'none'
 
-exclude_patterns = []
+exclude_patterns = [
+    'dev', # ignore developer-only documentation
+    ]
 
 extensions = ['cmake']
 templates_path = ['@conf_path@/templates']
+
+nitpicky = True
+smartquotes = False
 
 cmake_manuals = sorted(glob.glob(r'@conf_docs@/manual/*.rst'))
 cmake_manual_description = re.compile('^\.\. cmake-manual-description:(.*)$')
@@ -53,11 +53,37 @@ for fpath in cmake_manuals:
     except Exception as e:
         sys.stderr.write("ERROR: %s\n" % str(e))
 man_show_urls = False
+man_make_section_directory = False
 
+html_baseurl = '@conf_baseurl@'
 html_show_sourcelink = True
 html_static_path = ['@conf_path@/static']
 html_style = 'cmake.css'
 html_theme = 'default'
+html_theme_options = {
+    'footerbgcolor':    '#00182d',
+    'footertextcolor':  '#ffffff',
+    'sidebarbgcolor':   '#e4ece8',
+    'sidebarbtncolor':  '#00a94f',
+    'sidebartextcolor': '#333333',
+    'sidebarlinkcolor': '#00a94f',
+    'relbarbgcolor':    '#00529b',
+    'relbartextcolor':  '#ffffff',
+    'relbarlinkcolor':  '#ffffff',
+    'bgcolor':          '#ffffff',
+    'textcolor':        '#444444',
+    'headbgcolor':      '#f2f2f2',
+    'headtextcolor':    '#003564',
+    'headlinkcolor':    '#3d8ff2',
+    'linkcolor':        '#2b63a8',
+    'visitedlinkcolor': '#2b63a8',
+    'codebgcolor':      '#eeeeee',
+    'codetextcolor':    '#333333',
+}
 html_title = 'CMake %s Documentation' % release
 html_short_title = '%s Documentation' % release
-html_favicon = 'cmake-favicon.ico'
+html_favicon = '@conf_path@/static/cmake-favicon.ico'
+# Not supported yet by sphinx:
+# https://bitbucket.org/birkenfeld/sphinx/issue/1448/make-qthelp-more-configurable
+# qthelp_namespace = "org.cmake"
+# qthelp_qch_name = "CMake.qch"

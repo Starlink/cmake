@@ -1,599 +1,617 @@
-/*============================================================================
-  CMake - Cross Platform Makefile Generator
-  Copyright 2000-2009 Kitware, Inc., Insight Software Consortium
-
-  Distributed under the OSI-approved BSD License (the "License");
-  see accompanying file Copyright.txt for details.
-
-  This software is distributed WITHOUT ANY WARRANTY; without even the
-  implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the License for more information.
-============================================================================*/
+/* Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+   file Copyright.txt or https://cmake.org/licensing for details.  */
 #include "cmGraphVizWriter.h"
-#include "cmMakefile.h"
-#include "cmLocalGenerator.h"
-#include "cmGlobalGenerator.h"
+
+#include <algorithm>
+#include <cctype>
+#include <iostream>
+#include <memory>
+#include <set>
+#include <utility>
+
+#include <cm/memory>
+
 #include "cmGeneratedFileStream.h"
+#include "cmGeneratorTarget.h"
+#include "cmGlobalGenerator.h"
+#include "cmLinkItem.h"
+#include "cmLocalGenerator.h"
+#include "cmMakefile.h"
+#include "cmState.h"
+#include "cmStateSnapshot.h"
+#include "cmStringAlgorithms.h"
+#include "cmSystemTools.h"
+#include "cmValue.h"
+#include "cmake.h"
 
+namespace {
 
+char const* const GRAPHVIZ_EDGE_STYLE_PUBLIC = "solid";
+char const* const GRAPHVIZ_EDGE_STYLE_INTERFACE = "dashed";
+char const* const GRAPHVIZ_EDGE_STYLE_PRIVATE = "dotted";
 
-static const char* getShapeForTarget(const cmTarget* target)
+char const* const GRAPHVIZ_NODE_SHAPE_EXECUTABLE = "egg"; // egg-xecutable
+
+// Normal libraries.
+char const* const GRAPHVIZ_NODE_SHAPE_LIBRARY_STATIC = "octagon";
+char const* const GRAPHVIZ_NODE_SHAPE_LIBRARY_SHARED = "doubleoctagon";
+char const* const GRAPHVIZ_NODE_SHAPE_LIBRARY_MODULE = "tripleoctagon";
+
+char const* const GRAPHVIZ_NODE_SHAPE_LIBRARY_INTERFACE = "pentagon";
+char const* const GRAPHVIZ_NODE_SHAPE_LIBRARY_OBJECT = "hexagon";
+char const* const GRAPHVIZ_NODE_SHAPE_LIBRARY_UNKNOWN = "septagon";
+
+char const* const GRAPHVIZ_NODE_SHAPE_UTILITY = "box";
+
+const char* getShapeForTarget(const cmLinkItem& item)
 {
-  if (!target)
-    {
-    return "ellipse";
-    }
+  if (item.Target == nullptr) {
+    return GRAPHVIZ_NODE_SHAPE_LIBRARY_UNKNOWN;
+  }
 
-  switch ( target->GetType() )
-    {
-    case cmTarget::EXECUTABLE:
-      return "house";
-    case cmTarget::STATIC_LIBRARY:
-      return "diamond";
-    case cmTarget::SHARED_LIBRARY:
-      return "polygon";
-    case cmTarget::MODULE_LIBRARY:
-      return "octagon";
+  switch (item.Target->GetType()) {
+    case cmStateEnums::EXECUTABLE:
+      return GRAPHVIZ_NODE_SHAPE_EXECUTABLE;
+    case cmStateEnums::STATIC_LIBRARY:
+      return GRAPHVIZ_NODE_SHAPE_LIBRARY_STATIC;
+    case cmStateEnums::SHARED_LIBRARY:
+      return GRAPHVIZ_NODE_SHAPE_LIBRARY_SHARED;
+    case cmStateEnums::MODULE_LIBRARY:
+      return GRAPHVIZ_NODE_SHAPE_LIBRARY_MODULE;
+    case cmStateEnums::OBJECT_LIBRARY:
+      return GRAPHVIZ_NODE_SHAPE_LIBRARY_OBJECT;
+    case cmStateEnums::UTILITY:
+      return GRAPHVIZ_NODE_SHAPE_UTILITY;
+    case cmStateEnums::INTERFACE_LIBRARY:
+      return GRAPHVIZ_NODE_SHAPE_LIBRARY_INTERFACE;
+    case cmStateEnums::UNKNOWN_LIBRARY:
     default:
-      break;
-    }
-
-  return "box";
+      return GRAPHVIZ_NODE_SHAPE_LIBRARY_UNKNOWN;
+  }
 }
 
+struct DependeesDir
+{
+  template <typename T>
+  static const cmLinkItem& src(const T& con)
+  {
+    return con.src;
+  }
 
-cmGraphVizWriter::cmGraphVizWriter(const std::vector<cmLocalGenerator*>&
-                                                               localGenerators)
-:GraphType("digraph")
-,GraphName("GG")
-,GraphHeader("node [\n  fontsize = \"12\"\n];")
-,GraphNodePrefix("node")
-,GenerateForExecutables(true)
-,GenerateForStaticLibs(true)
-,GenerateForSharedLibs(true)
-,GenerateForModuleLibs(true)
-,GenerateForExternals(true)
-,GeneratePerTarget(true)
-,GenerateDependers(true)
-,LocalGenerators(localGenerators)
-,HaveTargetsAndLibs(false)
+  template <typename T>
+  static const cmLinkItem& dst(const T& con)
+  {
+    return con.dst;
+  }
+};
+
+struct DependersDir
+{
+  template <typename T>
+  static const cmLinkItem& src(const T& con)
+  {
+    return con.dst;
+  }
+
+  template <typename T>
+  static const cmLinkItem& dst(const T& con)
+  {
+    return con.src;
+  }
+};
+}
+
+cmGraphVizWriter::cmGraphVizWriter(std::string const& fileName,
+                                   const cmGlobalGenerator* globalGenerator)
+  : FileName(fileName)
+  , GlobalFileStream(fileName)
+  , GraphName(globalGenerator->GetSafeGlobalSetting("CMAKE_PROJECT_NAME"))
+  , GraphHeader("node [\n  fontsize = \"12\"\n];")
+  , GraphNodePrefix("node")
+  , GlobalGenerator(globalGenerator)
+  , NextNodeId(0)
+  , GenerateForExecutables(true)
+  , GenerateForStaticLibs(true)
+  , GenerateForSharedLibs(true)
+  , GenerateForModuleLibs(true)
+  , GenerateForInterfaceLibs(true)
+  , GenerateForObjectLibs(true)
+  , GenerateForUnknownLibs(true)
+  , GenerateForCustomTargets(false)
+  , GenerateForExternals(true)
+  , GeneratePerTarget(true)
+  , GenerateDependers(true)
 {
 }
 
-
-void cmGraphVizWriter::ReadSettings(const char* settingsFileName,
-                                    const char* fallbackSettingsFileName)
+cmGraphVizWriter::~cmGraphVizWriter()
 {
-  cmake cm;
-  cmGlobalGenerator ggi;
-  ggi.SetCMakeInstance(&cm);
-  cmsys::auto_ptr<cmLocalGenerator> lg(ggi.CreateLocalGenerator());
-  cmMakefile *mf = lg->GetMakefile();
+  this->WriteFooter(this->GlobalFileStream);
+}
 
-  const char* inFileName = settingsFileName;
+void cmGraphVizWriter::VisitGraph(std::string const&)
+{
+  this->WriteHeader(this->GlobalFileStream, this->GraphName);
+  this->WriteLegend(this->GlobalFileStream);
+}
 
-  if ( !cmSystemTools::FileExists(inFileName) )
-    {
+void cmGraphVizWriter::OnItem(cmLinkItem const& item)
+{
+  if (this->ItemExcluded(item)) {
+    return;
+  }
+
+  this->NodeNames[item.AsStr()] =
+    cmStrCat(this->GraphNodePrefix, this->NextNodeId);
+  ++this->NextNodeId;
+
+  this->WriteNode(this->GlobalFileStream, item);
+}
+
+std::unique_ptr<cmGeneratedFileStream> cmGraphVizWriter::CreateTargetFile(
+  cmLinkItem const& item, std::string const& fileNameSuffix)
+{
+  auto const pathSafeItemName = PathSafeString(item.AsStr());
+  auto const perTargetFileName =
+    cmStrCat(this->FileName, '.', pathSafeItemName, fileNameSuffix);
+  auto perTargetFileStream =
+    cm::make_unique<cmGeneratedFileStream>(perTargetFileName);
+
+  this->WriteHeader(*perTargetFileStream, item.AsStr());
+  this->WriteNode(*perTargetFileStream, item);
+
+  return perTargetFileStream;
+}
+
+void cmGraphVizWriter::OnDirectLink(cmLinkItem const& depender,
+                                    cmLinkItem const& dependee,
+                                    DependencyType dt)
+{
+  this->VisitLink(depender, dependee, true, GetEdgeStyle(dt));
+}
+
+void cmGraphVizWriter::OnIndirectLink(cmLinkItem const& depender,
+                                      cmLinkItem const& dependee)
+{
+  this->VisitLink(depender, dependee, false);
+}
+
+void cmGraphVizWriter::VisitLink(cmLinkItem const& depender,
+                                 cmLinkItem const& dependee, bool isDirectLink,
+                                 std::string const& scopeType)
+{
+  if (this->ItemExcluded(depender) || this->ItemExcluded(dependee)) {
+    return;
+  }
+
+  if (!isDirectLink) {
+    return;
+  }
+
+  // write global data directly
+  this->WriteConnection(this->GlobalFileStream, depender, dependee, scopeType);
+
+  if (this->GeneratePerTarget) {
+    this->PerTargetConnections[depender].emplace_back(depender, dependee,
+                                                      scopeType);
+  }
+
+  if (this->GenerateDependers) {
+    this->TargetDependersConnections[dependee].emplace_back(dependee, depender,
+                                                            scopeType);
+  }
+}
+
+void cmGraphVizWriter::ReadSettings(
+  const std::string& settingsFileName,
+  const std::string& fallbackSettingsFileName)
+{
+  cmake cm(cmake::RoleScript, cmState::Unknown);
+  cm.SetHomeDirectory("");
+  cm.SetHomeOutputDirectory("");
+  cm.GetCurrentSnapshot().SetDefaultDefinitions();
+  cmGlobalGenerator ggi(&cm);
+  cmMakefile mf(&ggi, cm.GetCurrentSnapshot());
+  std::unique_ptr<cmLocalGenerator> lg(ggi.CreateLocalGenerator(&mf));
+
+  std::string inFileName = settingsFileName;
+  if (!cmSystemTools::FileExists(inFileName)) {
     inFileName = fallbackSettingsFileName;
-    if ( !cmSystemTools::FileExists(inFileName) )
-      {
+    if (!cmSystemTools::FileExists(inFileName)) {
       return;
-      }
     }
+  }
 
-  if ( !mf->ReadListFile(0, inFileName) )
-    {
-    cmSystemTools::Error("Problem opening GraphViz options file: ",
+  if (!mf.ReadListFile(inFileName)) {
+    cmSystemTools::Error("Problem opening GraphViz options file: " +
                          inFileName);
     return;
-    }
+  }
 
   std::cout << "Reading GraphViz options file: " << inFileName << std::endl;
 
-#define __set_if_set(var, cmakeDefinition) \
-  { \
-  const char* value = mf->GetDefinition(cmakeDefinition); \
-  if ( value ) \
-    { \
-    var = value; \
-    } \
-  }
+#define set_if_set(var, cmakeDefinition)                                      \
+  do {                                                                        \
+    cmValue value = mf.GetDefinition(cmakeDefinition);                        \
+    if (value) {                                                              \
+      (var) = *value;                                                         \
+    }                                                                         \
+  } while (false)
 
-  __set_if_set(this->GraphType, "GRAPHVIZ_GRAPH_TYPE");
-  __set_if_set(this->GraphName, "GRAPHVIZ_GRAPH_NAME");
-  __set_if_set(this->GraphHeader, "GRAPHVIZ_GRAPH_HEADER");
-  __set_if_set(this->GraphNodePrefix, "GRAPHVIZ_NODE_PREFIX");
+  set_if_set(this->GraphName, "GRAPHVIZ_GRAPH_NAME");
+  set_if_set(this->GraphHeader, "GRAPHVIZ_GRAPH_HEADER");
+  set_if_set(this->GraphNodePrefix, "GRAPHVIZ_NODE_PREFIX");
 
-#define __set_bool_if_set(var, cmakeDefinition) \
-  { \
-  const char* value = mf->GetDefinition(cmakeDefinition); \
-  if ( value ) \
-    { \
-    var = mf->IsOn(cmakeDefinition); \
-    } \
-  }
+#define set_bool_if_set(var, cmakeDefinition)                                 \
+  do {                                                                        \
+    cmValue value = mf.GetDefinition(cmakeDefinition);                        \
+    if (value) {                                                              \
+      (var) = cmIsOn(*value);                                                 \
+    }                                                                         \
+  } while (false)
 
-  __set_bool_if_set(this->GenerateForExecutables, "GRAPHVIZ_EXECUTABLES");
-  __set_bool_if_set(this->GenerateForStaticLibs, "GRAPHVIZ_STATIC_LIBS");
-  __set_bool_if_set(this->GenerateForSharedLibs, "GRAPHVIZ_SHARED_LIBS");
-  __set_bool_if_set(this->GenerateForModuleLibs, "GRAPHVIZ_MODULE_LIBS");
-  __set_bool_if_set(this->GenerateForExternals, "GRAPHVIZ_EXTERNAL_LIBS");
-  __set_bool_if_set(this->GeneratePerTarget, "GRAPHVIZ_GENERATE_PER_TARGET");
-  __set_bool_if_set(this->GenerateDependers, "GRAPHVIZ_GENERATE_DEPENDERS");
+  set_bool_if_set(this->GenerateForExecutables, "GRAPHVIZ_EXECUTABLES");
+  set_bool_if_set(this->GenerateForStaticLibs, "GRAPHVIZ_STATIC_LIBS");
+  set_bool_if_set(this->GenerateForSharedLibs, "GRAPHVIZ_SHARED_LIBS");
+  set_bool_if_set(this->GenerateForModuleLibs, "GRAPHVIZ_MODULE_LIBS");
+  set_bool_if_set(this->GenerateForInterfaceLibs, "GRAPHVIZ_INTERFACE_LIBS");
+  set_bool_if_set(this->GenerateForObjectLibs, "GRAPHVIZ_OBJECT_LIBS");
+  set_bool_if_set(this->GenerateForUnknownLibs, "GRAPHVIZ_UNKNOWN_LIBS");
+  set_bool_if_set(this->GenerateForCustomTargets, "GRAPHVIZ_CUSTOM_TARGETS");
+  set_bool_if_set(this->GenerateForExternals, "GRAPHVIZ_EXTERNAL_LIBS");
+  set_bool_if_set(this->GeneratePerTarget, "GRAPHVIZ_GENERATE_PER_TARGET");
+  set_bool_if_set(this->GenerateDependers, "GRAPHVIZ_GENERATE_DEPENDERS");
 
-  cmStdString ignoreTargetsRegexes;
-  __set_if_set(ignoreTargetsRegexes, "GRAPHVIZ_IGNORE_TARGETS");
+  std::string ignoreTargetsRegexes;
+  set_if_set(ignoreTargetsRegexes, "GRAPHVIZ_IGNORE_TARGETS");
 
   this->TargetsToIgnoreRegex.clear();
-  if (ignoreTargetsRegexes.size() > 0)
-    {
-    std::vector<std::string> ignoreTargetsRegExVector;
-    cmSystemTools::ExpandListArgument(ignoreTargetsRegexes,
-                                      ignoreTargetsRegExVector);
-    for(std::vector<std::string>::const_iterator itvIt
-                                            = ignoreTargetsRegExVector.begin();
-        itvIt != ignoreTargetsRegExVector.end();
-        ++ itvIt )
-      {
-      cmStdString currentRegexString(*itvIt);
+  if (!ignoreTargetsRegexes.empty()) {
+    std::vector<std::string> ignoreTargetsRegExVector =
+      cmExpandedList(ignoreTargetsRegexes);
+    for (std::string const& currentRegexString : ignoreTargetsRegExVector) {
       cmsys::RegularExpression currentRegex;
-      if (!currentRegex.compile(currentRegexString.c_str()))
-        {
+      if (!currentRegex.compile(currentRegexString)) {
         std::cerr << "Could not compile bad regex \"" << currentRegexString
                   << "\"" << std::endl;
-        }
-      this->TargetsToIgnoreRegex.push_back(currentRegex);
       }
+      this->TargetsToIgnoreRegex.push_back(std::move(currentRegex));
     }
-
-}
-
-
-// Iterate over all targets and write for each one a graph which shows
-// which other targets depend on it.
-void cmGraphVizWriter::WriteTargetDependersFiles(const char* fileName)
-{
-  if(this->GenerateDependers == false)
-    {
-    return;
-    }
-
-  this->CollectTargetsAndLibs();
-
-  for(std::map<cmStdString, const cmTarget*>::const_iterator ptrIt =
-                                                      this->TargetPtrs.begin();
-      ptrIt != this->TargetPtrs.end();
-      ++ptrIt)
-    {
-    if (ptrIt->second == NULL)
-      {
-      continue;
-      }
-
-    if (this->GenerateForTargetType(ptrIt->second->GetType()) == false)
-      {
-      continue;
-      }
-
-    std::string currentFilename = fileName;
-    currentFilename += ".";
-    currentFilename += ptrIt->first;
-    currentFilename += ".dependers";
-
-    cmGeneratedFileStream str(currentFilename.c_str());
-    if ( !str )
-      {
-      return;
-      }
-
-    std::set<std::string> insertedConnections;
-    std::set<std::string> insertedNodes;
-
-    std::cout << "Writing " << currentFilename << "..." << std::endl;
-    this->WriteHeader(str);
-
-    this->WriteDependerConnections(ptrIt->first.c_str(),
-                                   insertedNodes, insertedConnections, str);
-
-    this->WriteFooter(str);
-    }
-}
-
-
-// Iterate over all targets and write for each one a graph which shows
-// on which targets it depends.
-void cmGraphVizWriter::WritePerTargetFiles(const char* fileName)
-{
-  if(this->GeneratePerTarget == false)
-    {
-    return;
-    }
-
-  this->CollectTargetsAndLibs();
-
-  for(std::map<cmStdString, const cmTarget*>::const_iterator ptrIt =
-                                                      this->TargetPtrs.begin();
-      ptrIt != this->TargetPtrs.end();
-      ++ptrIt)
-    {
-    if (ptrIt->second == NULL)
-      {
-      continue;
-      }
-
-    if (this->GenerateForTargetType(ptrIt->second->GetType()) == false)
-      {
-      continue;
-      }
-
-    std::set<std::string> insertedConnections;
-    std::set<std::string> insertedNodes;
-
-    std::string currentFilename = fileName;
-    currentFilename += ".";
-    currentFilename += ptrIt->first;
-    cmGeneratedFileStream str(currentFilename.c_str());
-    if ( !str )
-      {
-      return;
-      }
-
-    std::cout << "Writing " << currentFilename << "..." << std::endl;
-    this->WriteHeader(str);
-
-    this->WriteConnections(ptrIt->first.c_str(),
-                              insertedNodes, insertedConnections, str);
-    this->WriteFooter(str);
-    }
-
-}
-
-
-void cmGraphVizWriter::WriteGlobalFile(const char* fileName)
-{
-  this->CollectTargetsAndLibs();
-
-  cmGeneratedFileStream str(fileName);
-  if ( !str )
-    {
-    return;
-    }
-  this->WriteHeader(str);
-
-  std::cout << "Writing " << fileName << "..." << std::endl;
-
-  std::set<std::string> insertedConnections;
-  std::set<std::string> insertedNodes;
-
-  for(std::map<cmStdString, const cmTarget*>::const_iterator ptrIt =
-                                                      this->TargetPtrs.begin();
-      ptrIt != this->TargetPtrs.end();
-      ++ptrIt)
-    {
-    if (ptrIt->second == NULL)
-      {
-      continue;
-      }
-
-    if (this->GenerateForTargetType(ptrIt->second->GetType()) == false)
-      {
-      continue;
-      }
-
-    this->WriteConnections(ptrIt->first.c_str(),
-                              insertedNodes, insertedConnections, str);
-    }
-  this->WriteFooter(str);
-}
-
-
-void cmGraphVizWriter::WriteHeader(cmGeneratedFileStream& str) const
-{
-  str << this->GraphType << " " << this->GraphName << " {" << std::endl;
-  str << this->GraphHeader << std::endl;
-}
-
-
-void cmGraphVizWriter::WriteFooter(cmGeneratedFileStream& str) const
-{
-  str << "}" << std::endl;
-}
-
-
-void cmGraphVizWriter::WriteConnections(const char* targetName,
-                                    std::set<std::string>& insertedNodes,
-                                    std::set<std::string>& insertedConnections,
-                                    cmGeneratedFileStream& str) const
-{
-  std::map<cmStdString, const cmTarget* >::const_iterator targetPtrIt =
-                                             this->TargetPtrs.find(targetName);
-
-  if (targetPtrIt == this->TargetPtrs.end())  // not found at all
-    {
-    return;
-    }
-
-  this->WriteNode(targetName, targetPtrIt->second, insertedNodes, str);
-
-  if (targetPtrIt->second == NULL) // it's an external library
-    {
-    return;
-    }
-
-
-  std::string myNodeName = this->TargetNamesNodes.find(targetName)->second;
-
-  const cmTarget::LinkLibraryVectorType* ll =
-                            &(targetPtrIt->second->GetOriginalLinkLibraries());
-
-  for (cmTarget::LinkLibraryVectorType::const_iterator llit = ll->begin();
-       llit != ll->end();
-       ++ llit )
-    {
-    const char* libName = llit->first.c_str();
-    std::map<cmStdString, cmStdString>::const_iterator libNameIt =
-                                          this->TargetNamesNodes.find(libName);
-
-    // can happen e.g. if GRAPHVIZ_TARGET_IGNORE_REGEX is used
-    if(libNameIt == this->TargetNamesNodes.end())
-      {
-      continue;
-      }
-
-    std::string connectionName = myNodeName;
-    connectionName += "-";
-    connectionName += libNameIt->second;
-    if (insertedConnections.find(connectionName) == insertedConnections.end())
-      {
-      insertedConnections.insert(connectionName);
-      this->WriteNode(libName, this->TargetPtrs.find(libName)->second,
-                      insertedNodes, str);
-
-      str << "    \"" << myNodeName.c_str() << "\" -> \""
-          << libNameIt->second.c_str() << "\"";
-      str << " // " << targetName << " -> " << libName << std::endl;
-      this->WriteConnections(libName, insertedNodes, insertedConnections, str);
-      }
-    }
-
-}
-
-
-void cmGraphVizWriter::WriteDependerConnections(const char* targetName,
-                                    std::set<std::string>& insertedNodes,
-                                    std::set<std::string>& insertedConnections,
-                                    cmGeneratedFileStream& str) const
-{
-  std::map<cmStdString, const cmTarget* >::const_iterator targetPtrIt =
-                                             this->TargetPtrs.find(targetName);
-
-  if (targetPtrIt == this->TargetPtrs.end())  // not found at all
-    {
-    return;
-    }
-
-  this->WriteNode(targetName, targetPtrIt->second, insertedNodes, str);
-
-  if (targetPtrIt->second == NULL) // it's an external library
-    {
-    return;
-    }
-
-
-  std::string myNodeName = this->TargetNamesNodes.find(targetName)->second;
-
-  // now search who links against me
-  for(std::map<cmStdString, const cmTarget*>::const_iterator dependerIt =
-                                                      this->TargetPtrs.begin();
-      dependerIt != this->TargetPtrs.end();
-      ++dependerIt)
-    {
-    if (dependerIt->second == NULL)
-      {
-      continue;
-      }
-
-    if (this->GenerateForTargetType(dependerIt->second->GetType()) == false)
-      {
-      continue;
-      }
-
-    // Now we have a target, check whether it links against targetName.
-    // If so, draw a connection, and then continue with dependers on that one.
-    const cmTarget::LinkLibraryVectorType* ll =
-                            &(dependerIt->second->GetOriginalLinkLibraries());
-
-    for (cmTarget::LinkLibraryVectorType::const_iterator llit = ll->begin();
-         llit != ll->end();
-         ++ llit )
-      {
-      std::string libName = llit->first.c_str();
-      if (libName == targetName)
-        {
-        // So this target links against targetName.
-        std::map<cmStdString, cmStdString>::const_iterator dependerNodeNameIt =
-                                this->TargetNamesNodes.find(dependerIt->first);
-
-        if(dependerNodeNameIt != this->TargetNamesNodes.end())
-          {
-          std::string connectionName = dependerNodeNameIt->second;
-          connectionName += "-";
-          connectionName += myNodeName;
-
-          if (insertedConnections.find(connectionName) ==
-                                                     insertedConnections.end())
-            {
-            insertedConnections.insert(connectionName);
-            this->WriteNode(dependerIt->first.c_str(), dependerIt->second,
-                            insertedNodes, str);
-
-            str << "    \"" << dependerNodeNameIt->second << "\" -> \""
-                << myNodeName << "\"";
-            str << " // " <<targetName<< " -> " <<dependerIt->first<<std::endl;
-            this->WriteDependerConnections(dependerIt->first.c_str(),
-                                      insertedNodes, insertedConnections, str);
-            }
-
-
-          }
-        break;
-        }
-      }
-    }
-
-}
-
-
-void cmGraphVizWriter::WriteNode(const char* targetName,
-                                 const cmTarget* target,
-                                 std::set<std::string>& insertedNodes,
-                                 cmGeneratedFileStream& str) const
-{
-  if (insertedNodes.find(targetName) == insertedNodes.end())
-  {
-    insertedNodes.insert(targetName);
-    std::map<cmStdString, cmStdString>::const_iterator nameIt =
-                                       this->TargetNamesNodes.find(targetName);
-
-    str << "    \"" << nameIt->second.c_str() << "\" [ label=\""
-        << targetName <<  "\" shape=\"" << getShapeForTarget(target)
-        << "\"];" << std::endl;
   }
 }
 
-
-void cmGraphVizWriter::CollectTargetsAndLibs()
+void cmGraphVizWriter::Write()
 {
-  if (this->HaveTargetsAndLibs == false)
-    {
-    this->HaveTargetsAndLibs = true;
-    int cnt = this->CollectAllTargets();
-    if (this->GenerateForExternals)
-      {
-      this->CollectAllExternalLibs(cnt);
+  const auto* gg = this->GlobalGenerator;
+
+  this->VisitGraph(gg->GetName());
+
+  // We want to traverse in a determined order, such that the output is always
+  // the same for a given project (this makes tests reproducible, etc.)
+  std::set<cmGeneratorTarget const*, cmGeneratorTarget::StrictTargetComparison>
+    sortedGeneratorTargets;
+
+  for (const auto& lg : gg->GetLocalGenerators()) {
+    for (const auto& gt : lg->GetGeneratorTargets()) {
+      // Reserved targets have inconsistent names across platforms (e.g. 'all'
+      // vs. 'ALL_BUILD'), which can disrupt the traversal ordering.
+      // We don't need or want them anyway.
+      if (!cmGlobalGenerator::IsReservedTarget(gt->GetName())) {
+        sortedGeneratorTargets.insert(gt.get());
       }
     }
+  }
+
+  // write global data and collect all connection data for per target graphs
+  for (const auto* const gt : sortedGeneratorTargets) {
+    auto item = cmLinkItem(gt, false, gt->GetBacktrace());
+    this->VisitItem(item);
+  }
+
+  if (this->GeneratePerTarget) {
+    this->WritePerTargetConnections<DependeesDir>(this->PerTargetConnections);
+  }
+
+  if (this->GenerateDependers) {
+    this->WritePerTargetConnections<DependersDir>(
+      this->TargetDependersConnections, ".dependers");
+  }
 }
 
-
-int cmGraphVizWriter::CollectAllTargets()
+void cmGraphVizWriter::FindAllConnections(const ConnectionsMap& connectionMap,
+                                          const cmLinkItem& rootItem,
+                                          Connections& extendedCons,
+                                          std::set<cmLinkItem>& visitedItems)
 {
-  int cnt = 0;
-  // First pass get the list of all cmake targets
-  for (std::vector<cmLocalGenerator*>::const_iterator lit =
-                                                 this->LocalGenerators.begin();
-       lit != this->LocalGenerators.end();
-       ++ lit )
-    {
-    const cmTargets* targets = &((*lit)->GetMakefile()->GetTargets());
-    for ( cmTargets::const_iterator tit = targets->begin();
-          tit != targets->end();
-          ++ tit )
-      {
-      const char* realTargetName = tit->first.c_str();
-      if(this->IgnoreThisTarget(realTargetName))
-        {
-        // Skip ignored targets
-        continue;
-        }
-      //std::cout << "Found target: " << tit->first.c_str() << std::endl;
-      cmOStringStream ostr;
-      ostr << this->GraphNodePrefix << cnt++;
-      this->TargetNamesNodes[realTargetName] = ostr.str();
-      this->TargetPtrs[realTargetName] = &tit->second;
-      }
+  // some "targets" are not in map, e.g. linker flags as -lm or
+  // targets without dependency.
+  // in both cases we are finished with traversing the graph
+  if (connectionMap.find(rootItem) == connectionMap.cend()) {
+    return;
+  }
+
+  const Connections& origCons = connectionMap.at(rootItem);
+
+  for (const Connection& con : origCons) {
+    extendedCons.emplace_back(con);
+    const cmLinkItem& dstItem = con.dst;
+    bool const visited = visitedItems.find(dstItem) != visitedItems.cend();
+    if (!visited) {
+      visitedItems.insert(dstItem);
+      this->FindAllConnections(connectionMap, dstItem, extendedCons,
+                               visitedItems);
+    }
+  }
+}
+
+void cmGraphVizWriter::FindAllConnections(const ConnectionsMap& connectionMap,
+                                          const cmLinkItem& rootItem,
+                                          Connections& extendedCons)
+{
+  std::set<cmLinkItem> visitedItems = { rootItem };
+  this->FindAllConnections(connectionMap, rootItem, extendedCons,
+                           visitedItems);
+}
+
+template <typename DirFunc>
+void cmGraphVizWriter::WritePerTargetConnections(
+  const ConnectionsMap& connections, const std::string& fileNameSuffix)
+{
+  // the per target connections must be extended by indirect dependencies
+  ConnectionsMap extendedConnections;
+  for (auto const& conPerTarget : connections) {
+    const cmLinkItem& rootItem = conPerTarget.first;
+    Connections& extendedCons = extendedConnections[conPerTarget.first];
+    this->FindAllConnections(connections, rootItem, extendedCons);
+  }
+
+  for (auto const& conPerTarget : extendedConnections) {
+    const cmLinkItem& rootItem = conPerTarget.first;
+
+    // some of the nodes are excluded completely and are not written
+    if (this->ItemExcluded(rootItem)) {
+      continue;
     }
 
-  return cnt;
-}
+    const Connections& cons = conPerTarget.second;
 
+    std::unique_ptr<cmGeneratedFileStream> fileStream =
+      this->CreateTargetFile(rootItem, fileNameSuffix);
 
-int cmGraphVizWriter::CollectAllExternalLibs(int cnt)
-{
-  // Ok, now find all the stuff we link to that is not in cmake
-  for (std::vector<cmLocalGenerator*>::const_iterator lit =
-                                                 this->LocalGenerators.begin();
-       lit != this->LocalGenerators.end();
-       ++ lit )
-    {
-    const cmTargets* targets = &((*lit)->GetMakefile()->GetTargets());
-    for ( cmTargets::const_iterator tit = targets->begin();
-          tit != targets->end();
-          ++ tit )
-      {
-      const char* realTargetName = tit->first.c_str();
-      if (this->IgnoreThisTarget(realTargetName))
-        {
-        // Skip ignored targets
-        continue;
-        }
-      const cmTarget::LinkLibraryVectorType* ll =
-                                     &(tit->second.GetOriginalLinkLibraries());
-      for (cmTarget::LinkLibraryVectorType::const_iterator llit = ll->begin();
-           llit != ll->end();
-           ++ llit )
-        {
-        const char* libName = llit->first.c_str();
-        if (this->IgnoreThisTarget(libName))
-          {
-          // Skip ignored targets
-          continue;
-          }
-
-        std::map<cmStdString, const cmTarget*>::const_iterator tarIt =
-                                                this->TargetPtrs.find(libName);
-        if ( tarIt == this->TargetPtrs.end() )
-          {
-          cmOStringStream ostr;
-          ostr << this->GraphNodePrefix << cnt++;
-          this->TargetNamesNodes[libName] = ostr.str();
-          this->TargetPtrs[libName] = NULL;
-          // str << "    \"" << ostr.c_str() << "\" [ label=\"" << libName
-          // <<  "\" shape=\"ellipse\"];" << std::endl;
-          }
-        }
-      }
+    for (const Connection& con : cons) {
+      const cmLinkItem& src = DirFunc::src(con);
+      const cmLinkItem& dst = DirFunc::dst(con);
+      this->WriteNode(*fileStream, con.dst);
+      this->WriteConnection(*fileStream, src, dst, con.scopeType);
     }
-   return cnt;
+
+    this->WriteFooter(*fileStream);
+  }
 }
 
-
-bool cmGraphVizWriter::IgnoreThisTarget(const char* name)
+void cmGraphVizWriter::WriteHeader(cmGeneratedFileStream& fs,
+                                   const std::string& name)
 {
-  for(std::vector<cmsys::RegularExpression>::iterator itvIt
-                                          = this->TargetsToIgnoreRegex.begin();
-      itvIt != this->TargetsToIgnoreRegex.end();
-      ++ itvIt )
-    {
-    cmsys::RegularExpression& regEx = *itvIt;
-    if (regEx.is_valid())
-      {
-      if (regEx.find(name))
-        {
+  auto const escapedGraphName = EscapeForDotFile(name);
+  fs << "digraph \"" << escapedGraphName << "\" {\n"
+     << this->GraphHeader << '\n';
+}
+
+void cmGraphVizWriter::WriteFooter(cmGeneratedFileStream& fs)
+{
+  fs << "}\n";
+}
+
+void cmGraphVizWriter::WriteLegend(cmGeneratedFileStream& fs)
+{
+  // Note that the subgraph name must start with "cluster", as done here, to
+  // make Graphviz layout engines do the right thing and keep the nodes
+  // together.
+  /* clang-format off */
+  fs << "subgraph clusterLegend {\n"
+        "  label = \"Legend\";\n"
+        // Set the color of the box surrounding the legend.
+        "  color = black;\n"
+        // We use invisible edges just to enforce the layout.
+        "  edge [ style = invis ];\n"
+        // Nodes.
+        "  legendNode0 [ label = \"Executable\", shape = "
+     << GRAPHVIZ_NODE_SHAPE_EXECUTABLE << " ];\n"
+        "  legendNode1 [ label = \"Static Library\", shape = "
+     << GRAPHVIZ_NODE_SHAPE_LIBRARY_STATIC << " ];\n"
+        "  legendNode2 [ label = \"Shared Library\", shape = "
+     << GRAPHVIZ_NODE_SHAPE_LIBRARY_SHARED << " ];\n"
+        "  legendNode3 [ label = \"Module Library\", shape = "
+     << GRAPHVIZ_NODE_SHAPE_LIBRARY_MODULE << " ];\n"
+        "  legendNode4 [ label = \"Interface Library\", shape = "
+     << GRAPHVIZ_NODE_SHAPE_LIBRARY_INTERFACE << " ];\n"
+        "  legendNode5 [ label = \"Object Library\", shape = "
+     << GRAPHVIZ_NODE_SHAPE_LIBRARY_OBJECT << " ];\n"
+        "  legendNode6 [ label = \"Unknown Library\", shape = "
+     << GRAPHVIZ_NODE_SHAPE_LIBRARY_UNKNOWN << " ];\n"
+        "  legendNode7 [ label = \"Custom Target\", shape = "
+     << GRAPHVIZ_NODE_SHAPE_UTILITY << " ];\n"
+        // Edges.
+        // Some of those are dummy (invisible) edges to enforce a layout.
+        "  legendNode0 -> legendNode1 [ style = "
+     << GRAPHVIZ_EDGE_STYLE_PUBLIC << " ];\n"
+        "  legendNode0 -> legendNode2 [ style = "
+     << GRAPHVIZ_EDGE_STYLE_PUBLIC << " ];\n"
+        "  legendNode0 -> legendNode3;\n"
+        "  legendNode1 -> legendNode4 [ label = \"Interface\", style = "
+     << GRAPHVIZ_EDGE_STYLE_INTERFACE << " ];\n"
+        "  legendNode2 -> legendNode5 [ label = \"Private\", style = "
+     << GRAPHVIZ_EDGE_STYLE_PRIVATE << " ];\n"
+        "  legendNode3 -> legendNode6 [ style = "
+     << GRAPHVIZ_EDGE_STYLE_PUBLIC << " ];\n"
+        "  legendNode0 -> legendNode7;\n"
+        "}\n";
+  /* clang-format off */
+}
+
+void cmGraphVizWriter::WriteNode(cmGeneratedFileStream& fs,
+                                 cmLinkItem const& item)
+{
+  auto const& itemName = item.AsStr();
+  auto const& nodeName = this->NodeNames[itemName];
+
+  auto const itemNameWithAliases = this->ItemNameWithAliases(itemName);
+  auto const escapedLabel = EscapeForDotFile(itemNameWithAliases);
+
+  fs << "    \"" << nodeName << "\" [ label = \"" << escapedLabel
+     << "\", shape = " << getShapeForTarget(item) << " ];\n";
+}
+
+void cmGraphVizWriter::WriteConnection(cmGeneratedFileStream& fs,
+                                       cmLinkItem const& depender,
+                                       cmLinkItem const& dependee,
+                                       std::string const& edgeStyle)
+{
+  auto const& dependerName = depender.AsStr();
+  auto const& dependeeName = dependee.AsStr();
+
+  fs << "    \"" << this->NodeNames[dependerName] << "\" -> \""
+     << this->NodeNames[dependeeName] << "\" "
+     << edgeStyle
+     << " // " << dependerName << " -> " << dependeeName << '\n';
+}
+
+bool cmGraphVizWriter::ItemExcluded(cmLinkItem const& item)
+{
+  auto const itemName = item.AsStr();
+
+  if (this->ItemNameFilteredOut(itemName)) {
+    return true;
+  }
+
+  if (item.Target == nullptr) {
+    return !this->GenerateForExternals;
+  }
+
+  if (item.Target->GetType() == cmStateEnums::UTILITY) {
+    if (cmHasLiteralPrefix(itemName, "Nightly") ||
+        cmHasLiteralPrefix(itemName, "Continuous") ||
+        cmHasLiteralPrefix(itemName, "Experimental")) {
+      return true;
+    }
+  }
+
+  if (item.Target->IsImported() && !this->GenerateForExternals) {
+    return true;
+  }
+
+  return !this->TargetTypeEnabled(item.Target->GetType());
+}
+
+bool cmGraphVizWriter::ItemNameFilteredOut(std::string const& itemName)
+{
+  if (itemName == ">") {
+    // FIXME: why do we even receive such a target here?
+    return true;
+  }
+
+  if (cmGlobalGenerator::IsReservedTarget(itemName)) {
+    return true;
+  }
+
+  for (cmsys::RegularExpression& regEx : this->TargetsToIgnoreRegex) {
+    if (regEx.is_valid()) {
+      if (regEx.find(itemName)) {
         return true;
-        }
       }
     }
+  }
 
   return false;
 }
 
-
-bool cmGraphVizWriter::GenerateForTargetType(cmTarget::TargetType targetType)
-                                                                          const
+bool cmGraphVizWriter::TargetTypeEnabled(
+  cmStateEnums::TargetType targetType) const
 {
-  switch (targetType)
-  {
-    case cmTarget::EXECUTABLE:
+  switch (targetType) {
+    case cmStateEnums::EXECUTABLE:
       return this->GenerateForExecutables;
-    case cmTarget::STATIC_LIBRARY:
+    case cmStateEnums::STATIC_LIBRARY:
       return this->GenerateForStaticLibs;
-    case cmTarget::SHARED_LIBRARY:
+    case cmStateEnums::SHARED_LIBRARY:
       return this->GenerateForSharedLibs;
-    case cmTarget::MODULE_LIBRARY:
+    case cmStateEnums::MODULE_LIBRARY:
       return this->GenerateForModuleLibs;
+    case cmStateEnums::INTERFACE_LIBRARY:
+      return this->GenerateForInterfaceLibs;
+    case cmStateEnums::OBJECT_LIBRARY:
+      return this->GenerateForObjectLibs;
+    case cmStateEnums::UNKNOWN_LIBRARY:
+      return this->GenerateForUnknownLibs;
+    case cmStateEnums::UTILITY:
+      return this->GenerateForCustomTargets;
+    case cmStateEnums::GLOBAL_TARGET:
+      // Built-in targets like edit_cache, etc.
+      // We don't need/want those in the dot file.
+      return false;
     default:
       break;
   }
   return false;
+}
+
+std::string cmGraphVizWriter::ItemNameWithAliases(
+  std::string const& itemName) const
+{
+  std::vector<std::string> items;
+  for (auto const& lg : this->GlobalGenerator->GetLocalGenerators()) {
+    for (auto const& aliasTargets : lg->GetMakefile()->GetAliasTargets()) {
+      if (aliasTargets.second == itemName) {
+        items.push_back(aliasTargets.first);
+      }
+    }
+  }
+
+  std::sort(items.begin(), items.end());
+  items.erase(std::unique(items.begin(), items.end()), items.end());
+
+  auto nameWithAliases = itemName;
+  for(auto const& item : items) {
+    nameWithAliases += "\\n(" + item + ")";
+  }
+
+  return nameWithAliases;
+}
+
+std::string cmGraphVizWriter::GetEdgeStyle(DependencyType dt)
+{
+  std::string style;
+  switch (dt) {
+    case DependencyType::LinkPrivate:
+      style = "[ style = " + std::string(GRAPHVIZ_EDGE_STYLE_PRIVATE) + " ]";
+      break;
+    case DependencyType::LinkInterface:
+      style = "[ style = " + std::string(GRAPHVIZ_EDGE_STYLE_INTERFACE) + " ]";
+      break;
+    default:
+      break;
+  }
+  return style;
+}
+
+std::string cmGraphVizWriter::EscapeForDotFile(std::string const& str)
+{
+  return cmSystemTools::EscapeChars(str.data(), "\"");
+}
+
+std::string cmGraphVizWriter::PathSafeString(std::string const& str)
+{
+  std::string pathSafeStr;
+
+  // We'll only keep alphanumerical characters, plus the following ones that
+  // are common, and safe on all platforms:
+  auto const extra_chars = std::set<char>{ '.', '-', '_' };
+
+  for (char c : str) {
+    if (std::isalnum(c) || extra_chars.find(c) != extra_chars.cend()) {
+      pathSafeStr += c;
+    }
+  }
+
+  return pathSafeStr;
 }

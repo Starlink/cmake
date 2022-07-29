@@ -1,6 +1,5 @@
 APPLE
 -----
 
-True if running on Mac OS X.
-
-Set to true on Mac OS X.
+Set to ``True`` when the target system is an Apple platform
+(macOS, iOS, tvOS or watchOS).

@@ -1,15 +1,7 @@
-#=============================================================================
-# Copyright 2009 Kitware, Inc.
-#
-# Distributed under the OSI-approved BSD License (the "License");
-# see accompanying file Copyright.txt for details.
-#
-# This software is distributed WITHOUT ANY WARRANTY; without even the
-# implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the License for more information.
-#=============================================================================
+# Distributed under the OSI-approved BSD 3-Clause License.  See accompanying
+# file Copyright.txt or https://cmake.org/licensing for details.
 
-cmake_minimum_required(VERSION 2.6.3)
+cmake_minimum_required(VERSION ${CMAKE_VERSION})
 project(FortranCInterface C Fortran)
 include(${FortranCInterface_BINARY_DIR}/Input.cmake OPTIONAL)
 
@@ -23,11 +15,11 @@ int main() { return 0; }
 # List manglings of global symbol names to try.
 set(global_symbols
   my_sub    # VisualAge
-  my_sub_   # GNU, Intel, HP, SunPro, MIPSpro
+  my_sub_   # GNU, Intel, HP, SunPro, PGI
   my_sub__  # GNU g77
   MY_SUB    # Intel on Windows
   mysub     # VisualAge
-  mysub_    # GNU, Intel, HP, SunPro, MIPSpro
+  mysub_    # GNU, Intel, HP, SunPro, PGI
   MYSUB     # Intel on Windows
   ${FortranCInterface_GLOBAL_SYMBOLS}
   )
@@ -56,7 +48,6 @@ set(module_symbols
 list(REMOVE_DUPLICATES module_symbols)
 
 # Note that some compiler manglings cannot be invoked from C:
-#   MIPSpro uses "MY_SUB.in.MY_MODULE"
 #   SunPro uses "my_module.my_sub_"
 #   PathScale uses "MY_SUB.in.MY_MODULE"
 
@@ -71,7 +62,7 @@ endif()
 
 # Generate C symbol sources.
 set(symbol_sources)
-if(NOT "${CMAKE_Fortran_COMPILER_ID}" MATCHES "^(PathScale|Cray)$")
+if(NOT CMAKE_Fortran_COMPILER_ID MATCHES "^(PathScale|Cray)$")
   # Provide mymodule_ and my_module_ init symbols because:
   #  - PGI Fortran uses module init symbols
   # but not for:
@@ -79,7 +70,7 @@ if(NOT "${CMAKE_Fortran_COMPILER_ID}" MATCHES "^(PathScale|Cray)$")
   #    use '.in.' so we cannot provide them anyway.
   #  - Cray Fortran >= 7.3.2 uses module init symbols but module symbols
   #    use 'mysub$mymodule_' so we cannot provide them anyway.
-  list(APPEND symbol_sources mymodule_.c my_module_.c)
+  list(APPEND symbol_sources mymodule_.c my_module_.c MY_MODULE.c MYMODULE.c)
 endif()
 foreach(symbol IN LISTS global_symbols module_symbols)
   # Skip symbols with '$' if C cannot handle them.
@@ -101,8 +92,32 @@ add_library(myfort STATIC mysub.f my_sub.f ${myfort_modules})
 
 # Provide symbols through C but fall back to Fortran.
 add_library(symbols STATIC ${symbol_sources})
-target_link_libraries(symbols myfort)
+target_link_libraries(symbols PUBLIC myfort)
+
+# In case the Fortran compiler produces PIC by default make sure
+# the C compiler produces PIC even if it is not its default.
+set_property(TARGET symbols PROPERTY POSITION_INDEPENDENT_CODE 1)
 
 # Require symbols through Fortran.
 add_executable(FortranCInterface main.F call_sub.f ${call_mod})
-target_link_libraries(FortranCInterface symbols)
+target_link_libraries(FortranCInterface PUBLIC symbols)
+
+# If IPO is enabled here, GCC gfortran >= 12.0 will obfuscate
+# the strings of the return values in the compiled executable,
+# which we use to regex match against later.
+# The static libraries must be build with IPO and non-IPO objects,
+# as that will ensure the verify step will operate on IPO objects,
+# if requested by the system compiler flags.
+if(CMAKE_Fortran_COMPILER_ID STREQUAL "GNU" AND
+  CMAKE_Fortran_COMPILER_VERSION VERSION_GREATER_EQUAL 12)
+  target_compile_options(FortranCInterface PRIVATE "-fno-lto")
+  target_compile_options(myfort PRIVATE "-flto=auto" "-ffat-lto-objects")
+endif()
+if(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND
+  CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL 12)
+  target_compile_options(symbols PRIVATE "-flto=auto" "-ffat-lto-objects")
+endif()
+
+file(GENERATE OUTPUT exe-$<CONFIG>.cmake CONTENT [[
+set(FortranCInterface_EXE "$<TARGET_FILE:FortranCInterface>")
+]])

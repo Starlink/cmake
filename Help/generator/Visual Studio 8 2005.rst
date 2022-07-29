@@ -1,8 +1,6 @@
 Visual Studio 8 2005
 --------------------
 
-Generates Visual Studio 8 2005 project files.
-
-It is possible to append a space followed by the platform name to
-create project files for a specific target platform.  E.g.  "Visual
-Studio 8 2005 Win64" will create project files for the x64 processor.
+Removed.  This once generated Visual Studio 8 2005 project files, but
+the generator has been removed since CMake 3.12.  It is still possible to
+build with VS 2005 tools using the :generator:`NMake Makefiles` generator.

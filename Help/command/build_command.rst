@@ -8,21 +8,28 @@ This is mainly intended for internal use by the :module:`CTest` module.
 
   build_command(<variable>
                 [CONFIGURATION <config>]
+                [PARALLEL_LEVEL <parallel>]
                 [TARGET <target>]
                 [PROJECT_NAME <projname>] # legacy, causes warning
                )
 
 Sets the given ``<variable>`` to a command-line string of the form::
 
- <cmake> --build . [--config <config>] [--target <target>] [-- -i]
+ <cmake> --build . [--config <config>] [--parallel <parallel>] [--target <target>...] [-- -i]
 
 where ``<cmake>`` is the location of the :manual:`cmake(1)` command-line
-tool, and ``<config>`` and ``<target>`` are the values provided to the
-``CONFIGURATION`` and ``TARGET`` options, if any.  The trailing ``-- -i``
-option is added for Makefile generators.
+tool, and ``<config>``, ``<parallel>`` and ``<target>`` are the values
+provided to the ``CONFIGURATION``, ``PARALLEL_LEVEL`` and ``TARGET``
+options, if any.  The trailing ``-- -i`` option is added for
+:ref:`Makefile Generators` if policy :policy:`CMP0061` is not set to
+``NEW``.
 
 When invoked, this ``cmake --build`` command line will launch the
 underlying build system tool.
+
+.. versionadded:: 3.21
+  The ``PARALLEL_LEVEL`` argument can be used to set the ``--parallel``
+  flag.
 
 .. code-block:: cmake
 
@@ -32,9 +39,9 @@ This second signature is deprecated, but still available for backwards
 compatibility.  Use the first signature instead.
 
 It sets the given ``<cachevariable>`` to a command-line string as
-above but without the ``--config`` or ``--target`` options.
+above but without the ``--target`` option.
 The ``<makecommand>`` is ignored but should be the full path to
-msdev, devenv, nmake, make or one of the end user build tools
+devenv, nmake, make or one of the end user build tools
 for legacy invocations.
 
 .. note::

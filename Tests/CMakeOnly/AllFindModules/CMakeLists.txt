@@ -1,18 +1,17 @@
-cmake_minimum_required (VERSION 2.8)
+cmake_minimum_required(VERSION 2.8.4) # new enough for CMP0017
 project(AllFindModules)
-
-if (POLICY CMP0017)
-  cmake_policy(SET CMP0017 NEW)
-endif ()
 
 # Avoid ctest truncation of output
 message(STATUS "CTEST_FULL_OUTPUT")
+
+set(ORIGINAL_MODULE_PATH "${CMAKE_MODULE_PATH}")
 
 file(GLOB FIND_MODULES "${CMAKE_CURRENT_SOURCE_DIR}/../../../Modules/Find*.cmake" )
 
 macro(do_find MODULE_NAME)
     message(STATUS "   Checking Find${MODULE_NAME}")
     find_package(${MODULE_NAME})
+    set(CMAKE_MODULE_PATH "${ORIGINAL_MODULE_PATH}")
 endmacro()
 
 # It is only possible to use either Qt3 or Qt4 in one project.
@@ -53,7 +52,10 @@ if (NOT QT4_FOUND)
 endif ()
 
 macro(check_version_string MODULE_NAME VERSION_VAR)
-    if (${MODULE_NAME}_FOUND)
+    string(FIND " ${CMake_TEST_CMakeOnly.AllFindModules_NO_VERSION} " " ${MODULE_NAME} " _exclude_pos)
+    if (NOT _exclude_pos EQUAL -1)
+        message(STATUS "excluding check of ${VERSION_VAR}='${${VERSION_VAR}}' due to local configuration")
+    elseif (${MODULE_NAME}_FOUND)
         if (DEFINED ${VERSION_VAR})
             message(STATUS "${VERSION_VAR}='${${VERSION_VAR}}'")
             if (NOT ${VERSION_VAR} MATCHES "^[0-9]")
@@ -78,13 +80,13 @@ endmacro()
 # reported.
 
 foreach(VTEST ALSA ARMADILLO BZIP2 CUPS CURL EXPAT FREETYPE GETTEXT GIT HG
-        HSPELL ICOTOOL JASPER LIBLZMA LIBXML2 LIBXSLT PERL PKG_CONFIG
+        HSPELL ICOTOOL JASPER LIBLZMA LIBXML2 LIBXSLT LTTNGUST PERL PKG_CONFIG
         PostgreSQL TIFF ZLIB)
     check_version_string(${VTEST} ${VTEST}_VERSION_STRING)
 endforeach()
 
-foreach(VTEST BISON Boost CUDA DOXYGEN FLEX GIF GTK2 LibArchive OPENSCENEGRAPH
-        RUBY SWIG)
+foreach(VTEST BISON Boost CUDA DOXYGEN FLEX GIF GTK2
+        HDF5 JPEG LibArchive OPENSCENEGRAPH Ruby RUBY SWIG Protobuf)
     check_version_string(${VTEST} ${VTEST}_VERSION)
 endforeach()
 
